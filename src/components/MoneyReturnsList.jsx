@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { getInvoices, deleteInvoice } from '../utils/invoicesStore';
 import { RefreshCcw, FileText, Trash2 } from 'lucide-react';
+import { useLanguage } from '../context/LanguageContext';
 
 const MoneyReturnsList = () => {
+  const { t } = useLanguage();
   const [returns, setReturns] = useState([]);
 
   const loadReturns = () => {
@@ -25,28 +27,28 @@ const MoneyReturnsList = () => {
       <div className="flex justify-between items-center mb-6 pb-4 border-b border-gray-100">
         <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
           <RefreshCcw className="text-red-500" />
-          Money Returns & Cancellations
+          {t('mrl_title')}
         </h2>
-        <span className="text-sm text-gray-500">{returns.length} pending returns</span>
+        <span className="text-sm text-gray-500">{returns.length} {t('mrl_pending_count')}</span>
       </div>
 
       {returns.length === 0 ? (
         <div className="text-center py-12 text-gray-400">
           <FileText size={48} className="mx-auto mb-4 opacity-20" />
-          <p>No money returns are pending.</p>
-          <p className="text-sm">When you cancel an invoice and opt to generate an Abono, it will appear here.</p>
+          <p>{t('mrl_no_returns')}</p>
+          <p className="text-sm">{t('mrl_when_cancel')}</p>
         </div>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-red-50 text-red-900 text-sm">
-                <th className="p-3 font-semibold rounded-tl-lg">Abono ID</th>
-                <th className="p-3 font-semibold">Date Cancelled</th>
-                <th className="p-3 font-semibold">Customer</th>
-                <th className="p-3 font-semibold">Original Method</th>
-                <th className="p-3 font-semibold text-right">Amount to Return</th>
-                <th className="p-3 font-semibold text-right rounded-tr-lg">Actions</th>
+                <th className="p-3 font-semibold rounded-tl-lg">{t('mrl_col_id')}</th>
+                <th className="p-3 font-semibold">{t('mrl_col_date')}</th>
+                <th className="p-3 font-semibold">{t('mrl_col_customer')}</th>
+                <th className="p-3 font-semibold">{t('mrl_col_method')}</th>
+                <th className="p-3 font-semibold text-right">{t('mrl_col_amount')}</th>
+                <th className="p-3 font-semibold text-right rounded-tr-lg">{t('mrl_col_actions')}</th>
               </tr>
             </thead>
             <tbody>
@@ -54,7 +56,7 @@ const MoneyReturnsList = () => {
                 <tr key={ret.id} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
                   <td className="p-3">
                     <span className="font-mono text-sm text-red-600 font-bold">{ret.id}</span>
-                    <div className="text-[10px] text-gray-400 mt-1">From: {ret.originalInvoiceId}</div>
+                    <div className="text-[10px] text-gray-400 mt-1">{t('mrl_from')} {ret.originalInvoiceId}</div>
                   </td>
                   <td className="p-3 text-sm text-gray-600">
                     {new Date(ret.createdAt).toLocaleDateString()}
@@ -75,7 +77,7 @@ const MoneyReturnsList = () => {
                     <button 
                       onClick={() => handleDelete(ret.id)}
                       className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors tooltip-wrapper"
-                      title="Eliminate Record"
+                      title={t('mrl_tooltip_eliminate')}
                     >
                       <Trash2 size={18} />
                     </button>

@@ -40,3 +40,6 @@ A web-based ad management and reservation platform designed to manage a 92-page 
 1. **Supabase Schema Migration**: Transition fully from the local `invoicesStore.js` and fallback data to the actual Supabase backend tables. Ensure the schema (`customers`, `magazine_pages`, `invoices`, `ads`) is correctly set up.
 2. **Pre-Reservation Confirmation Logic Check**: Since pre-reservations now generate an invoice up-front, the logic for confirming a pre-reservation later should be reviewed to ensure it doesn't generate duplicate invoices unnecessarily (unless intended as a final invoice).
 3. **Persist Page Colors/State**: Ensure that `isNew` flags or other UI states are correctly saved to and loaded from the database once the backend is fully connected.
+
+## AI Coding Guidelines
+- **Automatic Translation**: Every time a new field or new functionality is created, automatically translate all user-facing text (labels, buttons, placeholders, messages, etc.) into Spanish to maintain full application localization.

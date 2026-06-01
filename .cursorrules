@@ -1,0 +1,5 @@
+# Automatic Translation Rule
+
+Every time a new field, UI element, or some new functionality is created, automatically translate all user-facing text (labels, buttons, placeholders, messages, notifications, etc.) into Spanish to maintain full application localization.
+
+Do not wait for explicit user instruction to translate new fields; always assume Spanish is the target language for the UI.

@@ -169,7 +169,7 @@ const MagazineGrid = ({ onPageClick }) => {
                 <div className="font-bold border-b border-gray-700 pb-1">{t('page')} {page.page_number}</div>
                 <div className="flex justify-between">
                   <span className="text-gray-400">{t('status')}</span>
-                  <span className="font-medium text-blue-300">{page.status}</span>
+                  <span className="font-medium text-blue-300">{page.status === 'Reserved' ? t('status_reserved') : (page.status === 'Available' ? t('po_available') : page.status)}</span>
                 </div>
                 <div className="mt-1">
                   <span className="text-gray-400">{t('occupants')}</span>
@@ -206,7 +206,6 @@ const MagazineGrid = ({ onPageClick }) => {
             `}
             style={getBackgroundStyle(page)}
           >
-            <span className="text-sm opacity-70 z-10 mix-blend-multiply pointer-events-none">Pg.</span>
             <span className="text-lg font-bold z-10 mix-blend-multiply pointer-events-none">{page.page_number}</span>
             {hasExpired && (
               <div className="absolute -top-2 -right-2 bg-yellow-100 rounded-full shadow-lg border border-yellow-300 z-50">
@@ -221,7 +220,7 @@ const MagazineGrid = ({ onPageClick }) => {
                     const c = fallbackCustomers.find(cust => cust.id === ad.customer_id || cust.nif === ad.customer_id);
                     cName = c ? (c.commercial_name || c.fiscal_name) : 'Unknown';
                   } else if (!cName) {
-                    cName = 'Reserved'; 
+                    cName = t('status_reserved'); 
                   }
 
                   return (

@@ -6,7 +6,8 @@ import InvoicesList from './components/InvoicesList';
 import PendingOrdersList from './components/PendingOrdersList';
 import MoneyReturnsList from './components/MoneyReturnsList';
 import ReservationPanel from './components/ReservationPanel';
-import { BookOpen, MapPin, Users, Settings, Receipt, Clock, RefreshCcw, Globe, Menu, X } from 'lucide-react';
+import FinancialDashboard from './components/FinancialDashboard';
+import { BookOpen, MapPin, Users, Settings, Receipt, Clock, RefreshCcw, Globe, Menu, X, TrendingUp } from 'lucide-react';
 import { useLanguage } from './context/LanguageContext';
 
 function App() {
@@ -98,6 +99,12 @@ function App() {
           >
             <RefreshCcw size={20} /> {t('nav_returns')}
           </button>
+          <button 
+            onClick={() => handleTabChange('financial')}
+            className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${currentTab === 'financial' ? 'bg-indigo-600 text-white' : 'hover:bg-slate-800 text-slate-300'}`}
+          >
+            <TrendingUp size={20} /> {t('nav_financial')}
+          </button>
           <button className="w-full flex items-center gap-3 px-3 py-2 hover:bg-slate-800 rounded-lg text-slate-300">
             <Settings size={20} /> {t('nav_settings')}
           </button>
@@ -125,6 +132,7 @@ function App() {
           {currentTab === 'customers' && <CustomersList />}
           {currentTab === 'invoices' && <InvoicesList onSelectPage={setSelectedPage} />}
           {currentTab === 'returns' && <MoneyReturnsList />}
+          {currentTab === 'financial' && <FinancialDashboard />}
           {currentTab === 'pending' && (
             <PendingOrdersList 
               onGoToPage={(page) => {
@@ -148,7 +156,7 @@ function App() {
       {/* Modal Overlay for Reservation Panel */}
       {selectedPage && currentTab !== 'customers' && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto animate-in zoom-in-95 duration-200">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto animate-in zoom-in-95 duration-200">
             <ReservationPanel 
               selectedPage={selectedPage} 
               onReservationComplete={() => setSelectedPage(null)} 

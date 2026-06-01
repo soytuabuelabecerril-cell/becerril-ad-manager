@@ -101,7 +101,7 @@ const PendingOrdersList = ({ onGoToPage }) => {
               {displayOrders.map((order, idx) => (
                 <tr key={idx} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
                   <td className="p-3 font-bold text-gray-900">
-                    Pg. {order.page_number}
+                    {order.page_number}
                   </td>
                   <td className="p-3 font-medium text-gray-900">
                     {order.customer_name}
