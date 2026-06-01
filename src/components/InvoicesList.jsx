@@ -197,6 +197,24 @@ const InvoicesList = ({ onSelectPage }) => {
     setRecibos(getRecibos());
   };
 
+  const handleDeleteRecibo = (rec) => {
+    if (!window.confirm(t('rp_confirm_delete') || 'Are you sure you want to delete this receipt?')) return;
+    deleteRecibo(rec.id);
+
+    // Remove from magazine grid
+    const pages = getFullPages();
+    const page = pages.find(p => p.page_number === rec.assignedPage);
+    if (page && page.ads) {
+      const adIdx = page.ads.findIndex(a => a.customer_name === rec.customerName && a.ad_type === rec.productName);
+      if (adIdx > -1) {
+        page.ads.splice(adIdx, 1);
+        if (page.ads.length === 0) page.status = 'Available';
+      }
+    }
+
+    setRecibos(getRecibos());
+  };
+
 
   const displayInvoices = invoices.filter(inv => {
     if (inv.status === 'Refund') return false;
@@ -422,8 +440,10 @@ const InvoicesList = ({ onSelectPage }) => {
       <div className="flex justify-between items-center mb-6 pb-4 border-b border-gray-100">
         <div className="flex items-center gap-3">
           <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
-            <Receipt className="text-blue-600" />
-            {activeSection === 'invoices' ? t('il_title') : t('il_recibos_title')}
+            <Receipt className={activeSection === 'invoices' ? 'text-blue-600' : 'text-emerald-600'} />
+            {activeSection === 'invoices' 
+              ? t('il_title') 
+              : `${t('il_recibos_title')} - Total: ${recibos.reduce((sum, r) => sum + r.total, 0).toFixed(2)}€`}
           </h2>
           {/* Section Toggle */}
           <div className="flex gap-1 ml-4 bg-gray-100 rounded-lg p-1">
@@ -679,6 +699,18 @@ const InvoicesList = ({ onSelectPage }) => {
                   </tr>
                 ))}
               </tbody>
+              {recibos.length > 0 && (
+                <tfoot>
+                  <tr className="bg-emerald-50/50 border-t border-emerald-200 font-bold text-emerald-800">
+                    <td className="p-3 font-bold" colSpan="4">Total</td>
+                    <td className="p-3 text-base text-emerald-800 font-bold" colSpan="1">
+                      {recibos.reduce((sum, r) => sum + r.total, 0).toFixed(2)}€
+                      <div className="text-xs text-emerald-600/70 font-normal">sin IVA</div>
+                    </td>
+                    <td className="p-3" colSpan="1"></td>
+                  </tr>
+                </tfoot>
+              )}
             </table>
           </div>
         )
