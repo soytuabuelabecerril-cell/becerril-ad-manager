@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { getInvoices, cancelInvoice, updateInvoicePayment, hardDeleteInvoice, getRecibos, deleteRecibo, getReciboWhatsAppMessage } from '../utils/invoicesStore';
+import { getInvoices, cancelInvoice, updateInvoicePayment, hardDeleteInvoice, getRecibos, deleteRecibo, getReciboWhatsAppMessage, getInvoiceSettings, saveInvoiceSettings, reserveInvoiceNumber } from '../utils/invoicesStore';
 import { getFullPages } from '../utils/fallbackData';
-import { FileText, Download, Receipt, Mail, MessageCircle, XCircle, Star, CheckCircle, Eye, X, Trash2, Search } from 'lucide-react';
+import { FileText, Download, Receipt, Mail, MessageCircle, XCircle, Star, CheckCircle, Eye, X, Trash2, Search, Settings } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
 import { useLanguage } from '../context/LanguageContext';
@@ -16,11 +16,15 @@ const InvoicesList = ({ onSelectPage }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [sendingEmailId, setSendingEmailId] = useState(null);
   const [activeSection, setActiveSection] = useState('invoices'); // 'invoices' | 'recibos'
+  const [isConfigOpen, setIsConfigOpen] = useState(false);
+  const [configSettings, setConfigSettings] = useState({ isSequentialEnabled: false, nextInvoiceNumber: 2026060201 });
+  const [reserveNote, setReserveNote] = useState('');
 
   useEffect(() => {
     // Load invoices and recibos on mount
     setInvoices(getInvoices());
     setRecibos(getRecibos());
+    setConfigSettings(getInvoiceSettings());
   }, []);
 
   const generatePDF = (inv) => {
@@ -471,7 +475,7 @@ const InvoicesList = ({ onSelectPage }) => {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
               <input 
                 type="text" 
-                placeholder="Search invoices..." 
+                placeholder={t('il_search_placeholder') || "Search invoices..."} 
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="pl-9 pr-4 py-1.5 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 w-64"
@@ -482,13 +486,13 @@ const InvoicesList = ({ onSelectPage }) => {
                 onClick={() => setFilter('All')}
                 className={`px-3 py-1.5 text-sm font-medium rounded ${filter === 'All' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
               >
-                All
+                {t('il_all') || 'All'}
               </button>
               <button 
                 onClick={() => setFilter('Pending payment')}
                 className={`px-3 py-1.5 text-sm font-medium rounded ${filter === 'Pending payment' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
               >
-                Pending payment
+                {t('il_pending_payment_filter') || 'Pending payment'}
               </button>
             </div>
             <div className="flex gap-2 mr-4 border-r border-gray-200 pr-4">
@@ -499,7 +503,7 @@ const InvoicesList = ({ onSelectPage }) => {
                 }}
                 className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-100 hover:bg-orange-200 text-orange-800 text-xs font-bold rounded border border-orange-200 transition-colors"
               >
-                <Star size={14} /> Book Pg. 91 (Int. Portada)
+                <Star size={14} /> {t('il_book_pg_91') || 'Book Pg. 91 (Int. Portada)'}
               </button>
               <button
                 onClick={() => {
@@ -508,10 +512,10 @@ const InvoicesList = ({ onSelectPage }) => {
                 }}
                 className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-100 hover:bg-orange-200 text-orange-800 text-xs font-bold rounded border border-orange-200 transition-colors"
               >
-                <Star size={14} /> Book Pg. 92 (Contraportada)
+                <Star size={14} /> {t('il_book_pg_92') || 'Book Pg. 92 (Contraportada)'}
               </button>
             </div>
-            <span className="text-sm text-gray-500">{displayInvoices.length} active/cancelled</span>
+            <span className="text-sm text-gray-500">{displayInvoices.length} {t('il_active_cancelled') || 'active/cancelled'}</span>
           </div>
         )}
       </div>
@@ -520,110 +524,145 @@ const InvoicesList = ({ onSelectPage }) => {
         displayInvoices.length === 0 ? (
           <div className="text-center py-12 text-gray-400">
             <FileText size={48} className="mx-auto mb-4 opacity-20" />
-            <p>No invoices have been generated yet.</p>
-            <p className="text-sm">Reserve a page to generate your first invoice.</p>
+            <p>{t('il_no_invoices') || 'No invoices have been generated yet.'}</p>
+            <p className="text-sm">{t('il_reserve_first') || 'Reserve a page to generate your first invoice.'}</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-gray-50 text-gray-600 text-sm">
-                  <th className="p-3 font-semibold rounded-tl-lg">Invoice ID</th>
-                  <th className="p-3 font-semibold">Date</th>
-                  <th className="p-3 font-semibold">Customer</th>
-                  <th className="p-3 font-semibold">Payment</th>
-                  <th className="p-3 font-semibold">Total</th>
-                  <th className="p-3 font-semibold text-right rounded-tr-lg">Actions</th>
+                  <th className="p-3 font-semibold rounded-tl-lg">
+                    <div className="flex items-center gap-1.5">
+                      <span>{t('il_col_id') || 'Invoice ID'}</span>
+                      <button
+                        onClick={() => {
+                          setConfigSettings(getInvoiceSettings());
+                          setIsConfigOpen(true);
+                        }}
+                        className="p-1 hover:bg-gray-200 rounded text-gray-500 hover:text-gray-800 transition-colors cursor-pointer"
+                        title={t('config_title')}
+                      >
+                        <Settings size={14} />
+                      </button>
+                    </div>
+                  </th>
+                  <th className="p-3 font-semibold">{t('il_col_date') || 'Date'}</th>
+                  <th className="p-3 font-semibold">{t('il_col_customer') || 'Customer'}</th>
+                  <th className="p-3 font-semibold">{t('il_col_payment') || 'Payment'}</th>
+                  <th className="p-3 font-semibold">{t('il_col_total') || 'Total'}</th>
+                  <th className="p-3 font-semibold text-right rounded-tr-lg">{t('il_col_actions') || 'Actions'}</th>
                 </tr>
               </thead>
               <tbody>
                 {displayInvoices.map((inv) => (
-                  <tr key={inv.id} className={`border-b border-gray-50 hover:bg-gray-50/50 transition-colors ${inv.status === 'Cancelled' ? 'opacity-50' : ''}`}>
+                  <tr key={inv.id} className={`border-b border-gray-50 hover:bg-gray-50/50 transition-colors ${inv.status === 'Cancelled' ? 'opacity-50' : ''} ${inv.status === 'Reserved' ? 'bg-slate-50/70 border-l-4 border-l-slate-400' : ''}`}>
                     <td className="p-3">
                       <span className="font-mono text-sm text-blue-600 font-medium">{inv.id}</span>
-                      {inv.status === 'Cancelled' && <span className="ml-2 px-1.5 py-0.5 text-[10px] uppercase font-bold bg-red-100 text-red-800 rounded">Cancelled</span>}
+                      {inv.status === 'Cancelled' && <span className="ml-2 px-1.5 py-0.5 text-[10px] uppercase font-bold bg-red-100 text-red-800 rounded">{t('il_status_cancelled') || 'Cancelled'}</span>}
+                      {inv.status === 'Reserved' && <span className="ml-2 px-1.5 py-0.5 text-[10px] uppercase font-bold bg-slate-200 text-slate-800 rounded">{t('il_status_reserved') || 'Reserved'}</span>}
                     </td>
                     <td className="p-3 text-sm text-gray-600">
                       {new Date(inv.createdAt).toLocaleDateString()}
                     </td>
                     <td className="p-3">
-                      <div className="font-medium text-gray-900">{inv.customerName}</div>
-                      <div className="text-xs text-gray-500 truncate max-w-[200px]">{inv.productName}</div>
+                      <div className="font-medium text-gray-900">{inv.customerName === 'System User' ? t('system_user') : inv.customerName}</div>
+                      <div className="text-xs text-gray-500 truncate max-w-[200px]">{inv.productName === 'Reserved ID' ? t('reserved_id_desc') : inv.productName}</div>
                     </td>
                     <td className="p-3">
-                      <div className={`text-xs font-bold px-2 py-1 rounded inline-block ${inv.isPaid ? 'bg-green-100 text-green-800' : 'bg-orange-100 text-orange-800'}`}>
-                        {inv.isPaid ? 'Paid' : 'Pending'}
-                      </div>
-                      <div className="text-xs text-gray-500 mt-0.5">{inv.paymentMethod}</div>
+                      {inv.status === 'Reserved' ? (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-slate-100 text-slate-700 border border-slate-200">
+                          {t('il_status_reserved') || 'Reserved'}
+                        </span>
+                      ) : (
+                        <>
+                          <div className={`text-xs font-bold px-2 py-1 rounded inline-block ${inv.isPaid ? 'bg-green-100 text-green-800' : 'bg-orange-100 text-orange-800'}`}>
+                            {inv.isPaid ? (t('il_status_paid') || 'Paid') : (t('il_status_pending') || 'Pending')}
+                          </div>
+                          <div className="text-xs text-gray-500 mt-0.5">{t('rp_' + inv.paymentMethod?.toLowerCase()) || inv.paymentMethod}</div>
+                        </>
+                      )}
                     </td>
                     <td className="p-3 font-bold text-gray-900">
                       {inv.total.toFixed(2)}€
                     </td>
                     <td className="p-3 text-right">
                       <div className="flex justify-end gap-2">
-                        <button 
-                          onClick={() => setViewingInvoice(inv)}
-                          className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors tooltip-wrapper"
-                          title="View Invoice"
-                        >
-                          <Eye size={18} />
-                        </button>
-                        
-                        <button 
-                          onClick={() => generatePDF(inv)}
-                          disabled={renderingInvoice !== null}
-                          className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors tooltip-wrapper"
-                          title="Download PDF"
-                        >
-                          <Download size={18} />
-                        </button>
-                        
-                        <button 
-                          onClick={() => sendInvoiceEmail(inv)}
-                          disabled={renderingInvoice !== null || sendingEmailId === inv.id}
-                          className={`p-2 rounded transition-colors ${inv.status === 'Cancelled' ? 'pointer-events-none opacity-50' : 'text-gray-600 hover:text-blue-600 hover:bg-blue-50'} ${sendingEmailId === inv.id ? 'animate-pulse text-blue-400' : ''}`}
-                          title="Send via Email"
-                        >
-                          <Mail size={18} />
-                        </button>
-                        
-                        <a 
-                          href={getWhatsAppLink(inv)} 
-                          target="_blank" rel="noreferrer"
-                          className={`p-2 rounded transition-colors ${inv.status === 'Cancelled' ? 'pointer-events-none opacity-50' : 'text-gray-600 hover:text-green-600 hover:bg-green-50'}`}
-                          title="Send via WhatsApp"
-                        >
-                          <MessageCircle size={18} />
-                        </a>
-                        
-                        {inv.status !== 'Cancelled' && (
-                          <>
-                            {!inv.isPaid && (
-                              <button 
-                                onClick={() => handleMarkAsPaid(inv)}
-                                className="p-2 text-gray-600 hover:text-green-600 hover:bg-green-50 rounded transition-colors tooltip-wrapper"
-                                title="Mark as Paid"
-                              >
-                                <CheckCircle size={18} />
-                              </button>
-                            )}
-                            <button 
-                              onClick={() => handleCancelInvoice(inv)}
-                              className="p-2 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded transition-colors tooltip-wrapper"
-                              title="Cancel Invoice"
-                            >
-                              <XCircle size={18} />
-                            </button>
-                          </>
-                        )}
-                        {inv.status === 'Cancelled' && (
+                        {inv.status === 'Reserved' ? (
                           <button 
                             onClick={() => handleHardDelete(inv)}
-                            className="p-2 text-red-600 hover:text-red-800 hover:bg-red-100 rounded transition-colors tooltip-wrapper"
-                            title="Permanently Delete Invoice & Refunds"
+                            className="p-2 text-red-600 hover:text-red-800 hover:bg-red-100 rounded transition-colors tooltip-wrapper cursor-pointer"
+                            title={t('il_tooltip_hard_delete') || "Permanently Delete"}
                           >
                             <Trash2 size={18} />
                           </button>
+                        ) : (
+                          <>
+                            <button 
+                              onClick={() => setViewingInvoice(inv)}
+                              className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors tooltip-wrapper"
+                              title="View Invoice"
+                            >
+                              <Eye size={18} />
+                            </button>
+                            
+                            <button 
+                              onClick={() => generatePDF(inv)}
+                              disabled={renderingInvoice !== null}
+                              className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors tooltip-wrapper"
+                              title="Download PDF"
+                            >
+                              <Download size={18} />
+                            </button>
+                            
+                            <button 
+                              onClick={() => sendInvoiceEmail(inv)}
+                              disabled={renderingInvoice !== null || sendingEmailId === inv.id}
+                              className={`p-2 rounded transition-colors ${inv.status === 'Cancelled' ? 'pointer-events-none opacity-50' : 'text-gray-600 hover:text-blue-600 hover:bg-blue-50'} ${sendingEmailId === inv.id ? 'animate-pulse text-blue-400' : ''}`}
+                              title="Send via Email"
+                            >
+                              <Mail size={18} />
+                            </button>
+                            
+                            <a 
+                              href={getWhatsAppLink(inv)} 
+                              target="_blank" rel="noreferrer"
+                              className={`p-2 rounded transition-colors ${inv.status === 'Cancelled' ? 'pointer-events-none opacity-50' : 'text-gray-600 hover:text-green-600 hover:bg-green-50'}`}
+                              title="Send via WhatsApp"
+                            >
+                              <MessageCircle size={18} />
+                            </a>
+                            
+                            {inv.status !== 'Cancelled' && (
+                              <>
+                                {!inv.isPaid && (
+                                  <button 
+                                    onClick={() => handleMarkAsPaid(inv)}
+                                    className="p-2 text-gray-600 hover:text-green-600 hover:bg-green-50 rounded transition-colors tooltip-wrapper"
+                                    title="Mark as Paid"
+                                  >
+                                    <CheckCircle size={18} />
+                                  </button>
+                                )}
+                                <button 
+                                  onClick={() => handleCancelInvoice(inv)}
+                                  className="p-2 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded transition-colors tooltip-wrapper"
+                                  title="Cancel Invoice"
+                                >
+                                  <XCircle size={18} />
+                                </button>
+                              </>
+                            )}
+                            {inv.status === 'Cancelled' && (
+                              <button 
+                                onClick={() => handleHardDelete(inv)}
+                                className="p-2 text-red-600 hover:text-red-800 hover:bg-red-100 rounded transition-colors tooltip-wrapper"
+                                title="Permanently Delete Invoice & Refunds"
+                              >
+                                <Trash2 size={18} />
+                              </button>
+                            )}
+                          </>
                         )}
                       </div>
                     </td>
@@ -769,6 +808,115 @@ const InvoicesList = ({ onSelectPage }) => {
               <div className="bg-white mx-auto shadow-sm" style={{ width: '800px', padding: '40px' }}>
                  {renderInvoiceTemplate(viewingInvoice)}
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Invoicing Configuration Modal */}
+      {isConfigOpen && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 animate-in zoom-in-95 duration-200">
+            <div className="flex justify-between items-center mb-4 pb-2 border-b border-gray-100">
+              <h3 className="font-bold text-lg text-gray-800 flex items-center gap-2">
+                <Settings size={18} className="text-gray-600" />
+                {t('config_title')}
+              </h3>
+              <button 
+                onClick={() => setIsConfigOpen(false)}
+                className="p-1.5 hover:bg-gray-100 rounded-full transition-colors text-gray-500 cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              {/* Toggle sequential */}
+              <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                <span className="text-sm font-medium text-gray-700">{t('config_sequential')}</span>
+                <button
+                  type="button"
+                  onClick={() => setConfigSettings(prev => ({ ...prev, isSequentialEnabled: !prev.isSequentialEnabled }))}
+                  className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                    configSettings.isSequentialEnabled ? 'bg-blue-600' : 'bg-gray-200'
+                  }`}
+                >
+                  <span
+                    className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                      configSettings.isSequentialEnabled ? 'translate-x-5' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
+              </div>
+
+              {/* Next invoice number input */}
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-1">{t('config_next_num')}</label>
+                <input
+                  type="number"
+                  disabled={!configSettings.isSequentialEnabled}
+                  value={configSettings.nextInvoiceNumber}
+                  onChange={(e) => setConfigSettings(prev => ({ ...prev, nextInvoiceNumber: parseInt(e.target.value, 10) || 0 }))}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:text-gray-400"
+                />
+              </div>
+
+              {/* Reserve Next ID section */}
+              {configSettings.isSequentialEnabled && (
+                <div className="border-t border-gray-100 pt-4 mt-2">
+                  <label className="block text-sm font-bold text-gray-700 mb-1">{t('config_reserve_note')}</label>
+                  <input
+                    type="text"
+                    placeholder={t('config_reserve_note') + "..."}
+                    value={reserveNote}
+                    onChange={(e) => setReserveNote(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm mb-3"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!configSettings.nextInvoiceNumber) return;
+                      if (!window.confirm(`${t('config_reserve_btn')} (#FACT.${configSettings.nextInvoiceNumber})?`)) return;
+                      
+                      // Save settings first so store knows the sequence
+                      saveInvoiceSettings(configSettings);
+                      
+                      // Reserve number
+                      reserveInvoiceNumber(reserveNote);
+                      
+                      // Reload store state
+                      setInvoices(getInvoices());
+                      setConfigSettings(getInvoiceSettings());
+                      setReserveNote('');
+                      alert('ID reserved successfully!');
+                    }}
+                    className="w-full py-2 bg-slate-800 hover:bg-slate-900 text-white font-bold text-sm rounded-lg transition-colors flex items-center justify-center gap-2 shadow-sm cursor-pointer"
+                  >
+                    {t('config_reserve_btn')} (#FACT.{configSettings.nextInvoiceNumber})
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-2 mt-6 pt-4 border-t border-gray-100">
+              <button
+                type="button"
+                onClick={() => setIsConfigOpen(false)}
+                className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium rounded-lg transition-colors cursor-pointer"
+              >
+                {t('cancel')}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  saveInvoiceSettings(configSettings);
+                  setIsConfigOpen(false);
+                  alert('Settings saved successfully!');
+                }}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors cursor-pointer"
+              >
+                {t('save')}
+              </button>
             </div>
           </div>
         </div>

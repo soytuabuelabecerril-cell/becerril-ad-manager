@@ -25,7 +25,7 @@ const safeInsertCustomer = async (payload) => {
 };
 
 const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const [customers, setCustomers] = useState([]);
   const [usedProducts, setUsedProducts] = useState(new Set());
   
@@ -53,6 +53,7 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
   const [invoiceDetails, setInvoiceDetails] = useState(null);
   
   const [paymentMethod, setPaymentMethod] = useState('Transfer');
+  const [reservationPaymentMethod, setReservationPaymentMethod] = useState('Transfer');
   const [isPaid, setIsPaid] = useState(false);
   const [currentAdRef, setCurrentAdRef] = useState(null);
   
@@ -322,6 +323,7 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
         date: new Date().toLocaleDateString(),
         artworkComment: artworkComment,
         orderType: isPreReservation ? 'pre-reserved' : 'transfer',
+        paymentMethod: reservationPaymentMethod,
       });
       setOrderDetails(newOrder);
       setOrderConfirmModalOpen(true);
@@ -621,11 +623,33 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
     const hasPaidInvoice = invoiceList.some(inv => inv.isPaid && inv.customerName?.toLowerCase() === name);
     const hasRecibo = reciboList.some(r => r.customerName?.toLowerCase() === name);
     const hasPaidAd = pages.some(p => p.ads?.some(ad => matchesCust(ad) && ad.isPaid));
-    if (hasPaidInvoice || hasRecibo || hasPaidAd) return 'ok';
+    if (hasRecibo) return 'recibo';
+    if (hasPaidInvoice || hasPaidAd) return 'ok';
 
-    const hasPreReservedAd = pages.some(p => p.ads?.some(ad => matchesCust(ad) && ad.isPreReserved));
-    const hasPreReservedOrder = orderList.some(o => o.orderType === 'pre-reserved' && o.customerName?.toLowerCase() === name);
-    if (hasPreReservedAd || hasPreReservedOrder) return 'pr';
+    let preReservedDate = null;
+    pages.forEach(p => {
+      p.ads?.forEach(ad => {
+        if (matchesCust(ad) && ad.isPreReserved && ad.expires_at) {
+          preReservedDate = ad.expires_at;
+        }
+      });
+    });
+
+    if (!preReservedDate) {
+      const prOrder = orderList.find(o => o.orderType === 'pre-reserved' && o.customerName?.toLowerCase() === name);
+      if (prOrder) {
+        const created = new Date(prOrder.createdAt);
+        created.setDate(created.getDate() + 7);
+        preReservedDate = created.toISOString();
+      }
+    }
+
+    if (preReservedDate) {
+      const expDate = new Date(preReservedDate);
+      const day = expDate.getDate().toString().padStart(2, '0');
+      const month = (expDate.getMonth() + 1).toString().padStart(2, '0');
+      return `pr:${day}/${month}`;
+    }
 
     const hasPendingAd = pages.some(p => p.ads?.some(ad => matchesCust(ad) && !ad.isPreReserved && !ad.isPaid));
     const hasPendingOrder = orderList.some(o => o.orderType === 'transfer' && o.customerName?.toLowerCase() === name);
@@ -773,8 +797,9 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
                         return (
                           <>
                             {status === 'ok' && <span className="inline-flex items-center px-1.5 py-0.5 text-xs font-bold rounded bg-green-500 text-white shrink-0">OK</span>}
-                            {status === 'pt' && <span className="inline-flex items-center px-1.5 py-0.5 text-xs font-bold rounded bg-orange-500 text-white shrink-0">PT</span>}
-                            {status === 'pr' && <span className="inline-flex items-center px-1.5 py-0.5 text-xs font-bold rounded bg-orange-500 text-white shrink-0">PR</span>}
+                            {status === 'recibo' && <span className="inline-flex items-center px-1.5 py-0.5 text-xs font-bold rounded bg-emerald-600 text-white shrink-0">Recibo</span>}
+                            {status === 'pt' && <span className="inline-flex items-center px-1.5 py-0.5 text-xs font-bold rounded bg-blue-600 text-white shrink-0">TP</span>}
+                            {status?.startsWith('pr:') && <span className="inline-flex items-center px-1.5 py-0.5 text-xs font-bold rounded bg-orange-500 text-white shrink-0">RESERVA TEMPORAL ({status.split(':')[1]})</span>}
                             <span className="truncate">{c.commercial_name || c.fiscal_name}</span>
                           </>
                         );
@@ -798,8 +823,9 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
                             className={`flex items-center gap-2 px-3 py-2 cursor-pointer text-sm hover:bg-blue-50 transition-colors ${selectedCustomerId === val ? 'bg-blue-50 font-medium' : ''}`}
                           >
                             {status === 'ok' && <span className="inline-flex items-center px-1.5 py-0.5 text-xs font-bold rounded bg-green-500 text-white shrink-0">OK</span>}
-                            {status === 'pt' && <span className="inline-flex items-center px-1.5 py-0.5 text-xs font-bold rounded bg-orange-500 text-white shrink-0">PT</span>}
-                            {status === 'pr' && <span className="inline-flex items-center px-1.5 py-0.5 text-xs font-bold rounded bg-orange-500 text-white shrink-0">PR</span>}
+                            {status === 'recibo' && <span className="inline-flex items-center px-1.5 py-0.5 text-xs font-bold rounded bg-emerald-600 text-white shrink-0">Recibo</span>}
+                            {status === 'pt' && <span className="inline-flex items-center px-1.5 py-0.5 text-xs font-bold rounded bg-blue-600 text-white shrink-0">TP</span>}
+                            {status?.startsWith('pr:') && <span className="inline-flex items-center px-1.5 py-0.5 text-xs font-bold rounded bg-orange-500 text-white shrink-0">RESERVA TEMPORAL ({status.split(':')[1]})</span>}
                             <span className="truncate text-gray-800">{c.commercial_name || c.fiscal_name}</span>
                           </div>
                         );
@@ -991,12 +1017,48 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
           </div>
         </div>
 
+        {/* Payment Method Selector */}
+        <div className="mb-6 bg-gray-50 p-4 rounded-lg border border-gray-200">
+          <label className="block text-sm font-bold text-gray-700 mb-3">
+            {t('cl_liberate_payment_method') || 'Payment Method'}
+          </label>
+          <div className="grid grid-cols-3 gap-2">
+            {[
+              { id: 'Transfer', key: 'rp_transfer', default: 'Transfer' },
+              { id: 'Bizum', key: 'rp_bizum', default: 'Bizum' },
+              { id: 'Cash', key: 'rp_cash', default: 'Cash (Pending)' }
+            ].map(method => (
+              <button
+                key={method.id}
+                type="button"
+                onClick={() => setReservationPaymentMethod(method.id)}
+                className={`py-2 px-3 text-xs font-semibold rounded-lg border transition-all duration-200 ${
+                  reservationPaymentMethod === method.id
+                    ? 'bg-blue-50 border-blue-500 text-blue-700 shadow-sm'
+                    : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                {t(method.key) || method.default}
+                {method.id === 'Cash' && (
+                  <span className="block text-[9px] opacity-75 font-normal">
+                    {language === 'en' ? 'pending pick-up' : 'pdte. cobro'}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+        </div>
+
         <button 
           onClick={() => handleSave(false)}
           disabled={isSaving}
           className="w-full py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-medium rounded-lg transition-colors flex justify-center items-center gap-2 mt-4"
         >
-          {isSaving ? t('rp_saving') : t('rp_btn_reserve_transfer')}
+          {isSaving ? t('rp_saving') : (
+            reservationPaymentMethod === 'Transfer' ? t('rp_btn_reserve_transfer') :
+            reservationPaymentMethod === 'Bizum' ? (language === 'en' ? 'Reserve (Pending Bizum)' : 'Reservar (Bizum Pendiente)') :
+            (language === 'en' ? 'Reserve (Pending Cash)' : 'Reservar (Efectivo Pendiente)')
+          )}
         </button>
         
         <button 
@@ -1102,9 +1164,21 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
                     <span className="font-medium text-gray-900">{orderDetails.designPrice.toFixed(2)}&#8364;</span>
                   </div>
                 )}
+                <div className="flex justify-between">
+                  <span className="text-gray-500">{t('cl_liberate_payment_method') || 'Payment Method'}</span>
+                  <span className="font-medium text-gray-900">{t(`rp_${(orderDetails.paymentMethod || 'transfer').toLowerCase()}`) || orderDetails.paymentMethod}</span>
+                </div>
+                <div className="flex justify-between pt-2 mt-2 border-t border-gray-200">
+                  <span className="text-gray-600 font-medium">Subtotal</span>
+                  <span className="text-gray-900 font-medium">{((orderDetails.price || 0) + (orderDetails.designPrice || 0)).toFixed(2)}&#8364;</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500 font-medium">{t('inv_vat') || 'IVA (21%)'}</span>
+                  <span className="font-medium text-gray-900">{(((orderDetails.price || 0) + (orderDetails.designPrice || 0)) * 0.21).toFixed(2)}&#8364;</span>
+                </div>
                 <div className="flex justify-between pt-2 mt-2 border-t border-gray-200 font-bold">
-                  <span className="text-gray-700">Subtotal</span>
-                  <span className="text-gray-900">{((orderDetails.price || 0) + (orderDetails.designPrice || 0)).toFixed(2)}&#8364;</span>
+                  <span className="text-gray-700">{t('inv_total') || 'Total'}</span>
+                  <span className="text-blue-600">{(((orderDetails.price || 0) + (orderDetails.designPrice || 0)) * 1.21).toFixed(2)}&#8364;</span>
                 </div>
               </div>
             </div>

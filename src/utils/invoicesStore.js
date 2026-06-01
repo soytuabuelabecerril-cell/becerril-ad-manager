@@ -1,15 +1,80 @@
-// Simple in-memory store for generated invoices
+// Simple store for generated invoices with localStorage persistence
 // In a real production scenario, this would be backed by Supabase.
 
+const isBrowser = typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
+
+// ─── Invoices Store ───────────────────────────────────────────────────────────
 let invoices = [];
+if (isBrowser) {
+  try {
+    const stored = localStorage.getItem('becerril_invoices');
+    if (stored) invoices = JSON.parse(stored);
+  } catch (e) {
+    console.error("Error loading invoices from localStorage", e);
+  }
+}
+
+const saveInvoicesToLocalStorage = () => {
+  if (isBrowser) {
+    try {
+      localStorage.setItem('becerril_invoices', JSON.stringify(invoices));
+    } catch (e) {
+      console.error("Error saving invoices to localStorage", e);
+    }
+  }
+};
 
 export const getInvoices = () => {
   return [...invoices];
 };
 
+// ─── Invoicing Settings ──────────────────────────────────────────────────────
+let settings = {
+  isSequentialEnabled: false,
+  nextInvoiceNumber: 2026060201
+};
+
+if (isBrowser) {
+  try {
+    const stored = localStorage.getItem('becerril_invoice_settings');
+    if (stored) settings = JSON.parse(stored);
+  } catch (e) {
+    console.error("Error loading invoice settings from localStorage", e);
+  }
+}
+
+const saveSettingsToLocalStorage = () => {
+  if (isBrowser) {
+    try {
+      localStorage.setItem('becerril_invoice_settings', JSON.stringify(settings));
+    } catch (e) {
+      console.error("Error saving invoice settings to localStorage", e);
+    }
+  }
+};
+
+export const getInvoiceSettings = () => {
+  return { ...settings };
+};
+
+export const saveInvoiceSettings = (newSettings) => {
+  settings = { ...settings, ...newSettings };
+  saveSettingsToLocalStorage();
+};
+
 export const addInvoice = (invoice) => {
+  let invoiceId = '';
+  if (settings.isSequentialEnabled && settings.nextInvoiceNumber) {
+    const nextNum = parseInt(settings.nextInvoiceNumber, 10);
+    invoiceId = '#FACT.' + nextNum.toString();
+    settings.nextInvoiceNumber = nextNum + 1;
+    saveSettingsToLocalStorage();
+  } else {
+    invoiceId = '#FACT.' + Math.floor(Math.random() * 1000000).toString().padStart(6, '0');
+  }
+
   const newInvoice = {
-    id: 'INV-' + Math.floor(Math.random() * 1000000).toString().padStart(6, '0'),
+    id: invoiceId,
     createdAt: new Date().toISOString(),
     status: 'Active',
     paymentMethod: 'Pending',
@@ -17,6 +82,7 @@ export const addInvoice = (invoice) => {
     ...invoice
   };
   invoices.unshift(newInvoice);
+  saveInvoicesToLocalStorage();
   return newInvoice;
 };
 
@@ -25,6 +91,7 @@ export const updateInvoicePayment = (id, paymentMethod, isPaid) => {
   if (inv) {
     inv.paymentMethod = paymentMethod;
     inv.isPaid = isPaid;
+    saveInvoicesToLocalStorage();
   }
 };
 
@@ -36,8 +103,18 @@ export const cancelInvoice = (id, generateRefund = false) => {
   inv.status = 'Cancelled';
   
   if (generateRefund) {
+    let refundId = '';
+    if (settings.isSequentialEnabled && settings.nextInvoiceNumber) {
+      const nextNum = parseInt(settings.nextInvoiceNumber, 10);
+      refundId = 'REF-' + nextNum.toString();
+      settings.nextInvoiceNumber = nextNum + 1;
+      saveSettingsToLocalStorage();
+    } else {
+      refundId = 'REF-' + Math.floor(Math.random() * 1000000).toString().padStart(6, '0');
+    }
+
     const refundInvoice = {
-      id: 'REF-' + Math.floor(Math.random() * 1000000).toString().padStart(6, '0'),
+      id: refundId,
       createdAt: new Date().toISOString(),
       status: 'Refund',
       originalInvoiceId: inv.id,
@@ -53,21 +130,75 @@ export const cancelInvoice = (id, generateRefund = false) => {
     };
     invoices.unshift(refundInvoice);
   }
+  saveInvoicesToLocalStorage();
 };
 
 export const deleteInvoice = (id) => {
   invoices = invoices.filter(i => i.id !== id);
+  saveInvoicesToLocalStorage();
 };
 
 export const hardDeleteInvoice = (id) => {
   invoices = invoices.filter(i => i.id !== id && i.originalInvoiceId !== id);
+  saveInvoicesToLocalStorage();
+};
+
+/**
+ * Reserve/block the next sequential invoice number.
+ * Creates a placeholder invoice with status 'Reserved'.
+ * @param {string} note - Optional note/reason for the reservation
+ * @returns {object|null} The reserved invoice, or null if sequential mode is off.
+ */
+export const reserveInvoiceNumber = (note = '') => {
+  if (!settings.isSequentialEnabled || !settings.nextInvoiceNumber) return null;
+  
+  const nextNum = parseInt(settings.nextInvoiceNumber, 10);
+  const invoiceId = '#FACT.' + nextNum.toString();
+  settings.nextInvoiceNumber = nextNum + 1;
+  saveSettingsToLocalStorage();
+
+  const reservedInvoice = {
+    id: invoiceId,
+    createdAt: new Date().toISOString(),
+    status: 'Reserved',
+    customerName: 'System User', // Will be rendered localized in the UI using t('system_user')
+    productName: note || 'Reserved ID', // Will show note or t('reserved_id_desc')
+    price: 0,
+    designPrice: 0,
+    vat: 0,
+    total: 0,
+    assignedPage: null,
+    artworkComment: note || 'Blocked out-of-system ID.',
+    paymentMethod: 'Pending',
+    isPaid: false
+  };
+
+  invoices.unshift(reservedInvoice);
+  saveInvoicesToLocalStorage();
+  return reservedInvoice;
 };
 
 // ─── Orders Store ─────────────────────────────────────────────────────────────
 // Orders are pending reservations awaiting payment confirmation.
-// They are promoted to invoices (with VAT) only when payment is confirmed ("liberación").
-
 let orders = [];
+if (isBrowser) {
+  try {
+    const stored = localStorage.getItem('becerril_orders');
+    if (stored) orders = JSON.parse(stored);
+  } catch (e) {
+    console.error("Error loading orders from localStorage", e);
+  }
+}
+
+const saveOrdersToLocalStorage = () => {
+  if (isBrowser) {
+    try {
+      localStorage.setItem('becerril_orders', JSON.stringify(orders));
+    } catch (e) {
+      console.error("Error saving orders to localStorage", e);
+    }
+  }
+};
 
 export const getOrders = () => [...orders];
 
@@ -81,19 +212,15 @@ export const addOrder = (order) => {
     ...order,
   };
   orders.unshift(newOrder);
+  saveOrdersToLocalStorage();
   return newOrder;
 };
 
 export const deleteOrder = (id) => {
   orders = orders.filter(o => o.id !== id);
+  saveOrdersToLocalStorage();
 };
 
-/**
- * Confirm payment for an order → remove the order and generate a final invoice (with VAT).
- * @param {string} orderId
- * @param {string} paymentMethod - 'Transfer' | 'Cash' | 'Bizum'
- * @returns {object|null} The newly created invoice, or null if order not found.
- */
 export const confirmOrderPayment = (orderId, paymentMethod = 'Transfer') => {
   const order = orders.find(o => o.id === orderId);
   if (!order) return null;
@@ -115,30 +242,43 @@ export const confirmOrderPayment = (orderId, paymentMethod = 'Transfer') => {
     isPaid: true,
   });
   orders = orders.filter(o => o.id !== orderId);
+  saveOrdersToLocalStorage();
   return invoice;
 };
 
 // ─── Recibos Store ────────────────────────────────────────────────────────────
 // Recibos are simple cash receipts: no VAT, cash-only, stored separately.
-
 let recibos = [];
+if (isBrowser) {
+  try {
+    const stored = localStorage.getItem('becerril_recibos');
+    if (stored) recibos = JSON.parse(stored);
+  } catch (e) {
+    console.error("Error loading recibos from localStorage", e);
+  }
+}
+
+const saveRecibosToLocalStorage = () => {
+  if (isBrowser) {
+    try {
+      localStorage.setItem('becerril_recibos', JSON.stringify(recibos));
+    } catch (e) {
+      console.error("Error saving recibos to localStorage", e);
+    }
+  }
+};
 
 export const getRecibos = () => {
   return [...recibos];
 };
 
-/**
- * Add a recibo (cash receipt without VAT).
- * @param {object} recibo - { customerName, productName, price, assignedPage, date, artworkComment }
- * @returns {object} The created recibo with id and timestamps.
- */
 export const addRecibo = (recibo) => {
   const newRecibo = {
     id: 'REC-' + Math.floor(Math.random() * 1000000).toString().padStart(6, '0'),
     createdAt: new Date().toISOString(),
     status: 'Active',
     paymentMethod: 'Cash',
-    isPaid: true,   // Recibos are always paid in cash immediately
+    isPaid: true,
     isRecibo: true,
     vat: 0,
     designPrice: recibo.designPrice || 0,
@@ -146,36 +286,30 @@ export const addRecibo = (recibo) => {
     ...recibo
   };
   recibos.unshift(newRecibo);
+  saveRecibosToLocalStorage();
   return newRecibo;
 };
 
 export const deleteRecibo = (id) => {
   recibos = recibos.filter(r => r.id !== id);
+  saveRecibosToLocalStorage();
 };
 
-/**
- * Build the abbreviated product label used in WhatsApp messages.
- * PC = Página completa, T = Tercio, 2T = Dos tercios
- */
 export const getProductAbbreviation = (productName) => {
   if (!productName) return '';
   const lower = productName.toLowerCase();
   if (lower.includes('dos tercios') || lower.includes('⅔') || lower.includes('2/3')) {
-    return '2T'; // Dos tercios
+    return '2T';
   }
   if (lower.includes('tercio') || lower.includes('⅓') || lower.includes('1/3')) {
-    return 'T'; // Tercio
+    return 'T';
   }
   if (lower.includes('página completa') || lower.includes('pagina completa') || lower.includes('contraportada') || lower.includes('portada')) {
-    return 'PC'; // Página completa
+    return 'PC';
   }
   return productName.split(' ').slice(0, 3).join(' ');
 };
 
-/**
- * Generate the WhatsApp message text for a recibo.
- * Format: "Recibí, pago a cuenta – [Abbrev product] – [Customer]"
- */
 export const getReciboWhatsAppMessage = (recibo) => {
   const abbrev = getProductAbbreviation(recibo.productName);
   const amount = recibo.total.toFixed(2);

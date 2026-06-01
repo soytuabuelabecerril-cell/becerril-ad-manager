@@ -437,7 +437,13 @@ const CustomersList = () => {
                         <button
                           onClick={() => {
                             setLiberateCustomer(customer);
-                            setLiberatePaymentMethod('Transfer');
+                            const customerName = customer.commercial_name || customer.fiscal_name || '';
+                            const pendingOrder = getOrders().find(o =>
+                              o.orderType === 'transfer' &&
+                              !o.isPaid &&
+                              o.customerName?.toLowerCase() === customerName.toLowerCase()
+                            );
+                            setLiberatePaymentMethod(pendingOrder?.paymentMethod || 'Transfer');
                             setLiberateSuccess(false);
                             setLiberateModalOpen(true);
                           }}
