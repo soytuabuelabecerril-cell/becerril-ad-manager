@@ -1138,7 +1138,7 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
                   </div>
                   <button 
                     onClick={() => handleDeleteAd(idx)}
-                    className="text-red-400 hover:text-red-700 p-1.5 rounded-md hover:bg-red-100 transition-colors opacity-0 group-hover:opacity-100"
+                    className="text-red-400 hover:text-red-700 p-1.5 rounded-md hover:bg-red-100 transition-colors opacity-100 md:opacity-0 md:group-hover:opacity-100"
                     title={t('rp_delete_res')}
                   >
                     <Trash2 size={16} />
