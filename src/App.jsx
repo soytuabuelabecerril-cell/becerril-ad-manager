@@ -2,12 +2,13 @@ import React, { useState } from 'react';
 import MagazineGrid from './components/MagazineGrid';
 import PagesOverview from './components/PagesOverview';
 import CustomersList from './components/CustomersList';
+import ClientsList from './components/ClientsList';
 import InvoicesList from './components/InvoicesList';
 import PendingOrdersList from './components/PendingOrdersList';
 import MoneyReturnsList from './components/MoneyReturnsList';
 import ReservationPanel from './components/ReservationPanel';
 import FinancialDashboard from './components/FinancialDashboard';
-import { BookOpen, MapPin, Users, Settings, Receipt, Clock, RefreshCcw, Globe, Menu, X, TrendingUp } from 'lucide-react';
+import { BookOpen, MapPin, Users, Settings, Receipt, Clock, RefreshCcw, Globe, Menu, X, TrendingUp, FileText } from 'lucide-react';
 import { useLanguage } from './context/LanguageContext';
 
 function App() {
@@ -79,7 +80,13 @@ function App() {
             onClick={() => handleTabChange('customers')}
             className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${currentTab === 'customers' ? 'bg-blue-600 text-white' : 'hover:bg-slate-800 text-slate-300'}`}
           >
-            <Users size={20} /> {t('nav_customers')}
+            <FileText size={20} /> {t('nav_customers')}
+          </button>
+          <button 
+            onClick={() => handleTabChange('clients')}
+            className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${currentTab === 'clients' ? 'bg-blue-600 text-white' : 'hover:bg-slate-800 text-slate-300'}`}
+          >
+            <Users size={20} /> {t('nav_clients')}
           </button>
           <button 
             onClick={() => handleTabChange('invoices')}
@@ -130,6 +137,7 @@ function App() {
 
         <main className={currentTab !== 'magazine' ? 'p-8' : 'p-8'}>
           {currentTab === 'customers' && <CustomersList />}
+          {currentTab === 'clients' && <ClientsList />}
           {currentTab === 'invoices' && <InvoicesList onSelectPage={setSelectedPage} />}
           {currentTab === 'returns' && <MoneyReturnsList />}
           {currentTab === 'financial' && <FinancialDashboard />}
