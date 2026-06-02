@@ -30,8 +30,8 @@ const initialData = [
   { page_number: 76, ad_type: "Horarios autobuses", status: "Reserved" },
   { page_number: 77, ad_type: "Horarios autobuses", status: "Reserved" },
   { page_number: 78, ad_type: "Horarios autobuses", status: "Reserved" },
-  { page_number: 91, ad_type: "Interior de contraportada", status: "Available" },
-  { page_number: 92, ad_type: "Contraportada", status: "Available" }
+  { page_number: 91, ad_type: null, status: "Available" },
+  { page_number: 92, ad_type: null, status: "Available" }
 ];
 
 const isBrowser = typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
@@ -41,7 +41,22 @@ const getInitialPagesData = () => {
     try {
       const stored = localStorage.getItem('becerril_magazine_pages');
       if (stored) {
-        return JSON.parse(stored);
+        const parsed = JSON.parse(stored);
+        let updated = false;
+        parsed.forEach(p => {
+          if (p.page_number === 91 || p.page_number === 92) {
+            if (p.ads && p.ads.some(ad => ad.customer_id === 'legacy')) {
+              p.status = 'Available';
+              p.ad_type = null;
+              p.ads = [];
+              updated = true;
+            }
+          }
+        });
+        if (updated) {
+          localStorage.setItem('becerril_magazine_pages', JSON.stringify(parsed));
+        }
+        return parsed;
       }
     } catch (e) {
       console.error("Error loading magazine pages from localStorage", e);

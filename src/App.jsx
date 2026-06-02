@@ -8,11 +8,15 @@ import PendingOrdersList from './components/PendingOrdersList';
 import MoneyReturnsList from './components/MoneyReturnsList';
 import ReservationPanel from './components/ReservationPanel';
 import FinancialDashboard from './components/FinancialDashboard';
-import { BookOpen, MapPin, Users, Settings, Receipt, Clock, RefreshCcw, Globe, Menu, X, TrendingUp, FileText } from 'lucide-react';
+import { BookOpen, MapPin, Users, Settings, Receipt, Clock, RefreshCcw, Globe, Menu, X, TrendingUp, FileText, LogOut } from 'lucide-react';
 import { useLanguage } from './context/LanguageContext';
+import { useDatabase } from './context/DatabaseContext';
+import { supabase } from './lib/supabase';
+import Login from './components/Login';
 
 function App() {
   const { t, language, setLanguage } = useLanguage();
+  const { session, loading } = useDatabase();
   const [selectedPage, setSelectedPage] = useState(null);
   const [locationData, setLocationData] = useState(null);
   const [currentTab, setCurrentTab] = useState('magazine');
@@ -30,6 +34,19 @@ function App() {
   const handleLocationSelect = (data) => {
     setLocationData(data);
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen w-full flex flex-col items-center justify-center bg-slate-950 text-slate-300 font-sans">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500 mb-4"></div>
+        <p className="text-sm tracking-wide font-medium">{language === 'es' ? 'Cargando aplicación...' : 'Loading application...'}</p>
+      </div>
+    );
+  }
+
+  if (!session) {
+    return <Login />;
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 flex">
@@ -112,8 +129,14 @@ function App() {
           >
             <TrendingUp size={20} /> {t('nav_financial')}
           </button>
-          <button className="w-full flex items-center gap-3 px-3 py-2 hover:bg-slate-800 rounded-lg text-slate-300">
+          <button className="w-full flex items-center gap-3 px-3 py-2 hover:bg-slate-800 rounded-lg text-slate-300 mb-2">
             <Settings size={20} /> {t('nav_settings')}
+          </button>
+          <button 
+            onClick={() => supabase.auth.signOut()}
+            className="w-full flex items-center gap-3 px-3 py-2 hover:bg-red-950/30 text-red-400 hover:text-red-300 rounded-lg border border-red-500/10 hover:border-red-500/20 transition-all cursor-pointer"
+          >
+            <LogOut size={20} /> {language === 'es' ? 'Cerrar Sesión' : 'Sign Out'}
           </button>
         </nav>
       </div>
@@ -135,7 +158,7 @@ function App() {
           </div>
         </header>
 
-        <main className={currentTab !== 'magazine' ? 'p-8' : 'p-8'}>
+        <main className="p-3 sm:p-4 md:p-8">
           {currentTab === 'customers' && <CustomersList />}
           {currentTab === 'clients' && <ClientsList />}
           {currentTab === 'invoices' && <InvoicesList onSelectPage={setSelectedPage} />}
@@ -163,8 +186,8 @@ function App() {
 
       {/* Modal Overlay for Reservation Panel */}
       {selectedPage && currentTab !== 'customers' && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto animate-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-3 sm:p-4 overflow-y-auto animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[94dvh] sm:max-h-[90dvh] overflow-y-auto relative my-auto animate-in zoom-in-95 duration-200">
             <ReservationPanel 
               selectedPage={selectedPage} 
               onReservationComplete={() => setSelectedPage(null)} 

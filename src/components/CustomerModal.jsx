@@ -57,9 +57,9 @@ const CustomerModal = ({ isOpen, onClose, customer, onSave }) => {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl w-full max-w-2xl shadow-xl overflow-hidden flex flex-col max-h-[90vh]">
-        <div className="flex justify-between items-center p-6 border-b border-gray-100">
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-2 sm:p-4">
+      <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full max-w-2xl shadow-xl overflow-hidden flex flex-col max-h-[85dvh] sm:max-h-[90dvh]">
+        <div className="flex justify-between items-center p-4 sm:p-6 border-b border-gray-100">
           <h2 className="text-xl font-bold text-gray-800">
             {customer ? t('edit_customer') || 'Edit Customer' : t('add_customer') || 'Add Customer'}
           </h2>
@@ -68,7 +68,7 @@ const CustomerModal = ({ isOpen, onClose, customer, onSave }) => {
           </button>
         </div>
         
-        <div className="p-6 overflow-y-auto flex-1">
+        <div className="p-4 sm:p-6 overflow-y-auto flex-1">
           <form id="customerForm" onSubmit={handleSubmit} className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
@@ -166,7 +166,7 @@ const CustomerModal = ({ isOpen, onClose, customer, onSave }) => {
           </form>
         </div>
         
-        <div className="p-6 border-t border-gray-100 bg-gray-50 flex justify-end gap-3 rounded-b-2xl">
+        <div className="p-4 sm:p-6 border-t border-gray-100 bg-gray-50 flex justify-end gap-3 rounded-b-none sm:rounded-b-2xl">
           <button 
             type="button" 
             onClick={onClose}

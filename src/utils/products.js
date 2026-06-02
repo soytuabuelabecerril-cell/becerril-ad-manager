@@ -9,5 +9,6 @@ export const products = [
   { id: 8, name: '⅔ dos tercios superior', price: 100, exclusive: false, requiredSlots: ['top', 'middle'] },
   { id: 9, name: '⅔ dos tercios bajo', price: 100, exclusive: false, requiredSlots: ['middle', 'bottom'] },
   { id: 10, name: 'Contraportada', price: 180, exclusive: true, requiredSlots: ['top', 'middle', 'bottom'] },
-  { id: 11, name: 'Interior Portada', price: 180, exclusive: true, requiredSlots: ['top', 'middle', 'bottom'] }
+  { id: 11, name: 'Interior Portada', price: 180, exclusive: true, requiredSlots: ['top', 'middle', 'bottom'] },
+  { id: 12, name: 'Interior Contraportada', price: 180, exclusive: true, requiredSlots: ['top', 'middle', 'bottom'] }
 ];

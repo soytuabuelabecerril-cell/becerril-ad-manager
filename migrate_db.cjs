@@ -14,7 +14,7 @@ async function runMigration() {
     await client.connect();
     console.log("Connected to Supabase Postgres.");
 
-    const sqlPath = path.join(__dirname, 'create_ad_reservations.sql');
+    const sqlPath = path.join(__dirname, 'setup_database.sql');
     const sql = fs.readFileSync(sqlPath, 'utf8');
 
     console.log("Executing SQL migration...");

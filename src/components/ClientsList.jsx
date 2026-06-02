@@ -109,7 +109,7 @@ const ClientsList = () => {
   }
 
   return (
-    <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-6 max-w-6xl mx-auto">
+    <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-3 sm:p-6 max-w-6xl mx-auto">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 pb-4 border-b border-gray-100">
         <div>
           <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
@@ -117,7 +117,7 @@ const ClientsList = () => {
             {language === 'es' ? 'Clientes' : 'Customers'}
             <span className="text-gray-400 font-normal text-sm ml-1">({filteredCustomers.length})</span>
           </h2>
-          <p className="text-gray-500 text-sm mt-1">
+          <p className="text-gray-500 text-sm mt-1 hidden sm:block">
             {language === 'es' ? 'Listado completo de clientes registrados en la base de datos.' : 'Complete list of all registered customers in the database.'}
           </p>
         </div>
@@ -143,7 +143,8 @@ const ClientsList = () => {
         </div>
       </div>
 
-      <div className="overflow-x-auto">
+      {/* Desktop View */}
+      <div className="overflow-x-auto hidden md:block">
         <table className="w-full text-left border-collapse">
           <thead>
             <tr className="bg-gray-50 text-gray-600 text-xs tracking-wider uppercase font-semibold border-b border-gray-100">
@@ -215,6 +216,75 @@ const ClientsList = () => {
             )}
           </tbody>
         </table>
+      </div>
+
+      {/* Mobile Card List (hidden on md and larger) */}
+      <div className="grid grid-cols-1 gap-4 md:hidden">
+        {filteredCustomers.map((customer) => (
+          <div key={customer.id} className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm relative flex flex-col gap-3">
+            {/* Header */}
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center font-bold shrink-0">
+                  {customer.commercial_name ? customer.commercial_name.charAt(0) : customer.fiscal_name.charAt(0)}
+                </div>
+                <div>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <button 
+                      onClick={() => handleEditCustomer(customer)}
+                      className="p-1 hover:bg-slate-100 rounded text-blue-600 transition-colors inline-flex items-center justify-center cursor-pointer shrink-0"
+                      title={language === 'es' ? 'Editar Cliente' : 'Edit Customer'}
+                    >
+                      <Edit2 size={14} />
+                    </button>
+                    <span className="font-bold text-gray-800 leading-tight">{customer.commercial_name || customer.fiscal_name}</span>
+                  </div>
+                  {customer.commercial_name && customer.fiscal_name && (
+                    <div className="text-xs text-gray-400 mt-0.5">{customer.fiscal_name}</div>
+                  )}
+                  <div className="text-xs text-gray-500 mt-0.5 font-mono">NIF: {customer.nif || '—'}</div>
+                </div>
+              </div>
+              
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-blue-50 text-blue-800 border border-blue-100 shrink-0">
+                {customer.category || 'General'}
+              </span>
+            </div>
+
+            {/* Details */}
+            <div className="text-xs text-gray-600 space-y-1.5 bg-gray-50/50 p-2.5 rounded-lg border border-gray-50">
+              {customer.contact_name && (
+                <div className="font-semibold text-gray-700 border-b border-gray-100 pb-1 mb-1">
+                  {language === 'es' ? 'Contacto: ' : 'Contact: '}{customer.contact_name}
+                </div>
+              )}
+              {customer.email && (
+                <a href={`mailto:${customer.email}`} className="flex items-center gap-2 hover:text-blue-600 transition-colors">
+                  <Mail size={12} className="text-gray-400 shrink-0" />
+                  <span className="truncate">{customer.email}</span>
+                </a>
+              )}
+              {customer.whatsapp && (
+                <div className="flex items-center gap-2">
+                  <Phone size={12} className="text-gray-400 shrink-0" />
+                  <span>{customer.whatsapp}</span>
+                </div>
+              )}
+              {customer.address && (
+                <div className="flex items-start gap-2">
+                  <MapPin size={12} className="text-gray-400 mt-0.5 shrink-0" />
+                  <span className="line-clamp-2">{customer.address}</span>
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
+        {filteredCustomers.length === 0 && (
+          <div className="bg-white rounded-xl border border-gray-100 p-8 text-center text-gray-500">
+            <ShieldAlert className="mx-auto mb-2 opacity-30" size={32} />
+            {language === 'es' ? 'No se encontraron clientes.' : 'No customers found.'}
+          </div>
+        )}
       </div>
 
       <CustomerModal

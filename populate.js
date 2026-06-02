@@ -36,8 +36,8 @@ const pagesData = [
   { page_number: 76, ad_type: "Horarios autobuses", status: "Reserved" },
   { page_number: 77, ad_type: "Horarios autobuses", status: "Reserved" },
   { page_number: 78, ad_type: "Horarios autobuses", status: "Reserved" },
-  { page_number: 91, ad_type: "Interior de contraportada", status: "Available" },
-  { page_number: 92, ad_type: "Contraportada", status: "Available" }
+  { page_number: 91, ad_type: null, status: "Available" },
+  { page_number: 92, ad_type: null, status: "Available" }
 ];
 
 async function updatePages() {

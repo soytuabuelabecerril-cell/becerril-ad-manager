@@ -1,6 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { getInvoices } from '../utils/invoicesStore';
-import { getFullPages } from '../utils/fallbackData';
+import React from 'react';
+import { useDatabase } from '../context/DatabaseContext';
 import { TrendingUp, CheckCircle, Clock, Euro, BookOpen, AlertCircle, BarChart2, ArrowUpRight, ArrowDownRight } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
 
@@ -29,13 +28,7 @@ const KpiCard = ({ icon: Icon, label, value, sub, color, trend }) => (
 
 const FinancialDashboard = () => {
   const { t } = useLanguage();
-  const [invoices, setInvoices] = useState([]);
-  const [pages, setPages] = useState([]);
-
-  useEffect(() => {
-    setInvoices(getInvoices());
-    setPages(getFullPages());
-  }, []);
+  const { invoices, pages } = useDatabase();
 
   /* ── Financial Metrics ─────────────────────────────────────────── */
   const active = invoices.filter(inv => inv.status !== 'Cancelled' && inv.status !== 'Refund');

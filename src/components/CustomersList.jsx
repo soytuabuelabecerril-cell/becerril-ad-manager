@@ -1,16 +1,22 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { Mail, Phone, MapPin, FileText, Search, Clock, Bookmark, CheckCircle } from 'lucide-react';
+import { Mail, Phone, MapPin, FileText, Search, Clock, Bookmark, CheckCircle, Edit2 } from 'lucide-react';
 import { fallbackCustomers } from '../utils/fallbackCustomers';
-import { getFullPages } from '../utils/fallbackData';
+import { useDatabase } from '../context/DatabaseContext';
 import { useLanguage } from '../context/LanguageContext';
 import CustomerModal from './CustomerModal';
-import { getInvoices, getRecibos, getOrders, confirmOrderPayment } from '../utils/invoicesStore';
 
 const CustomersList = () => {
   const { t } = useLanguage();
+  const {
+    pages,
+    invoices,
+    recibos,
+    orders,
+    confirmOrderPayment
+  } = useDatabase();
+
   const [customers, setCustomers] = useState([]);
-  const [pages, setPages] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState(null);
@@ -33,35 +39,14 @@ const CustomersList = () => {
         
         if (custError) throw custError;
         
-        let loadedCustomers = [];
         if (custData && custData.length > 0) {
-          loadedCustomers = custData;
+          setCustomers(custData);
         } else {
-          loadedCustomers = fallbackCustomers;
+          setCustomers(fallbackCustomers);
         }
-
-        // Fetch magazine pages
-        const { data: pagesData, error: pagesError } = await supabase
-          .from('magazine_pages')
-          .select('*')
-          .order('page_number', { ascending: true });
-        
-        let loadedPages = [];
-        if (pagesError) {
-          console.warn("Could not fetch magazine_pages, using fallback data:", pagesError);
-          loadedPages = getFullPages();
-        } else if (pagesData && pagesData.length > 0) {
-          loadedPages = pagesData;
-        } else {
-          loadedPages = getFullPages();
-        }
-
-        setCustomers(loadedCustomers);
-        setPages(loadedPages);
       } catch (err) {
-        console.error("Error fetching data:", err);
+        console.error("Error fetching customers:", err);
         setCustomers(fallbackCustomers);
-        setPages(getFullPages());
       } finally {
         setLoading(false);
       }
@@ -169,7 +154,6 @@ const CustomersList = () => {
   };
 
   const getCustomerInvoices = (customer) => {
-    const invoices = getInvoices() || [];
     return invoices.filter(inv => 
       (inv.customerName && (
         inv.customerName.toLowerCase() === (customer.commercial_name || '').toLowerCase() ||
@@ -180,8 +164,7 @@ const CustomersList = () => {
 
   const isCustomerPending = (customer) => {
     const ads = getCustomerAds(customer);
-    const invoices = getCustomerInvoices(customer);
-    const orders = getOrders();
+    const customerInvoices = getCustomerInvoices(customer);
     const name = (customer.commercial_name || customer.fiscal_name || '').toLowerCase();
 
     const hasPendingTransferAd = ads.some(ad => 
@@ -189,7 +172,7 @@ const CustomersList = () => {
       !ad.isPaid && 
       (ad.paymentMethod === 'Transfer' || !ad.paymentMethod)
     );
-    const hasPendingTransferInvoice = invoices.some(inv => 
+    const hasPendingTransferInvoice = customerInvoices.some(inv => 
       !inv.isPaid && 
       inv.status !== 'Cancelled' &&
       (inv.paymentMethod === 'Transfer' || inv.paymentMethod === 'Pending')
@@ -204,7 +187,6 @@ const CustomersList = () => {
 
   const isCustomerPreReserved = (customer) => {
     const ads = getCustomerAds(customer);
-    const orders = getOrders();
     const name = (customer.commercial_name || customer.fiscal_name || '').toLowerCase();
     const hasPreReservedAd = ads.some(ad => ad.isPreReserved);
     const hasPreReservedOrder = orders.some(o =>
@@ -216,8 +198,7 @@ const CustomersList = () => {
 
   const isCustomerClosed = (customer) => {
     const ads = getCustomerAds(customer);
-    const invoices = getCustomerInvoices(customer);
-    const recibos = getRecibos() || [];
+    const customerInvoices = getCustomerInvoices(customer);
     
     const customerRecibos = recibos.filter(r => 
       (r.customerName && (
@@ -227,7 +208,7 @@ const CustomersList = () => {
     );
 
     const hasPaidAd = ads.some(ad => ad.isPaid);
-    const hasPaidInvoice = invoices.some(inv => inv.isPaid);
+    const hasPaidInvoice = customerInvoices.some(inv => inv.isPaid);
     const hasRecibo = customerRecibos.length > 0;
 
     return hasPaidAd || hasPaidInvoice || hasRecibo;
@@ -265,105 +246,105 @@ const CustomersList = () => {
   });
 
   return (
-    <div className="p-8">
+    <div className="p-0 sm:p-2 md:p-4">
       {/* Customer State Subareas Header */}
-      <div className="mb-8 bg-white p-6 rounded-xl border border-gray-100 shadow-sm">
-        <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">
+      <div className="mb-4 md:mb-8 bg-white p-3 sm:p-6 rounded-xl border border-gray-100 shadow-sm">
+        <h3 className="text-[10px] sm:text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 sm:mb-4">
           {t('customer_state')}
         </h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-3 gap-2 md:gap-4">
           {/* Pending Subarea */}
           <button
             onClick={() => setActiveState('pending')}
-            className={`flex items-center justify-between p-4 rounded-xl border transition-all duration-200 ${
+            className={`flex flex-col sm:flex-row items-center sm:justify-between p-2 sm:p-4 rounded-xl border transition-all duration-200 ${
               activeState === 'pending'
                 ? 'bg-red-50/60 border-red-200 text-red-700 shadow-sm ring-1 ring-red-300'
                 : 'bg-gray-50/30 border-gray-100 text-gray-600 hover:bg-gray-50 hover:border-gray-200'
             }`}
           >
-            <div className="flex items-center gap-3">
-              <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+            <div className="flex flex-col sm:flex-row items-center gap-1 sm:gap-3 text-center sm:text-left">
+              <div className={`w-7 h-7 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center shrink-0 ${
                 activeState === 'pending' ? 'bg-red-500 text-white' : 'bg-red-100 text-red-600'
               }`}>
-                <Clock size={16} />
+                <Clock size={14} className="sm:w-4 sm:h-4" />
               </div>
-              <div className="text-left">
-                <div className="font-bold text-sm">{t('cs_pending')}</div>
-                <div className="text-xs opacity-75">{t('customer_state')}</div>
+              <div>
+                <div className="font-bold text-[11px] sm:text-sm leading-tight">{t('cs_pending')}</div>
+                <div className="text-[9px] sm:text-xs opacity-75 hidden sm:block">{t('customer_state')}</div>
               </div>
             </div>
-            <div className="text-xl font-extrabold">{customersByState.pending.length}</div>
+            <div className="text-xs sm:text-xl font-extrabold mt-1 sm:mt-0">{customersByState.pending.length}</div>
           </button>
 
           {/* Pre-reserved Subarea */}
           <button
             onClick={() => setActiveState('pre-reserved')}
-            className={`flex items-center justify-between p-4 rounded-xl border transition-all duration-200 ${
+            className={`flex flex-col sm:flex-row items-center sm:justify-between p-2 sm:p-4 rounded-xl border transition-all duration-200 ${
               activeState === 'pre-reserved'
                 ? 'bg-orange-50/60 border-orange-200 text-orange-700 shadow-sm ring-1 ring-orange-300'
                 : 'bg-gray-50/30 border-gray-100 text-gray-600 hover:bg-gray-50 hover:border-gray-200'
             }`}
           >
-            <div className="flex items-center gap-3">
-              <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+            <div className="flex flex-col sm:flex-row items-center gap-1 sm:gap-3 text-center sm:text-left">
+              <div className={`w-7 h-7 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center shrink-0 ${
                 activeState === 'pre-reserved' ? 'bg-orange-500 text-white' : 'bg-orange-100 text-orange-600'
               }`}>
-                <Bookmark size={16} />
+                <Bookmark size={14} className="sm:w-4 sm:h-4" />
               </div>
-              <div className="text-left">
-                <div className="font-bold text-sm">{t('cs_pre_reserved')}</div>
-                <div className="text-xs opacity-75">{t('customer_state')}</div>
+              <div>
+                <div className="font-bold text-[11px] sm:text-sm leading-tight">{t('cs_pre_reserved')}</div>
+                <div className="text-[9px] sm:text-xs opacity-75 hidden sm:block">{t('customer_state')}</div>
               </div>
             </div>
-            <div className="text-xl font-extrabold">{customersByState['pre-reserved'].length}</div>
+            <div className="text-xs sm:text-xl font-extrabold mt-1 sm:mt-0">{customersByState['pre-reserved'].length}</div>
           </button>
 
           {/* Closed Subarea */}
           <button
             onClick={() => setActiveState('closed')}
-            className={`flex items-center justify-between p-4 rounded-xl border transition-all duration-200 ${
+            className={`flex flex-col sm:flex-row items-center sm:justify-between p-2 sm:p-4 rounded-xl border transition-all duration-200 ${
               activeState === 'closed'
                 ? 'bg-green-50/60 border-green-200 text-green-700 shadow-sm ring-1 ring-green-300'
                 : 'bg-gray-50/30 border-gray-100 text-gray-600 hover:bg-gray-50 hover:border-gray-200'
             }`}
           >
-            <div className="flex items-center gap-3">
-              <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+            <div className="flex flex-col sm:flex-row items-center gap-1 sm:gap-3 text-center sm:text-left">
+              <div className={`w-7 h-7 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center shrink-0 ${
                 activeState === 'closed' ? 'bg-green-500 text-white' : 'bg-green-100 text-green-600'
               }`}>
-                <CheckCircle size={16} />
+                <CheckCircle size={14} className="sm:w-4 sm:h-4" />
               </div>
-              <div className="text-left">
-                <div className="font-bold text-sm">{t('cs_closed')}</div>
-                <div className="text-xs opacity-75">{t('customer_state')}</div>
+              <div>
+                <div className="font-bold text-[11px] sm:text-sm leading-tight">{t('cs_closed')}</div>
+                <div className="text-[9px] sm:text-xs opacity-75 hidden sm:block">{t('customer_state')}</div>
               </div>
             </div>
-            <div className="text-xl font-extrabold">{customersByState.closed.length}</div>
+            <div className="text-xs sm:text-xl font-extrabold mt-1 sm:mt-0">{customersByState.closed.length}</div>
           </button>
         </div>
       </div>
 
-      <div className="flex justify-between items-center mb-8">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4 md:mb-8 px-1">
         <div>
-          <h2 className="text-2xl font-bold text-gray-800">
-            {t('customers_title')} <span className="text-gray-500 font-medium ml-2">({activeCustomers.length})</span>
+          <h2 className="text-xl md:text-2xl font-bold text-gray-800">
+            {t('customers_title')} <span className="text-gray-500 font-medium ml-2 text-base md:text-lg">({activeCustomers.length})</span>
           </h2>
-          <p className="text-gray-500 mt-1">{t('customers_desc')}</p>
+          <p className="text-gray-500 text-xs md:text-sm mt-0.5 md:mt-1 hidden sm:block">{t('customers_desc')}</p>
         </div>
-        <div className="flex items-center gap-4">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
+          <div className="relative w-full sm:w-auto">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
             <input
               type="text"
               placeholder={t('cl_search_placeholder') || 'Search customers...'}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 w-64"
+              className="pl-9 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 w-full sm:w-64 text-sm"
             />
           </div>
           <button 
             onClick={handleAddCustomer}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium shadow-sm transition-colors whitespace-nowrap"
+            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium shadow-sm transition-colors text-sm whitespace-nowrap text-center"
           >
             {t('add_customer')}
           </button>
@@ -371,7 +352,8 @@ const CustomersList = () => {
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-        <div className="overflow-x-auto">
+        {/* Desktop View */}
+        <div className="overflow-x-auto hidden md:block">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-100 text-gray-500 text-sm tracking-wider uppercase">
@@ -449,7 +431,7 @@ const CustomersList = () => {
                           onClick={() => {
                             setLiberateCustomer(customer);
                             const customerName = customer.commercial_name || customer.fiscal_name || '';
-                            const pendingOrder = getOrders().find(o =>
+                            const pendingOrder = orders.find(o =>
                               o.orderType === 'transfer' &&
                               !o.isPaid &&
                               o.customerName?.toLowerCase() === customerName.toLowerCase()
@@ -483,6 +465,114 @@ const CustomersList = () => {
             </tbody>
           </table>
         </div>
+
+        {/* Mobile Card List (hidden on md and larger) */}
+        <div className="grid grid-cols-1 gap-4 md:hidden">
+          {filteredCustomers.map((customer) => (
+            <div key={customer.id} className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm relative flex flex-col gap-3">
+              {/* Header: Avatar, Name & NIF */}
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center font-bold shrink-0">
+                    {customer.commercial_name ? customer.commercial_name.charAt(0) : customer.fiscal_name.charAt(0)}
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <button 
+                        onClick={() => handleEditCustomer(customer)}
+                        className="p-1 hover:bg-slate-100 rounded text-blue-600 transition-colors inline-flex items-center justify-center cursor-pointer shrink-0"
+                        title={t('edit') || 'Edit Customer'}
+                      >
+                        <Edit2 size={14} />
+                      </button>
+                      <span className="font-bold text-gray-800 leading-tight">{customer.commercial_name || customer.fiscal_name}</span>
+                    </div>
+                    <div className="text-xs text-gray-500 mt-0.5">NIF: {customer.nif}</div>
+                  </div>
+                </div>
+                
+                {/* State badges on top right */}
+                <div className="flex flex-col items-end gap-1 shrink-0">
+                  {isCustomerPending(customer) && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-red-50 text-red-700 border border-red-100">
+                      <Clock size={10} className="text-red-500" />
+                      {t('cs_pending')}
+                    </span>
+                  )}
+                  {isCustomerPreReserved(customer) && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-orange-50 text-orange-700 border border-orange-100">
+                      <Clock size={10} className="text-orange-500" />
+                      {t('cs_pre_reserved')}
+                    </span>
+                  )}
+                  {isCustomerClosed(customer) && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-green-50 text-green-700 border border-green-100">
+                      <CheckCircle size={10} className="text-green-500" />
+                      {t('cs_closed')}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Content Details */}
+              <div className="text-xs text-gray-600 space-y-1.5 bg-gray-50/50 p-2.5 rounded-lg border border-gray-50">
+                {customer.email && (
+                  <div className="flex items-center gap-2">
+                    <Mail size={12} className="text-gray-400 shrink-0" />
+                    <span className="truncate">{customer.email}</span>
+                  </div>
+                )}
+                {customer.whatsapp && (
+                  <div className="flex items-center gap-2">
+                    <Phone size={12} className="text-gray-400 shrink-0" />
+                    <span>{customer.whatsapp}</span>
+                  </div>
+                )}
+                {customer.address && (
+                  <div className="flex items-start gap-2">
+                    <MapPin size={12} className="text-gray-400 mt-0.5 shrink-0" />
+                    <span className="line-clamp-2">{customer.address}</span>
+                  </div>
+                )}
+                {customer.last_year_product && (
+                  <div className="flex items-start gap-2 pt-1 border-t border-gray-100 mt-1">
+                    <FileText size={12} className="text-gray-400 mt-0.5 shrink-0" />
+                    <span className="font-medium text-gray-700">{customer.last_year_product}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Actions always visible at bottom */}
+              {activeState === 'pending' && isCustomerPending(customer) && (
+                <div className="flex gap-2 justify-end border-t border-gray-100 pt-3 mt-1">
+                  <button
+                    onClick={() => {
+                      setLiberateCustomer(customer);
+                      const customerName = customer.commercial_name || customer.fiscal_name || '';
+                      const pendingOrder = orders.find(o =>
+                        o.orderType === 'transfer' &&
+                        !o.isPaid &&
+                        o.customerName?.toLowerCase() === customerName.toLowerCase()
+                      );
+                      setLiberatePaymentMethod(pendingOrder?.paymentMethod || 'Transfer');
+                      setLiberateSuccess(false);
+                      setLiberateModalOpen(true);
+                    }}
+                    className="w-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-2 px-3 rounded-lg transition-colors flex items-center justify-center gap-1 shadow-sm"
+                  >
+                    <CheckCircle size={14} />
+                    {t('cl_liberate_btn')}
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
+          {filteredCustomers.length === 0 && (
+            <div className="bg-white rounded-xl border border-gray-100 p-8 text-center text-gray-500">
+              {t('no_customers')}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Liberate Modal — Confirm Payment & Generate Invoice */}
@@ -503,7 +593,6 @@ const CustomersList = () => {
                     setLiberateModalOpen(false);
                     setLiberateSuccess(false);
                     setLiberateCustomer(null);
-                    setPages(getFullPages());
                   }}
                   className="w-full py-2.5 bg-gray-800 hover:bg-gray-900 text-white font-bold rounded-lg transition-colors"
                 >
@@ -544,9 +633,9 @@ const CustomersList = () => {
                     {t('cancel')}
                   </button>
                   <button
-                    onClick={() => {
+                    onClick={async () => {
                       const customerName = liberateCustomer.commercial_name || liberateCustomer.fiscal_name || '';
-                      const pendingOrders = getOrders().filter(o =>
+                      const pendingOrders = orders.filter(o =>
                         o.orderType === 'transfer' &&
                         !o.isPaid &&
                         o.customerName?.toLowerCase() === customerName.toLowerCase()
@@ -555,25 +644,9 @@ const CustomersList = () => {
                         alert(t('cl_liberate_no_orders'));
                         return;
                       }
-                      pendingOrders.forEach(order => {
-                        const inv = confirmOrderPayment(order.id, liberatePaymentMethod);
-                        if (inv) {
-                          // Mark matching page ad(s) as paid
-                          getFullPages().forEach(p => {
-                            if (p.ads) {
-                              p.ads.forEach(ad => {
-                                if (
-                                  ad.customer_name?.toLowerCase() === customerName.toLowerCase() &&
-                                  ad.ad_type === order.productName
-                                ) {
-                                  ad.isPaid = true;
-                                  ad.paymentMethod = liberatePaymentMethod;
-                                }
-                              });
-                            }
-                          });
-                        }
-                      });
+                      for (const order of pendingOrders) {
+                        await confirmOrderPayment(order.id, liberatePaymentMethod);
+                      }
                       setLiberateSuccess(true);
                     }}
                     className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg transition-colors"

@@ -1,6 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
-import { getFullPages } from '../utils/fallbackData';
+import React from 'react';
+import { useDatabase } from '../context/DatabaseContext';
 import { fallbackCustomers } from '../utils/fallbackCustomers';
 import { products } from '../utils/products';
 import { Plus } from 'lucide-react';
@@ -8,61 +7,16 @@ import { useLanguage } from '../context/LanguageContext';
 
 const MagazineGrid = ({ onPageClick }) => {
   const { t } = useLanguage();
-  const [pages, setPages] = useState([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const fetchPages = async () => {
-      try {
-        const { data, error } = await supabase
-          .from('magazine_pages')
-          .select('*')
-          .order('page_number', { ascending: true });
-        
-        if (error) throw error;
-        
-        if (data && data.length > 0) {
-          setPages(data);
-        } else {
-          setPages(getFullPages());
-        }
-      } catch (err) {
-        console.error("Error fetching pages:", err);
-        setPages(getFullPages());
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchPages();
-
-    // Subscribe to real-time changes
-    const channel = supabase
-      .channel('schema-db-changes')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'magazine_pages' },
-        (payload) => {
-          console.log('Real-time change received!', payload);
-          // Simple optimistic refresh: re-fetch all
-          fetchPages();
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, []);
+  const { pages, loading } = useDatabase();
 
   const getStatusColor = (page) => {
     let classes = '';
 
     // Handle borders and text color
-    if (page.page_number === 91 || page.page_number === 92) {
-      classes += ' border-orange-500 text-white';
-    } else if (page.ads && page.ads.length > 0) {
+    if (page.ads && page.ads.length > 0) {
       classes += ' border-red-700 text-white';
+    } else if (page.page_number === 91 || page.page_number === 92) {
+      classes += ' border-orange-500 text-white';
     } else {
       switch (page.status) {
         case 'Locked': classes += ' border-red-300 text-red-800 cursor-not-allowed'; break;
@@ -85,7 +39,7 @@ const MagazineGrid = ({ onPageClick }) => {
   const getBackgroundStyle = (page) => {
     if (!page.ads || page.ads.length === 0) return {};
     
-    const red = page.page_number === 91 || page.page_number === 92 ? '#f97316' : '#ef4444';
+    const red = '#ef4444';
     const white = '#f3f4f6'; 
     
     const filledSlots = new Set();
@@ -147,7 +101,7 @@ const MagazineGrid = ({ onPageClick }) => {
   }
 
   return (
-    <div className="p-4 bg-white rounded-xl shadow-sm border border-gray-100">
+    <div className="p-2.5 sm:p-4 bg-white rounded-xl shadow-sm border border-gray-100">
       <div className="flex items-center gap-4 mb-4">
         <h2 className="text-xl font-bold text-gray-800">{t('magazine_layout')}</h2>
         <button 
@@ -197,7 +151,7 @@ const MagazineGrid = ({ onPageClick }) => {
           return (
           <button
             key={page.page_number}
-            disabled={page.status === 'Locked' || page.page_number === 91 || page.page_number === 92}
+            disabled={page.status === 'Locked'}
             onClick={() => onPageClick(page)}
             className={`
               group relative aspect-[3/4] rounded-md border-2 flex flex-col items-center justify-center

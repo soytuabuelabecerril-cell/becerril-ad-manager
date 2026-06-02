@@ -1,60 +1,17 @@
-import React, { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
-import { getFullPages } from '../utils/fallbackData';
+import React from 'react';
+import { useDatabase } from '../context/DatabaseContext';
 import { useLanguage } from '../context/LanguageContext';
 
 const PagesOverview = () => {
   const { t } = useLanguage();
-  const [pages, setPages] = useState([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const fetchPages = async () => {
-      try {
-        const { data, error } = await supabase
-          .from('magazine_pages')
-          .select('*')
-          .order('page_number', { ascending: true });
-        
-        if (error) throw error;
-        
-        if (data && data.length > 0) {
-          setPages(data);
-        } else {
-          setPages(getFullPages());
-        }
-      } catch (err) {
-        console.error("Error fetching pages:", err);
-        setPages(getFullPages());
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchPages();
-
-    const channel = supabase
-      .channel('schema-db-changes-overview')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'magazine_pages' },
-        (payload) => {
-          fetchPages();
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, []);
+  const { pages, loading } = useDatabase();
 
   if (loading) {
     return <div className="p-4 bg-white rounded-xl shadow-sm border border-gray-100 flex items-center justify-center">{t('po_loading')}</div>;
   }
 
   const isOccupied = (page) => {
-    return (page.ad_type && page.ad_type.trim() !== '') || page.status === 'Reserved';
+    return (page.ads && page.ads.length > 0) || page.status === 'Reserved';
   };
 
   const availablePages = pages.filter(p => !isOccupied(p));

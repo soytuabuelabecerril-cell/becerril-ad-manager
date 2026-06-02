@@ -2,10 +2,10 @@ import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { fallbackCustomers } from '../utils/fallbackCustomers';
 import { products } from '../utils/products';
-import { getFullPages } from '../utils/fallbackData';
-import { addInvoice, updateInvoicePayment, deleteInvoice, getInvoices, addRecibo, getReciboWhatsAppMessage, addOrder, getOrders, deleteOrder, getRecibos } from '../utils/invoicesStore';
+import { useDatabase } from '../context/DatabaseContext';
 import { CheckCircle, FileText, X, Trash2, CreditCard } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
+import { getReciboWhatsAppMessage } from '../utils/invoicesStore';
 
 const getOrderWhatsAppMessage = (order, language) => {
   const isEs = language === 'es';
@@ -63,6 +63,20 @@ const safeInsertCustomer = async (payload) => {
 
 const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => {
   const { t, language } = useLanguage();
+  const {
+    pages,
+    invoices,
+    recibos,
+    orders,
+    addInvoice,
+    updateInvoicePayment,
+    deleteInvoice,
+    addRecibo,
+    addOrder,
+    deleteOrder,
+    deleteAdReservationDirect,
+    resolvePreReservation
+  } = useDatabase();
   const [customers, setCustomers] = useState([]);
   const [usedProducts, setUsedProducts] = useState(new Set());
   
@@ -227,29 +241,24 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
       }
     };
 
-    const checkUsedProducts = async () => {
-      try {
-        const allPages = getFullPages();
-        const used = new Set();
-        allPages.forEach(p => {
-          if (p.ads) {
-            p.ads.forEach(ad => {
-              const prod = products.find(prod => prod.name === ad.ad_type);
-              if (prod && prod.exclusive) {
-                used.add(prod.id);
-              }
-            });
-          }
-        });
-        setUsedProducts(used);
-      } catch (err) {
-        console.error(err);
-      }
+    const checkUsedProducts = () => {
+      const used = new Set();
+      pages.forEach(p => {
+        if (p.ads) {
+          p.ads.forEach(ad => {
+            const prod = products.find(prod => prod.name === ad.ad_type);
+            if (prod && prod.exclusive) {
+              used.add(prod.id);
+            }
+          });
+        }
+      });
+      setUsedProducts(used);
     };
 
     fetchCustomers();
     checkUsedProducts();
-  }, [selectedPage]);
+  }, [selectedPage, pages]);
 
   useEffect(() => {
     if (selectedPage) {
@@ -459,7 +468,7 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
       let targetPageNumber = selectedPage.page_number;
       
       if (targetPageNumber === 'Unassigned') {
-        const fallbackPages = getFullPages();
+        const fallbackPages = pages;
         // Look for a page that can fit this product
         let availablePages = fallbackPages.filter(p => p.status !== 'Locked' && productFitsInPage(prod, p));
         
@@ -484,31 +493,6 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
         targetPageNumber = availablePages[randomIdx].page_number;
       }
 
-      const newAd = {
-        ad_type: prod.name,
-        customer_id: finalCustomerId,
-        customer_name: finalCustomerName,
-        isPreReserved: isPreReservation,
-        expires_at: isPreReservation ? new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString() : null,
-        artworkOption: artworkOption,
-        designWorkOption: artworkOption === '3' ? designWorkOption : null,
-        designWorkPrice: artworkOption === '3' && designWorkOption === '1' ? parseFloat(designWorkPrice) : 0,
-        isNew: true
-      };
-
-      const fallbackPage = getFullPages().find(p => p.page_number === targetPageNumber);
-      if (fallbackPage) {
-        if (!fallbackPage.ads) fallbackPage.ads = [];
-        fallbackPage.ads.push(newAd);
-        fallbackPage.status = 'Reserved';
-        setCurrentAdRef(newAd);
-      }
-      
-
-      // (The DB schema change will be handled by the SQL script later)
-      
-      // Trigger Invoice
-      
       let artworkComment = "";
       if (artworkOption === '1') artworkComment = t('artwork_note_opt1');
       else if (artworkOption === '2') artworkComment = t('artwork_note_opt2');
@@ -525,7 +509,7 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
       }
 
       // Create a pending order — invoice will only be generated when payment is confirmed
-      const newOrder = addOrder({
+      const newOrder = await addOrder({
         customerName: finalCustomerName,
         productName: prod.name,
         price: basePrice,
@@ -537,6 +521,7 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
         paymentMethod: reservationPaymentMethod,
         customerEmail: checkEmail,
         customerPhone: checkPhone,
+        customerId: finalCustomerId
       });
       setOrderDetails(newOrder);
       setOrderConfirmModalOpen(true);
@@ -635,7 +620,7 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
       // Auto-assign page if Unassigned
       let targetPageNumber = selectedPage.page_number;
       if (targetPageNumber === 'Unassigned') {
-        const fallbackPages = getFullPages();
+        const fallbackPages = pages;
         let availablePages = fallbackPages.filter(p => p.status !== 'Locked' && productFitsInPage(prod, p));
         const normalAvailable = availablePages.filter(p => p.page_number !== 91 && p.page_number !== 92);
         if (normalAvailable.length > 0) availablePages = normalAvailable;
@@ -649,35 +634,13 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
         targetPageNumber = availablePages[randomIdx].page_number;
       }
 
-      // Mark the ad on the page
-      const newAd = {
-        ad_type: prod.name,
-        customer_id: finalCustomerId,
-        customer_name: finalCustomerName,
-        isPreReserved: false,
-        expires_at: null,
-        artworkOption: artworkOption,
-        designWorkOption: artworkOption === '3' ? designWorkOption : null,
-        designWorkPrice: artworkOption === '3' && designWorkOption === '1' ? parseFloat(designWorkPrice) : 0,
-        isNew: true,
-        isRecibo: true,
-        isPaid: true,
-      };
-      const fallbackPage = getFullPages().find(p => p.page_number === targetPageNumber);
-      if (fallbackPage) {
-        if (!fallbackPage.ads) fallbackPage.ads = [];
-        fallbackPage.ads.push(newAd);
-        fallbackPage.status = 'Reserved';
-        setCurrentAdRef(newAd);
-      }
-
       const basePrice = parseFloat(prod.price);
       let designPrice = 0;
       if (artworkOption === '3' && designWorkOption === '1') {
         designPrice = parseFloat(designWorkPrice) || 0;
       }
 
-      const newRecibo = addRecibo({
+      const newRecibo = await addRecibo({
         customerName: finalCustomerName,
         productName: prod.name,
         price: basePrice,
@@ -686,6 +649,7 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
         date: new Date().toLocaleDateString(),
         customerEmail: checkEmail,
         customerPhone: checkPhone,
+        customerId: finalCustomerId
       });
 
       setReciboDetails(newRecibo);
@@ -706,10 +670,6 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
 
   const handleConfirmPaymentAndClose = () => {
     updateInvoicePayment(invoiceDetails.id, paymentMethod, isPaid);
-    if (currentAdRef) {
-      currentAdRef.isPaid = isPaid;
-      currentAdRef.paymentMethod = paymentMethod;
-    }
     setInvoiceModalOpen(false);
     if (onReservationComplete) {
       onReservationComplete();
@@ -723,40 +683,31 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
     }
   };
 
-  const handleDeleteAd = (idx) => {
+  const handleDeleteAd = async (idx) => {
     if (!window.confirm(t('rp_confirm_delete'))) return;
     
-    const fallbackPage = getFullPages().find(p => p.page_number === selectedPage.page_number);
-    if (!fallbackPage) return;
-    
-    const adToDelete = fallbackPage.ads[idx];
+    const adToDelete = selectedPage.ads[idx];
     const customerName = adToDelete.customer_name;
     
-    const invoices = getInvoices();
     const invoiceToDelete = invoices.find(inv => 
       inv.assignedPage === selectedPage.page_number && 
       inv.customerName === customerName &&
       inv.productName === adToDelete.ad_type
     );
     if (invoiceToDelete) {
-      deleteInvoice(invoiceToDelete.id);
+      await deleteInvoice(invoiceToDelete.id);
     }
-    // Also delete any pending order for this ad
-    const orderList = getOrders();
-    const orderToDelete = orderList.find(o => 
+
+    const orderToDelete = orders.find(o => 
       o.assignedPage === selectedPage.page_number && 
       o.customerName === customerName &&
       o.productName === adToDelete.ad_type
     );
     if (orderToDelete) {
-      deleteOrder(orderToDelete.id);
+      await deleteOrder(orderToDelete.id);
     }
     
-    fallbackPage.ads.splice(idx, 1);
-    
-    if (fallbackPage.ads.length === 0) {
-      fallbackPage.status = 'Available';
-    }
+    await deleteAdReservationDirect(selectedPage.page_number, customerName, adToDelete.ad_type);
     
     if (onReservationComplete) {
       onReservationComplete();
@@ -769,57 +720,40 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
   const [resolvingAdIndex, setResolvingAdIndex] = useState(null);
   const [prolongDate, setProlongDate] = useState('');
 
-  const handleResolveAction = (ad, index, action) => {
-    const fallbackPage = getFullPages().find(p => p.page_number === selectedPage.page_number);
-    if (!fallbackPage) return;
-
-    const actualAdIndex = fallbackPage.ads.findIndex(a => a === ad);
-    if (actualAdIndex === -1) return;
+  const handleResolveAction = async (ad, index, action) => {
+    const customerName = ad.customer_name;
+    const adType = ad.ad_type;
 
     if (action === 'cancel') {
-      const adToDelete = fallbackPage.ads[actualAdIndex];
-      const customerName = adToDelete.customer_name;
-      
-      const invoices = getInvoices();
       const invoiceToDelete = invoices.find(inv => 
         inv.assignedPage === selectedPage.page_number && 
         inv.customerName === customerName &&
-        inv.productName === adToDelete.ad_type
+        inv.productName === adType
       );
       if (invoiceToDelete) {
-        deleteInvoice(invoiceToDelete.id);
-      }
-      // Also delete any pending order for this ad
-      const orderList = getOrders();
-      const orderToDelete = orderList.find(o => 
-        o.assignedPage === selectedPage.page_number && 
-        o.customerName === customerName &&
-        o.productName === adToDelete.ad_type
-      );
-      if (orderToDelete) {
-        deleteOrder(orderToDelete.id);
+        await deleteInvoice(invoiceToDelete.id);
       }
       
-      fallbackPage.ads.splice(actualAdIndex, 1);
-      if (fallbackPage.ads.length === 0) {
-        fallbackPage.status = 'Available';
+      const orderToDelete = orders.find(o => 
+        o.assignedPage === selectedPage.page_number && 
+        o.customerName === customerName &&
+        o.productName === adType
+      );
+      if (orderToDelete) {
+        await deleteOrder(orderToDelete.id);
       }
+      
+      await deleteAdReservationDirect(selectedPage.page_number, customerName, adType);
       if (onReservationComplete) onReservationComplete();
     } else if (action === 'prolong') {
       if (!prolongDate) {
         alert(t('rp_alert_select_exp_date'));
         return;
       }
-      fallbackPage.ads[actualAdIndex].expires_at = new Date(prolongDate).toISOString();
+      await resolvePreReservation(selectedPage.page_number, customerName, adType, 'prolong', prolongDate);
       if (onReservationComplete) onReservationComplete();
     } else if (action === 'confirm') {
-      // Convert pre-reservation to a pending transfer order.
-      // Invoice (with VAT) is only generated when payment is confirmed via "Liberar".
-      fallbackPage.ads[actualAdIndex].isPreReserved = false;
-      fallbackPage.ads[actualAdIndex].expires_at = null;
-      fallbackPage.ads[actualAdIndex].isNew = true;
-      
-      const prod = products.find(p => p.name === ad.ad_type);
+      const prod = products.find(p => p.name === adType);
       const basePrice = prod ? parseFloat(prod.price) : 0;
       const designPrice = parseFloat(ad.designWorkPrice) || 0;
       
@@ -832,17 +766,18 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
         else if (ad.designWorkOption === '3') artworkComment = t('artwork_note_opt3_3');
       }
 
-      setCurrentAdRef(fallbackPage.ads[actualAdIndex]);
-      const newOrder = addOrder({
-        customerName: ad.customer_name,
-        productName: ad.ad_type,
+      const newOrder = await addOrder({
+        customerName: customerName,
+        productName: adType,
         price: basePrice,
         designPrice: designPrice,
         assignedPage: selectedPage.page_number,
         date: new Date().toLocaleDateString(),
         artworkComment: artworkComment,
         orderType: 'transfer',
+        customerId: ad.customer_id
       });
+      await resolvePreReservation(selectedPage.page_number, customerName, adType, 'confirm');
       setOrderDetails(newOrder);
       setOrderConfirmModalOpen(true);
     }
@@ -851,10 +786,10 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
   // ─── Customer Status Helper ────────────────────────────────────────────────
   // Returns 'ok' (paid), 'pt' (pending transfer), 'pr' (pre-reserved), or null.
   const getCustomerStatus = (customer) => {
-    const pages = getFullPages();
-    const invoiceList = getInvoices();
-    const reciboList = getRecibos();
-    const orderList = getOrders();
+    const pagesList = pages;
+    const invoiceList = invoices;
+    const reciboList = recibos;
+    const orderList = orders;
     const name = (customer.commercial_name || customer.fiscal_name || '').toLowerCase();
     const custId = customer.id;
     const custNif = customer.nif;
@@ -906,9 +841,13 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
     if (usedProducts.has(p.id)) return false;
     if (!productFitsInPage(p, selectedPage)) return false;
 
-    // Filter out pages 91 and 92 specific products if we are not on those pages
-    if (selectedPage.page_number !== 91 && selectedPage.page_number !== 92) {
-      if (p.id === 10 || p.id === 11) return false;
+    // Exclusivity filtering for cover pages (91 and 92) and their products
+    if (selectedPage.page_number === 91) {
+      if (p.id !== 12) return false;
+    } else if (selectedPage.page_number === 92) {
+      if (p.id !== 10) return false;
+    } else {
+      if (p.id === 10 || p.id === 11 || p.id === 12) return false;
     }
 
     // Parity and specific page filtering
@@ -936,7 +875,7 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
   });
 
   return (
-    <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm relative">
+    <div className="bg-white p-4 sm:p-6 rounded-xl border border-gray-100 shadow-sm relative">
       <div className="flex justify-between items-center mb-4">
         <h3 className="text-lg font-bold">
           {selectedPage.page_number === 'Unassigned' 
@@ -1513,230 +1452,234 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
 
       {/* Order Confirmation Modal Overlay */}
       {orderConfirmModalOpen && orderDetails && (
-        <div className="absolute inset-0 bg-white/95 backdrop-blur-sm z-10 rounded-xl flex items-center justify-center p-6 border border-gray-100 shadow-xl overflow-y-auto">
-          <button 
-            onClick={() => {
-              setOrderConfirmModalOpen(false);
-              if (onReservationComplete) onReservationComplete();
-            }} 
-            className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors p-1 z-20"
-            title={t('rp_order_close') || 'Close'}
-          >
-            <X size={24} />
-          </button>
-          <div className="text-center w-full">
-            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-orange-100 mb-4">
-              <FileText className="w-8 h-8 text-orange-600" />
-            </div>
-            <h2 className="text-xl font-bold text-gray-900 mb-1">{t('rp_order_confirmed')}</h2>
-
-            <div className="bg-gray-50 rounded-lg p-4 text-left mb-4 border border-gray-100">
-              <div className="flex items-center gap-2 mb-3 pb-3 border-b border-gray-200">
-                <FileText className="w-4 h-4 text-gray-400" />
-                <span className="font-medium text-sm text-gray-700">{t('rp_invoice_summary')}</span>
-              </div>
-              <div className="space-y-2 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-gray-500">{t('rp_customer_label')}</span>
-                  <span className="font-medium text-gray-900">{orderDetails.customerName}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-500">{t('rp_product_label')}</span>
-                  <span className="font-medium text-gray-900">{orderDetails.productName}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-500">{t('rp_assigned_page_label')}</span>
-                  <span className="font-bold text-blue-600">{orderDetails.assignedPage}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-500">{t('rp_order_id_label')}</span>
-                  <span className="font-medium text-gray-600 text-xs">{orderDetails.id}</span>
-                </div>
-                <div className="flex justify-between pt-2 mt-2 border-t border-gray-200">
-                  <span className="text-gray-500 font-medium">{t('rp_base_price_label')}</span>
-                  <span className="font-medium text-gray-900">{(orderDetails.price || 0).toFixed(2)}&#8364;</span>
-                </div>
-                {orderDetails.designPrice > 0 && (
-                  <div className="flex justify-between">
-                    <span className="text-gray-500 font-medium">{t('rp_design_price_label')}</span>
-                    <span className="font-medium text-gray-900">{orderDetails.designPrice.toFixed(2)}&#8364;</span>
-                  </div>
-                )}
-                <div className="flex justify-between">
-                  <span className="text-gray-500">{t('cl_liberate_payment_method') || 'Payment Method'}</span>
-                  <span className="font-medium text-gray-900">{t(`rp_${(orderDetails.paymentMethod || 'transfer').toLowerCase()}`) || orderDetails.paymentMethod}</span>
-                </div>
-                <div className="flex justify-between pt-2 mt-2 border-t border-gray-200">
-                  <span className="text-gray-600 font-medium">Subtotal</span>
-                  <span className="text-gray-900 font-medium">{((orderDetails.price || 0) + (orderDetails.designPrice || 0)).toFixed(2)}&#8364;</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-500 font-medium">{t('inv_vat') || 'IVA (21%)'}</span>
-                  <span className="font-medium text-gray-900">{(((orderDetails.price || 0) + (orderDetails.designPrice || 0)) * 0.21).toFixed(2)}&#8364;</span>
-                </div>
-                <div className="flex justify-between pt-2 mt-2 border-t border-gray-200 font-bold">
-                  <span className="text-gray-700">{t('inv_total') || 'Total'}</span>
-                  <span className="text-blue-600">{(((orderDetails.price || 0) + (orderDetails.designPrice || 0)) * 1.21).toFixed(2)}&#8364;</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Manual Send Confirmation options */}
-            <div className="mt-4 mb-4 p-4 bg-slate-50 border border-slate-200 rounded-xl text-left">
-              <h4 className="text-sm font-bold text-slate-800 mb-3">{language === 'es' ? 'Enviar Confirmación' : 'Send Confirmation'}</h4>
-              
-              <div className="flex flex-col sm:flex-row gap-3">
-                <button
-                  type="button"
-                  disabled={!orderDetails.customerEmail || emailStatus.sending}
-                  onClick={() => handleSendEmail(orderDetails, orderDetails.orderType === 'pre-reserved', false)}
-                  className={`flex-1 py-2.5 px-3 text-xs font-bold rounded-lg transition-colors border flex items-center justify-center gap-2 ${
-                    emailStatus.status === 'success'
-                      ? 'bg-green-50 text-green-700 border-green-200'
-                      : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-300 disabled:opacity-50'
-                  }`}
-                >
-                  {emailStatus.status === 'success' 
-                    ? (language === 'es' ? '✓ Email Enviado' : '✓ Email Sent') 
-                    : (emailStatus.sending ? (language === 'es' ? 'Enviando...' : 'Sending...') : '📧 Enviar Email')}
-                </button>
-
-                <a
-                  href={`https://wa.me/${(orderDetails.customerPhone || '').replace(/\D/g, '')}?text=${encodeURIComponent(getOrderWhatsAppMessage(orderDetails, language))}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="flex-1 py-2.5 px-3 text-xs font-bold rounded-lg bg-green-50 hover:bg-green-100 text-green-750 border border-green-300 transition-colors flex items-center justify-center gap-2 text-center"
-                >
-                  📲 WhatsApp
-                </a>
-              </div>
-
-              {emailStatus.status === 'error' && (
-                <p className="text-[11px] text-red-600 font-medium mt-2">
-                  ❌ Error: {emailStatus.error}
-                </p>
-              )}
-            </div>
-
-            <div className="mb-4 p-3 bg-orange-50 rounded-lg border border-orange-200 text-left">
-              <p className="text-xs text-orange-800 font-medium">&#9203; {t('rp_order_pending_msg')}</p>
-            </div>
-
-            <button
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[110] flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-5 sm:p-6 max-h-[92dvh] sm:max-h-[85dvh] overflow-y-auto relative my-auto animate-in zoom-in-95 duration-200">
+            <button 
               onClick={() => {
                 setOrderConfirmModalOpen(false);
                 if (onReservationComplete) onReservationComplete();
-              }}
-              className="w-full py-2.5 bg-gray-800 hover:bg-gray-900 text-white font-bold rounded-lg transition-colors shadow-sm"
+              }} 
+              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors p-1 z-20"
+              title={t('rp_order_close') || 'Close'}
             >
-              {t('rp_order_close')}
+              <X size={24} />
             </button>
+            <div className="text-center w-full flex flex-col items-center">
+              <div className="inline-flex items-center justify-center w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-orange-100 mb-3 sm:mb-4 shrink-0">
+                <FileText className="w-6 h-6 sm:w-8 sm:h-8 text-orange-600" />
+              </div>
+              <h2 className="text-lg sm:text-xl font-bold text-gray-900 mb-1 leading-tight">{t('rp_order_confirmed')}</h2>
+
+              <div className="bg-gray-50 rounded-lg p-3 sm:p-4 text-left mb-3 sm:mb-4 border border-gray-100 w-full">
+                <div className="flex items-center gap-2 mb-3 pb-3 border-b border-gray-200">
+                  <FileText className="w-4 h-4 text-gray-400" />
+                  <span className="font-medium text-sm text-gray-700">{t('rp_invoice_summary')}</span>
+                </div>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">{t('rp_customer_label')}</span>
+                    <span className="font-medium text-gray-900">{orderDetails.customerName}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">{t('rp_product_label')}</span>
+                    <span className="font-medium text-gray-900">{orderDetails.productName}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">{t('rp_assigned_page_label')}</span>
+                    <span className="font-bold text-blue-600">{orderDetails.assignedPage}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">{t('rp_order_id_label')}</span>
+                    <span className="font-medium text-gray-600 text-xs">{orderDetails.id}</span>
+                  </div>
+                  <div className="flex justify-between pt-2 mt-2 border-t border-gray-200">
+                    <span className="text-gray-500 font-medium">{t('rp_base_price_label')}</span>
+                    <span className="font-medium text-gray-900">{(orderDetails.price || 0).toFixed(2)}&#8364;</span>
+                  </div>
+                  {orderDetails.designPrice > 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-500 font-medium">{t('rp_design_price_label')}</span>
+                      <span className="font-medium text-gray-900">{orderDetails.designPrice.toFixed(2)}&#8364;</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">{t('cl_liberate_payment_method') || 'Payment Method'}</span>
+                    <span className="font-medium text-gray-900">{t(`rp_${(orderDetails.paymentMethod || 'transfer').toLowerCase()}`) || orderDetails.paymentMethod}</span>
+                  </div>
+                  <div className="flex justify-between pt-2 mt-2 border-t border-gray-200">
+                    <span className="text-gray-600 font-medium">Subtotal</span>
+                    <span className="text-gray-900 font-medium">{((orderDetails.price || 0) + (orderDetails.designPrice || 0)).toFixed(2)}&#8364;</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500 font-medium">{t('inv_vat') || 'IVA (21%)'}</span>
+                    <span className="font-medium text-gray-900">{(((orderDetails.price || 0) + (orderDetails.designPrice || 0)) * 0.21).toFixed(2)}&#8364;</span>
+                  </div>
+                  <div className="flex justify-between pt-2 mt-2 border-t border-gray-200 font-bold">
+                    <span className="text-gray-700">{t('inv_total') || 'Total'}</span>
+                    <span className="text-blue-600">{(((orderDetails.price || 0) + (orderDetails.designPrice || 0)) * 1.21).toFixed(2)}&#8364;</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Manual Send Confirmation options */}
+              <div className="mt-3 mb-3 p-3 bg-slate-50 border border-slate-200 rounded-xl text-left w-full">
+                <h4 className="text-xs sm:text-sm font-bold text-slate-800 mb-2 sm:mb-3">{language === 'es' ? 'Enviar Confirmación' : 'Send Confirmation'}</h4>
+                
+                <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
+                  <button
+                    type="button"
+                    disabled={!orderDetails.customerEmail || emailStatus.sending}
+                    onClick={() => handleSendEmail(orderDetails, orderDetails.orderType === 'pre-reserved', false)}
+                    className={`flex-1 py-2 px-3 text-xs font-bold rounded-lg transition-colors border flex items-center justify-center gap-2 ${
+                      emailStatus.status === 'success'
+                        ? 'bg-green-50 text-green-700 border-green-200'
+                        : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-300 disabled:opacity-50'
+                    }`}
+                  >
+                    {emailStatus.status === 'success' 
+                      ? (language === 'es' ? '✓ Email Enviado' : '✓ Email Sent') 
+                      : (emailStatus.sending ? (language === 'es' ? 'Enviando...' : 'Sending...') : '📧 Enviar Email')}
+                  </button>
+
+                  <a
+                    href={`https://wa.me/${(orderDetails.customerPhone || '').replace(/\D/g, '')}?text=${encodeURIComponent(getOrderWhatsAppMessage(orderDetails, language))}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex-1 py-2 px-3 text-xs font-bold rounded-lg bg-green-50 hover:bg-green-100 text-green-750 border border-green-300 transition-colors flex items-center justify-center gap-2 text-center"
+                  >
+                    📲 WhatsApp
+                  </a>
+                </div>
+
+                {emailStatus.status === 'error' && (
+                  <p className="text-[11px] text-red-600 font-medium mt-2">
+                    ❌ Error: {emailStatus.error}
+                  </p>
+                )}
+              </div>
+
+              <div className="mb-3 p-2.5 bg-orange-50 rounded-lg border border-orange-200 text-left w-full">
+                <p className="text-xs text-orange-800 font-medium leading-normal">&#9203; {t('rp_order_pending_msg')}</p>
+              </div>
+
+              <button
+                onClick={() => {
+                  setOrderConfirmModalOpen(false);
+                  if (onReservationComplete) onReservationComplete();
+                }}
+                className="w-full py-2.5 bg-gray-800 hover:bg-gray-900 text-white font-bold rounded-lg transition-colors shadow-sm"
+              >
+                {t('rp_order_close')}
+              </button>
+            </div>
           </div>
         </div>
       )}
       {/* Recibo Success Modal Overlay */}
       {reciboModalOpen && reciboDetails && (
-        <div className="absolute inset-0 bg-white/95 backdrop-blur-sm z-10 rounded-xl flex items-center justify-center p-6 border border-gray-100 shadow-xl overflow-y-auto">
-          <button 
-            onClick={handleConfirmReciboAndClose} 
-            className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors p-1 z-20"
-            title={t('rp_recibo_confirm_close') || 'Close'}
-          >
-            <X size={24} />
-          </button>
-          <div className="text-center w-full">
-            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-emerald-100 mb-4">
-              <CheckCircle className="w-8 h-8 text-emerald-600" />
-            </div>
-            <h2 className="text-xl font-bold text-gray-900 mb-1">{t('rp_recibo_title')}</h2>
-            <p className="text-sm text-gray-500 mb-6">{t('rp_recibo_subtitle')}</p>
-
-            <div className="bg-gray-50 rounded-lg p-4 text-left mb-4 border border-gray-100">
-              <div className="flex items-center gap-2 mb-3 pb-3 border-b border-gray-200">
-                <FileText className="w-4 h-4 text-gray-400" />
-                <span className="font-medium text-sm text-gray-700">{t('rp_recibo_summary')}</span>
-              </div>
-              <div className="space-y-2 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-gray-500">{t('rp_customer_label')}</span>
-                  <span className="font-medium text-gray-900">{reciboDetails.customerName}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-500">{t('rp_product_label')}</span>
-                  <span className="font-medium text-gray-900">{reciboDetails.productName}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-500">{t('rp_assigned_page_label')}</span>
-                  <span className="font-bold text-blue-600">{reciboDetails.assignedPage}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-500">{t('rp_date_label')}</span>
-                  <span className="font-medium text-gray-900">{reciboDetails.date}</span>
-                </div>
-                <div className="flex justify-between pt-2 mt-2 border-t border-gray-200">
-                  <span className="text-gray-500 font-medium">{t('rp_base_price_label')}</span>
-                  <span className="font-medium text-gray-900">{reciboDetails.price.toFixed(2)}€</span>
-                </div>
-                {reciboDetails.designPrice > 0 && (
-                  <div className="flex justify-between">
-                    <span className="text-gray-500 font-medium">{t('rp_design_price_label')}</span>
-                    <span className="font-medium text-gray-900">{reciboDetails.designPrice.toFixed(2)}€</span>
-                  </div>
-                )}
-                <div className="flex justify-between items-center mt-2 p-2 bg-emerald-50 rounded border border-emerald-200">
-                  <span className="text-emerald-700 text-xs font-semibold uppercase tracking-wide">{t('rp_recibo_no_vat')}</span>
-                  <span className="font-bold text-emerald-700 text-base">{reciboDetails.total.toFixed(2)}€</span>
-                </div>
-
-                <div className="mt-3 p-2 bg-gray-100 rounded text-xs text-gray-600 leading-relaxed font-medium">
-                  💬 {getReciboWhatsAppMessage(reciboDetails)}
-                </div>
-              </div>
-            </div>
-
-            {/* Manual Send Confirmation options */}
-            <div className="mt-4 mb-4 p-4 bg-slate-50 border border-slate-200 rounded-xl text-left">
-              <h4 className="text-sm font-bold text-slate-800 mb-3">{language === 'es' ? 'Enviar Confirmación' : 'Send Confirmation'}</h4>
-              
-              <div className="flex flex-col sm:flex-row gap-3">
-                <button
-                  type="button"
-                  disabled={!reciboDetails.customerEmail || emailStatus.sending}
-                  onClick={() => handleSendEmail(reciboDetails, false, true)}
-                  className={`flex-1 py-2.5 px-3 text-xs font-bold rounded-lg transition-colors border flex items-center justify-center gap-2 ${
-                    emailStatus.status === 'success'
-                      ? 'bg-green-50 text-green-700 border-green-200'
-                      : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-300 disabled:opacity-50'
-                  }`}
-                >
-                  {emailStatus.status === 'success' 
-                    ? (language === 'es' ? '✓ Email Enviado' : '✓ Email Sent') 
-                    : (emailStatus.sending ? (language === 'es' ? 'Enviando...' : 'Sending...') : '📧 Enviar Email')}
-                </button>
-
-                <a
-                  href={`https://wa.me/${(reciboDetails.customerPhone || '').replace(/\D/g, '')}?text=${encodeURIComponent(getReciboWhatsAppMessage(reciboDetails))}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="flex-1 py-2.5 px-3 text-xs font-bold rounded-lg bg-green-50 hover:bg-green-100 text-green-750 border border-green-300 transition-colors flex items-center justify-center gap-2 text-center"
-                >
-                  📲 WhatsApp
-                </a>
-              </div>
-
-              {emailStatus.status === 'error' && (
-                <p className="text-[11px] text-red-600 font-medium mt-2">
-                  ❌ Error: {emailStatus.error}
-                </p>
-              )}
-            </div>
-
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[110] flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-5 sm:p-6 max-h-[92dvh] sm:max-h-[85dvh] overflow-y-auto relative my-auto animate-in zoom-in-95 duration-200">
             <button 
-              onClick={handleConfirmReciboAndClose}
-              className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg transition-colors shadow-sm"
+              onClick={handleConfirmReciboAndClose} 
+              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors p-1 z-20"
+              title={t('rp_recibo_confirm_close') || 'Close'}
             >
-              {t('rp_recibo_confirm_close')}
+              <X size={24} />
             </button>
+            <div className="text-center w-full flex flex-col items-center">
+              <div className="inline-flex items-center justify-center w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-emerald-100 mb-3 sm:mb-4 shrink-0">
+                <CheckCircle className="w-6 h-6 sm:w-8 sm:h-8 text-emerald-600" />
+              </div>
+              <h2 className="text-lg sm:text-xl font-bold text-gray-900 mb-1 leading-tight">{t('rp_recibo_title')}</h2>
+              <p className="text-xs sm:text-sm text-gray-500 mb-4 sm:mb-6">{t('rp_recibo_subtitle')}</p>
+
+              <div className="bg-gray-50 rounded-lg p-3 sm:p-4 text-left mb-3 sm:mb-4 border border-gray-100 w-full">
+                <div className="flex items-center gap-2 mb-3 pb-3 border-b border-gray-200">
+                  <FileText className="w-4 h-4 text-gray-400" />
+                  <span className="font-medium text-sm text-gray-700">{t('rp_recibo_summary')}</span>
+                </div>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">{t('rp_customer_label')}</span>
+                    <span className="font-medium text-gray-900">{reciboDetails.customerName}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">{t('rp_product_label')}</span>
+                    <span className="font-medium text-gray-900">{reciboDetails.productName}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">{t('rp_assigned_page_label')}</span>
+                    <span className="font-bold text-blue-600">{reciboDetails.assignedPage}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">{t('rp_date_label')}</span>
+                    <span className="font-medium text-gray-900">{reciboDetails.date}</span>
+                  </div>
+                  <div className="flex justify-between pt-2 mt-2 border-t border-gray-200">
+                    <span className="text-gray-500 font-medium">{t('rp_base_price_label')}</span>
+                    <span className="font-medium text-gray-900">{reciboDetails.price.toFixed(2)}€</span>
+                  </div>
+                  {reciboDetails.designPrice > 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-500 font-medium">{t('rp_design_price_label')}</span>
+                      <span className="font-medium text-gray-900">{reciboDetails.designPrice.toFixed(2)}€</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between items-center mt-2 p-2 bg-emerald-50 rounded border border-emerald-200">
+                    <span className="text-emerald-700 text-xs font-semibold uppercase tracking-wide">{t('rp_recibo_no_vat')}</span>
+                    <span className="font-bold text-emerald-700 text-base">{reciboDetails.total.toFixed(2)}€</span>
+                  </div>
+
+                  <div className="mt-3 p-2 bg-gray-100 rounded text-xs text-gray-600 leading-relaxed font-medium">
+                    💬 {getReciboWhatsAppMessage(reciboDetails)}
+                  </div>
+                </div>
+              </div>
+
+              {/* Manual Send Confirmation options */}
+              <div className="mt-3 mb-3 p-3 bg-slate-50 border border-slate-200 rounded-xl text-left w-full">
+                <h4 className="text-xs sm:text-sm font-bold text-slate-800 mb-2 sm:mb-3">{language === 'es' ? 'Enviar Confirmación' : 'Send Confirmation'}</h4>
+                
+                <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
+                  <button
+                    type="button"
+                    disabled={!reciboDetails.customerEmail || emailStatus.sending}
+                    onClick={() => handleSendEmail(reciboDetails, false, true)}
+                    className={`flex-1 py-2 px-3 text-xs font-bold rounded-lg transition-colors border flex items-center justify-center gap-2 ${
+                      emailStatus.status === 'success'
+                        ? 'bg-green-50 text-green-700 border-green-200'
+                        : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-300 disabled:opacity-50'
+                    }`}
+                  >
+                    {emailStatus.status === 'success' 
+                      ? (language === 'es' ? '✓ Email Enviado' : '✓ Email Sent') 
+                      : (emailStatus.sending ? (language === 'es' ? 'Enviando...' : 'Sending...') : '📧 Enviar Email')}
+                  </button>
+
+                  <a
+                    href={`https://wa.me/${(reciboDetails.customerPhone || '').replace(/\D/g, '')}?text=${encodeURIComponent(getReciboWhatsAppMessage(reciboDetails))}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex-1 py-2 px-3 text-xs font-bold rounded-lg bg-green-50 hover:bg-green-100 text-green-750 border border-green-300 transition-colors flex items-center justify-center gap-2 text-center"
+                  >
+                    📲 WhatsApp
+                  </a>
+                </div>
+
+                {emailStatus.status === 'error' && (
+                  <p className="text-[11px] text-red-600 font-medium mt-2">
+                    ❌ Error: {emailStatus.error}
+                  </p>
+                )}
+              </div>
+
+              <button 
+                onClick={handleConfirmReciboAndClose}
+                className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg transition-colors shadow-sm"
+              >
+                {t('rp_recibo_confirm_close')}
+              </button>
+            </div>
           </div>
         </div>
       )}
