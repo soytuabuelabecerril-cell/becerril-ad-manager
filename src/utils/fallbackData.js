@@ -52,6 +52,14 @@ const getInitialPagesData = () => {
               updated = true;
             }
           }
+          if (p.ads) {
+            p.ads.forEach(ad => {
+              if (ad.customer_id === 'legacy' && !ad.customer_name) {
+                ad.customer_name = ad.ad_type || p.ad_type;
+                updated = true;
+              }
+            });
+          }
         });
         if (updated) {
           localStorage.setItem('becerril_magazine_pages', JSON.stringify(parsed));
@@ -74,7 +82,8 @@ const getInitialPagesData = () => {
     if (page.ad_type) {
       page.ads.push({
         ad_type: page.ad_type,
-        customer_id: 'legacy'
+        customer_id: 'legacy',
+        customer_name: page.ad_type
       });
     }
     

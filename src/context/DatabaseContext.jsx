@@ -635,6 +635,17 @@ export const DatabaseProvider = ({ children }) => {
         .insert([toDbAd(adDetails, orderData.assignedPage)]);
       if (adErr) throw adErr;
 
+      // Immediately update local pages state (don't wait for realtime)
+      setOrders(prev => [newOrder, ...prev]);
+      setPages(prevPages => prevPages.map(p => {
+        if (p.page_number === orderData.assignedPage) {
+          const pageAds = p.ads ? [...p.ads] : [];
+          pageAds.push(fromDbAd(toDbAd(adDetails, orderData.assignedPage)));
+          return { ...p, ads: pageAds, status: 'Reserved' };
+        }
+        return p;
+      }));
+
       return newOrder;
     } catch (err) {
       console.error("Error creating order:", err);
@@ -656,26 +667,6 @@ export const DatabaseProvider = ({ children }) => {
           }
           return p;
         });
-        
-        // Persist to fallbackPagesData / localStorage
-        if (typeof window !== 'undefined' && window.localStorage) {
-          try {
-            fallbackPagesData.forEach((p, idx) => {
-              if (p.page_number === orderData.assignedPage) {
-                const pageAds = p.ads ? [...p.ads] : [];
-                pageAds.push(fromDbAd(toDbAd(adDetails, orderData.assignedPage)));
-                fallbackPagesData[idx] = {
-                  ...p,
-                  ads: pageAds,
-                  status: 'Reserved'
-                };
-              }
-            });
-            localStorage.setItem('becerril_magazine_pages', JSON.stringify(fallbackPagesData));
-          } catch (e) {
-            console.error("Error persisting to localStorage:", e);
-          }
-        }
         return updatedPages;
       });
 
@@ -900,6 +891,17 @@ export const DatabaseProvider = ({ children }) => {
         .insert([toDbAd(adDetails, reciboData.assignedPage)]);
       if (adErr) throw adErr;
 
+      // Immediately update local pages state (don't wait for realtime)
+      setRecibos(prev => [newRecibo, ...prev]);
+      setPages(prevPages => prevPages.map(p => {
+        if (p.page_number === reciboData.assignedPage) {
+          const pageAds = p.ads ? [...p.ads] : [];
+          pageAds.push(fromDbAd(toDbAd(adDetails, reciboData.assignedPage)));
+          return { ...p, ads: pageAds, status: 'Reserved' };
+        }
+        return p;
+      }));
+
       return newRecibo;
     } catch (err) {
       console.error("Error inserting recibo:", err);
@@ -908,41 +910,14 @@ export const DatabaseProvider = ({ children }) => {
       setRecibos(prev => [newRecibo, ...prev]);
 
       // Fallback: update local pages state
-      setPages(prevPages => {
-        const updatedPages = prevPages.map(p => {
-          if (p.page_number === reciboData.assignedPage) {
-            const pageAds = p.ads ? [...p.ads] : [];
-            pageAds.push(fromDbAd(toDbAd(adDetails, reciboData.assignedPage)));
-            return {
-              ...p,
-              ads: pageAds,
-              status: 'Reserved'
-            };
-          }
-          return p;
-        });
-
-        // Persist to fallbackPagesData / localStorage
-        if (typeof window !== 'undefined' && window.localStorage) {
-          try {
-            fallbackPagesData.forEach((p, idx) => {
-              if (p.page_number === reciboData.assignedPage) {
-                const pageAds = p.ads ? [...p.ads] : [];
-                pageAds.push(fromDbAd(toDbAd(adDetails, reciboData.assignedPage)));
-                fallbackPagesData[idx] = {
-                  ...p,
-                  ads: pageAds,
-                  status: 'Reserved'
-                };
-              }
-            });
-            localStorage.setItem('becerril_magazine_pages', JSON.stringify(fallbackPagesData));
-          } catch (e) {
-            console.error("Error persisting to localStorage:", e);
-          }
+      setPages(prevPages => prevPages.map(p => {
+        if (p.page_number === reciboData.assignedPage) {
+          const pageAds = p.ads ? [...p.ads] : [];
+          pageAds.push(fromDbAd(toDbAd(adDetails, reciboData.assignedPage)));
+          return { ...p, ads: pageAds, status: 'Reserved' };
         }
-        return updatedPages;
-      });
+        return p;
+      }));
 
       return newRecibo;
     }
