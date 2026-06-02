@@ -7,6 +7,31 @@ import { addInvoice, updateInvoicePayment, deleteInvoice, getInvoices, addRecibo
 import { CheckCircle, FileText, X, Trash2, CreditCard } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
 
+const getOrderWhatsAppMessage = (order, language) => {
+  const isEs = language === 'es';
+  const statusTxt = order.orderType === 'pre-reserved'
+    ? (isEs ? 'Pre-reserva (temporal 1 semana)' : 'Pre-reservation (1-week hold)')
+    : (isEs ? 'Reserva (Transferencia pendiente)' : 'Reservation (Pending Transfer)');
+  
+  const total = ((order.price + order.designPrice) * 1.21).toFixed(2);
+  
+  return isEs
+    ? `Confirmación de ${statusTxt} - Revista Becerril:\n\n` +
+      `- Cliente: ${order.customerName}\n` +
+      `- Producto: ${order.productName}\n` +
+      `- Pág. Asignada: ${order.assignedPage}\n` +
+      `- Subtotal: ${(order.price + order.designPrice).toFixed(2)}€\n` +
+      `- Total (con IVA): ${total}€\n\n` +
+      `Gracias,\nEquipo Revista Becerril`
+    : `Confirmation of ${statusTxt} - Revista Becerril:\n\n` +
+      `- Customer: ${order.customerName}\n` +
+      `- Product: ${order.productName}\n` +
+      `- Assigned Page: ${order.assignedPage}\n` +
+      `- Subtotal: ${(order.price + order.designPrice).toFixed(2)}€\n` +
+      `- Total (with VAT): ${total}€\n\n` +
+      `Thank you,\nRevista Becerril Team`;
+};
+
 // Helper: insert a customer, falling back to core fields if schema cache is stale
 const safeInsertCustomer = async (payload) => {
   const cleanData = {
@@ -97,6 +122,7 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [customerSearchQuery, setCustomerSearchQuery] = useState('');
   const [sentEmailAddress, setSentEmailAddress] = useState('');
+  const [emailStatus, setEmailStatus] = useState({ sending: false, status: null, error: '' });
   const dropdownRef = useRef(null);
 
   useEffect(() => {
@@ -104,6 +130,54 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
       setCustomerSearchQuery('');
     }
   }, [dropdownOpen]);
+
+  useEffect(() => {
+    if (orderConfirmModalOpen || reciboModalOpen) {
+      setEmailStatus({ sending: false, status: null, error: '' });
+    }
+  }, [orderConfirmModalOpen, reciboModalOpen]);
+
+  const handleSendEmail = async (details, isPreReservation, isRecibo = false) => {
+    const to = details.customerEmail;
+    if (!to) {
+      alert(language === 'es' ? 'No hay correo electrónico registrado para este cliente' : 'No email address registered for this customer');
+      return;
+    }
+
+    setEmailStatus({ sending: true, status: 'sending', error: '' });
+    try {
+      let subject = '';
+      let text = '';
+
+      if (isRecibo) {
+        subject = `Recibo de Pago Revista Becerril: Pág. ${details.assignedPage}`;
+        text = `Hola,\n\nConfirmamos la reserva y el recibo de pago en efectivo para su anuncio en la Revista Becerril:\n\n- Producto: ${details.productName}\n- Página Asignada: ${details.assignedPage}\n- Precio Base: ${details.price.toFixed(2)}€\n${details.designPrice > 0 ? `- Precio Diseño: ${details.designPrice.toFixed(2)}€\n` : ''}- Total Cobrado (Efectivo sin IVA): ${details.total.toFixed(2)}€\n\nGracias,\nEquipo Revista Becerril`;
+      } else {
+        subject = isPreReservation
+          ? `Pre-Reserva Revista Becerril: Pág. ${details.assignedPage}`
+          : `Confirmación de Reserva Revista Becerril: Pág. ${details.assignedPage}`;
+        text = isPreReservation
+          ? `Hola,\n\nConfirmamos la pre-reserva (retención de 1 semana) del espacio publicitario en la Revista Becerril:\n\n- Producto: ${details.productName}\n- Página Asignada: ${details.assignedPage}\n- Comentarios de Arte/Diseño: ${details.artworkComment}\n\nNota: Esta reserva es temporal y vencerá en una semana si no se confirma el pago.\n\nGracias,\nEquipo Revista Becerril`
+          : `Hola,\n\nConfirmamos la reserva del espacio publicitario en la Revista Becerril:\n\n- Producto: ${details.productName}\n- Página Asignada: ${details.assignedPage}\n- Método de Pago: ${t('rp_' + details.paymentMethod.toLowerCase()) || details.paymentMethod}\n- Comentarios de Arte/Diseño: ${details.artworkComment}\n\nLa factura correspondiente se generará una vez confirmado el pago.\n\nGracias,\nEquipo Revista Becerril`;
+      }
+
+      const apiUrl = import.meta.env.VITE_API_URL || (window.location.hostname === 'localhost' ? 'http://localhost:3001/api/send-email' : '/api/send-email');
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ to, subject, text })
+      });
+      const data = await response.json();
+      if (data.success) {
+        setEmailStatus({ sending: false, status: 'success', error: '' });
+      } else {
+        setEmailStatus({ sending: false, status: 'error', error: data.error || 'Failed to send' });
+      }
+    } catch (err) {
+      console.error(err);
+      setEmailStatus({ sending: false, status: 'error', error: err.message });
+    }
+  };
 
   useEffect(() => {
     if (selectedCustomerId && selectedCustomerId !== 'new') {
@@ -461,47 +535,11 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
         artworkComment: artworkComment,
         orderType: isPreReservation ? 'pre-reserved' : 'transfer',
         paymentMethod: reservationPaymentMethod,
+        customerEmail: checkEmail,
+        customerPhone: checkPhone,
       });
       setOrderDetails(newOrder);
       setOrderConfirmModalOpen(true);
-
-      if (customerEmail) {
-        setSentEmailAddress(customerEmail);
-        try {
-          const emailSubject = isPreReservation
-            ? `Pre-Reserva Revista Becerril: Pág. ${targetPageNumber}`
-            : `Confirmación de Reserva Revista Becerril: Pág. ${targetPageNumber}`;
-          
-          const emailText = isPreReservation
-            ? `Hola,\n\nConfirmamos la pre-reserva (retención de 1 semana) del espacio publicitario en la Revista Becerril:\n\n- Producto: ${prod.name}\n- Página Asignada: ${targetPageNumber}\n- Comentarios de Arte/Diseño: ${artworkComment}\n\nNota: Esta reserva es temporal y vencerá en una semana si no se confirma el pago.\n\nGracias,\nEquipo Revista Becerril`
-            : `Hola,\n\nConfirmamos la reserva del espacio publicitario en la Revista Becerril:\n\n- Producto: ${prod.name}\n- Página Asignada: ${targetPageNumber}\n- Método de Pago: ${t('rp_' + reservationPaymentMethod.toLowerCase()) || reservationPaymentMethod}\n- Comentarios de Arte/Diseño: ${artworkComment}\n\nLa factura correspondiente se generará una vez confirmado el pago.\n\nGracias,\nEquipo Revista Becerril`;
-
-          const apiUrl = import.meta.env.VITE_API_URL || (window.location.hostname === 'localhost' ? 'http://localhost:3001/api/send-email' : '/api/send-email');
-          
-          fetch(apiUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              to: customerEmail,
-              subject: emailSubject,
-              text: emailText
-            })
-          }).then(res => res.json())
-            .then(data => {
-              if (data.success) {
-                console.log('Confirmation email sent successfully to', customerEmail);
-              } else {
-                console.error('Failed to send confirmation email:', data.error);
-              }
-            }).catch(err => {
-              console.error('Error sending confirmation email:', err);
-            });
-        } catch (emailErr) {
-          console.error('Failed to send email:', emailErr);
-        }
-      } else {
-        setSentEmailAddress('');
-      }
 
     } catch (err) {
       console.error(err);
@@ -646,43 +684,12 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
         designPrice: designPrice,
         assignedPage: targetPageNumber,
         date: new Date().toLocaleDateString(),
+        customerEmail: checkEmail,
+        customerPhone: checkPhone,
       });
 
       setReciboDetails(newRecibo);
       setReciboModalOpen(true);
-
-      if (customerEmail) {
-        setSentEmailAddress(customerEmail);
-        try {
-          const emailSubject = `Recibo de Pago Revista Becerril: Pág. ${targetPageNumber}`;
-          const emailText = `Hola,\n\nConfirmamos la reserva y el recibo de pago en efectivo para su anuncio en la Revista Becerril:\n\n- Producto: ${prod.name}\n- Página Asignada: ${targetPageNumber}\n- Precio Base: ${basePrice.toFixed(2)}€\n${designPrice > 0 ? `- Precio Diseño: ${designPrice.toFixed(2)}€\n` : ''}- Total Cobrado (Efectivo sin IVA): ${(basePrice + designPrice).toFixed(2)}€\n\nGracias,\nEquipo Revista Becerril`;
-
-          const apiUrl = import.meta.env.VITE_API_URL || (window.location.hostname === 'localhost' ? 'http://localhost:3001/api/send-email' : '/api/send-email');
-          
-          fetch(apiUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              to: customerEmail,
-              subject: emailSubject,
-              text: emailText
-            })
-          }).then(res => res.json())
-            .then(data => {
-              if (data.success) {
-                console.log('Recibo email sent successfully to', customerEmail);
-              } else {
-                console.error('Failed to send recibo email:', data.error);
-              }
-            }).catch(err => {
-              console.error('Error sending recibo email:', err);
-            });
-        } catch (emailErr) {
-          console.error('Failed to send recibo email:', emailErr);
-        }
-      } else {
-        setSentEmailAddress('');
-      }
     } catch (err) {
       console.error(err);
     } finally {
@@ -1574,13 +1581,42 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
               </div>
             </div>
 
-            {sentEmailAddress && (
-              <div className="mb-4 p-3 bg-blue-50 rounded-lg border border-blue-200 text-left">
-                <p className="text-xs text-blue-800 font-medium">
-                  📧 {language === 'en' ? 'Confirmation email sent to:' : 'Email de confirmación enviado a:'} <span className="font-bold">{sentEmailAddress}</span>
-                </p>
+            {/* Manual Send Confirmation options */}
+            <div className="mt-4 mb-4 p-4 bg-slate-50 border border-slate-200 rounded-xl text-left">
+              <h4 className="text-sm font-bold text-slate-800 mb-3">{language === 'es' ? 'Enviar Confirmación' : 'Send Confirmation'}</h4>
+              
+              <div className="flex flex-col sm:flex-row gap-3">
+                <button
+                  type="button"
+                  disabled={!orderDetails.customerEmail || emailStatus.sending}
+                  onClick={() => handleSendEmail(orderDetails, orderDetails.orderType === 'pre-reserved', false)}
+                  className={`flex-1 py-2.5 px-3 text-xs font-bold rounded-lg transition-colors border flex items-center justify-center gap-2 ${
+                    emailStatus.status === 'success'
+                      ? 'bg-green-50 text-green-700 border-green-200'
+                      : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-300 disabled:opacity-50'
+                  }`}
+                >
+                  {emailStatus.status === 'success' 
+                    ? (language === 'es' ? '✓ Email Enviado' : '✓ Email Sent') 
+                    : (emailStatus.sending ? (language === 'es' ? 'Enviando...' : 'Sending...') : '📧 Enviar Email')}
+                </button>
+
+                <a
+                  href={`https://wa.me/${(orderDetails.customerPhone || '').replace(/\D/g, '')}?text=${encodeURIComponent(getOrderWhatsAppMessage(orderDetails, language))}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex-1 py-2.5 px-3 text-xs font-bold rounded-lg bg-green-50 hover:bg-green-100 text-green-750 border border-green-300 transition-colors flex items-center justify-center gap-2 text-center"
+                >
+                  📲 WhatsApp
+                </a>
               </div>
-            )}
+
+              {emailStatus.status === 'error' && (
+                <p className="text-[11px] text-red-600 font-medium mt-2">
+                  ❌ Error: {emailStatus.error}
+                </p>
+              )}
+            </div>
 
             <div className="mb-4 p-3 bg-orange-50 rounded-lg border border-orange-200 text-left">
               <p className="text-xs text-orange-800 font-medium">&#9203; {t('rp_order_pending_msg')}</p>
@@ -1658,22 +1694,42 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
               </div>
             </div>
 
-            {sentEmailAddress && (
-              <div className="mb-3 p-3 bg-blue-50 rounded-lg border border-blue-200 text-left">
-                <p className="text-xs text-blue-800 font-medium">
-                  📧 {language === 'en' ? 'Confirmation email sent to:' : 'Email de confirmación enviado a:'} <span className="font-bold">{sentEmailAddress}</span>
-                </p>
-              </div>
-            )}
+            {/* Manual Send Confirmation options */}
+            <div className="mt-4 mb-4 p-4 bg-slate-50 border border-slate-200 rounded-xl text-left">
+              <h4 className="text-sm font-bold text-slate-800 mb-3">{language === 'es' ? 'Enviar Confirmación' : 'Send Confirmation'}</h4>
+              
+              <div className="flex flex-col sm:flex-row gap-3">
+                <button
+                  type="button"
+                  disabled={!reciboDetails.customerEmail || emailStatus.sending}
+                  onClick={() => handleSendEmail(reciboDetails, false, true)}
+                  className={`flex-1 py-2.5 px-3 text-xs font-bold rounded-lg transition-colors border flex items-center justify-center gap-2 ${
+                    emailStatus.status === 'success'
+                      ? 'bg-green-50 text-green-700 border-green-200'
+                      : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-300 disabled:opacity-50'
+                  }`}
+                >
+                  {emailStatus.status === 'success' 
+                    ? (language === 'es' ? '✓ Email Enviado' : '✓ Email Sent') 
+                    : (emailStatus.sending ? (language === 'es' ? 'Enviando...' : 'Sending...') : '📧 Enviar Email')}
+                </button>
 
-            <a
-              href={`https://wa.me/?text=${encodeURIComponent(getReciboWhatsAppMessage(reciboDetails))}`}
-              target="_blank"
-              rel="noreferrer"
-              className="w-full mb-3 py-2.5 bg-green-500 hover:bg-green-600 text-white font-bold rounded-lg transition-colors shadow-sm flex items-center justify-center gap-2"
-            >
-              📲 WhatsApp
-            </a>
+                <a
+                  href={`https://wa.me/${(reciboDetails.customerPhone || '').replace(/\D/g, '')}?text=${encodeURIComponent(getReciboWhatsAppMessage(reciboDetails))}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex-1 py-2.5 px-3 text-xs font-bold rounded-lg bg-green-50 hover:bg-green-100 text-green-750 border border-green-300 transition-colors flex items-center justify-center gap-2 text-center"
+                >
+                  📲 WhatsApp
+                </a>
+              </div>
+
+              {emailStatus.status === 'error' && (
+                <p className="text-[11px] text-red-600 font-medium mt-2">
+                  ❌ Error: {emailStatus.error}
+                </p>
+              )}
+            </div>
 
             <button 
               onClick={handleConfirmReciboAndClose}
