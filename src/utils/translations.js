@@ -52,7 +52,7 @@ export const translations = {
 
     // Magazine Grid
     loading_pages: 'Loading pages...',
-    magazine_layout: 'Magazine Layout (92 Pages)',
+    magazine_layout: 'Revista Becerril (92 Pages)',
     new_unassigned: 'New',
     pg: 'Pg.',
     page: 'Page',
@@ -369,7 +369,7 @@ export const translations = {
     
     // Magazine Grid
     loading_pages: 'Cargando páginas...',
-    magazine_layout: 'Diseño de la Revista (92 Págs)',
+    magazine_layout: 'Revista Becerril (92 Págs)',
     new_unassigned: 'Nuevo',
     pg: 'Pág.',
     page: 'Página',
