@@ -1,19 +1,20 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { Mail, Phone, MapPin, FileText, Search, Clock, Bookmark, CheckCircle, Edit2 } from 'lucide-react';
+import { Mail, Phone, MapPin, FileText, Search, Clock, Bookmark, CheckCircle, Edit2, Bell, X } from 'lucide-react';
 import { fallbackCustomers } from '../utils/fallbackCustomers';
 import { useDatabase } from '../context/DatabaseContext';
 import { useLanguage } from '../context/LanguageContext';
 import CustomerModal from './CustomerModal';
 
-const CustomersList = () => {
-  const { t } = useLanguage();
+const CustomersList = ({ onSelectPage }) => {
+  const { t, language } = useLanguage();
   const {
     pages,
     invoices,
     recibos,
     orders,
-    confirmOrderPayment
+    confirmOrderPayment,
+    sendPaymentReminder
   } = useDatabase();
 
   const [customers, setCustomers] = useState([]);
@@ -26,6 +27,9 @@ const CustomersList = () => {
   const [liberateCustomer, setLiberateCustomer] = useState(null);
   const [liberatePaymentMethod, setLiberatePaymentMethod] = useState('Transfer');
   const [liberateSuccess, setLiberateSuccess] = useState(false);
+  const [reminderModalOpen, setReminderModalOpen] = useState(false);
+  const [reminderCustomer, setReminderCustomer] = useState(null);
+  const [emailReminderStatus, setEmailReminderStatus] = useState({ sending: false, success: false, error: '' });
 
   useEffect(() => {
     const fetchData = async () => {
@@ -55,9 +59,7 @@ const CustomersList = () => {
     fetchData();
   }, []);
 
-  if (loading) {
-    return <div className="p-8 flex justify-center items-center h-full"><div className="text-gray-500 font-medium">{t('loading_customers')}</div></div>;
-  }
+
 
   const handleEditCustomer = (customer) => {
     setSelectedCustomer(customer);
@@ -134,7 +136,7 @@ const CustomersList = () => {
               ad.customer_name.toLowerCase() === (customer.fiscal_name || '').toLowerCase()
             ))
           ) {
-            customerAds.push(ad);
+            customerAds.push({ ...ad, page_number: page.page_number });
           }
         });
       } else if (
@@ -146,12 +148,122 @@ const CustomersList = () => {
           customer_id: page.customer_id,
           isPreReserved: page.status === 'Reserved' && page.payment_status === 'Pending',
           isPaid: page.payment_status === 'Paid',
-          paymentMethod: page.payment_status === 'Paid' ? 'Cash' : 'Transfer'
+          paymentMethod: page.payment_status === 'Paid' ? 'Cash' : 'Transfer',
+          page_number: page.page_number,
+          expires_at: page.expires_at || null
         });
       }
     });
     return customerAds;
   };
+
+  const getCustomerPreReservedAd = (customer) => {
+    const ads = getCustomerAds(customer);
+    return ads.find(ad => ad.isPreReserved);
+  };
+
+  // const getCustomerExpirationDate = (customer) => {
+  //   const preReservedAd = getCustomerPreReservedAd(customer);
+  //   return preReservedAd ? preReservedAd.expires_at : null;
+  // };
+
+  const handleReminderClick = (customer) => {
+    setReminderCustomer(customer);
+    setEmailReminderStatus({ sending: false, success: false, error: '' });
+    setReminderModalOpen(true);
+  };
+
+  const handleSendEmailReminder = async () => {
+    if (!reminderCustomer) return;
+    const preReservedAd = getCustomerPreReservedAd(reminderCustomer);
+    if (!preReservedAd) return;
+
+    setEmailReminderStatus({ sending: true, success: false, error: '' });
+    try {
+      const res = await sendPaymentReminder(
+        preReservedAd.customer_name || reminderCustomer.commercial_name || reminderCustomer.fiscal_name,
+        preReservedAd.ad_type,
+        preReservedAd.page_number,
+        preReservedAd.expires_at,
+        reminderCustomer.email,
+        reminderCustomer.whatsapp,
+        preReservedAd.id,
+        false
+      );
+      if (res && res.emailSuccess) {
+        setEmailReminderStatus({ sending: false, success: true, error: '' });
+      } else {
+        setEmailReminderStatus({ sending: false, success: false, error: 'Failed to send email reminder' });
+      }
+    } catch (err) {
+      console.error("Error sending email reminder:", err);
+      setEmailReminderStatus({ sending: false, success: false, error: err.message || 'Error' });
+    }
+  };
+
+  const getWhatsAppReminderUrl = (customer, preReservedAd) => {
+    if (!customer || !preReservedAd) return '#';
+    const isEs = language === 'es';
+    const phone = (customer.whatsapp || '').replace(/\D/g, '');
+    const expDate = new Date(preReservedAd.expires_at);
+    const formattedDate = `${expDate.getDate()}/${expDate.getMonth() + 1}/${expDate.getFullYear()}`;
+    const text = isEs
+      ? `Hola, le recordamos que su espacio publicitario en la Revista Becerril (Pág. ${preReservedAd.page_number}) está reservado temporalmente y vencerá el ${formattedDate}. Por favor, realice el pago para confirmar su reserva. ¡Muchas gracias!`
+      : `Hello, we remind you that your advertising space in Revista Becerril (Pg. ${preReservedAd.page_number}) is temporarily reserved and will expire on ${formattedDate}. Please complete the payment to confirm your reservation. Thank you very much!`;
+    return `https://wa.me/${phone}?text=${encodeURIComponent(text)}`;
+  };
+
+  // Automatic reminders check on mount
+  useEffect(() => {
+    const runAutoReminders = async () => {
+      const now = new Date();
+      const threeDaysFromNow = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
+      let sentCount = 0;
+
+      for (const page of pages) {
+        if (page.ads) {
+          for (const ad of page.ads) {
+            if (
+              ad.isPreReserved &&
+              ad.expires_at &&
+              !ad.reminderSentAt &&
+              ad.customer_id !== 'legacy'
+            ) {
+              const expDate = new Date(ad.expires_at);
+              if (expDate > now && expDate <= threeDaysFromNow) {
+                const customer = customers.find(c => c.id === ad.customer_id || c.nif === ad.customer_id || (c.commercial_name && c.commercial_name.toLowerCase() === ad.customer_name?.toLowerCase()));
+                if (customer && customer.email) {
+                  await sendPaymentReminder(
+                    ad.customer_name,
+                    ad.ad_type,
+                    page.page_number,
+                    ad.expires_at,
+                    customer.email,
+                    customer.whatsapp,
+                    ad.id,
+                    false
+                  );
+                  sentCount++;
+                }
+              }
+            }
+          }
+        }
+      }
+
+      if (sentCount > 0) {
+        console.log(`Sent ${sentCount} automatic payment reminders.`);
+      }
+    };
+
+    if (!loading && customers.length > 0 && pages.length > 0) {
+      runAutoReminders();
+    }
+  }, [loading, customers, pages]);
+
+  if (loading) {
+    return <div className="p-8 flex justify-center items-center h-full"><div className="text-gray-500 font-medium">{t('loading_customers')}</div></div>;
+  }
 
   const getCustomerInvoices = (customer) => {
     return invoices.filter(inv => 
@@ -245,6 +357,19 @@ const CustomersList = () => {
     );
   });
 
+  const getActiveStateTitle = () => {
+    switch (activeState) {
+      case 'pending':
+        return t('cs_pending');
+      case 'pre-reserved':
+        return t('cs_pre_reserved');
+      case 'closed':
+        return t('cs_closed');
+      default:
+        return t('customers_title');
+    }
+  };
+
   return (
     <div className="p-0 sm:p-2 md:p-4">
       {/* Customer State Subareas Header */}
@@ -327,7 +452,7 @@ const CustomersList = () => {
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4 md:mb-8 px-1">
         <div>
           <h2 className="text-xl md:text-2xl font-bold text-gray-800">
-            {t('customers_title')} <span className="text-gray-500 font-medium ml-2 text-base md:text-lg">({activeCustomers.length})</span>
+            {getActiveStateTitle()} <span className="text-gray-500 font-medium ml-2 text-base md:text-lg">({activeCustomers.length})</span>
           </h2>
           <p className="text-gray-500 text-xs md:text-sm mt-0.5 md:mt-1 hidden sm:block">{t('customers_desc')}</p>
         </div>
@@ -359,7 +484,9 @@ const CustomersList = () => {
               <tr className="bg-gray-50 border-b border-gray-100 text-gray-500 text-sm tracking-wider uppercase">
                 <th className="p-4 font-semibold">{t('business')}</th>
                 <th className="p-4 font-semibold">{t('contact_details')}</th>
-                <th className="p-4 font-semibold">{t('location')}</th>
+                <th className="p-4 font-semibold">
+                  {activeState === 'pre-reserved' ? t('fecha_exp') : t('location')}
+                </th>
                 <th className="p-4 font-semibold">{t('customer_state')}</th>
                 <th className="p-4 font-semibold text-right">{t('actions')}</th>
               </tr>
@@ -399,30 +526,53 @@ const CustomersList = () => {
                     </div>
                   </td>
                   <td className="p-4">
-                    <div className="flex items-start gap-2 text-sm text-gray-600 max-w-xs">
-                      <MapPin size={14} className="text-gray-400 mt-0.5 flex-shrink-0" />
-                      <span className="truncate" title={customer.address}>{customer.address || t('no_address')}</span>
-                    </div>
+                    {activeState === 'pre-reserved' ? (
+                      (() => {
+                        const preReservedAd = getCustomerPreReservedAd(customer);
+                        if (!preReservedAd) return <span className="text-gray-400">—</span>;
+                        const expDate = new Date(preReservedAd.expires_at);
+                        const formattedDate = `${expDate.getDate()}/${expDate.getMonth() + 1}/${expDate.getFullYear()}`;
+                        return (
+                          <div className="flex items-center gap-2 text-sm text-orange-700 bg-orange-50 border border-orange-100 px-2.5 py-1.5 rounded-lg w-fit font-semibold shadow-sm">
+                            <Clock size={14} className="text-orange-500 shrink-0 animate-pulse" />
+                            <span>{t('page')} {preReservedAd.page_number} · {formattedDate}</span>
+                          </div>
+                        );
+                      })()
+                    ) : (
+                      <div className="flex items-start gap-2 text-sm text-gray-600 max-w-xs">
+                        <MapPin size={14} className="text-gray-400 mt-0.5 flex-shrink-0" />
+                        <span className="truncate" title={customer.address}>{customer.address || t('no_address')}</span>
+                      </div>
+                    )}
                   </td>
-                  <td className="p-4 flex flex-wrap gap-1">
-                    {isCustomerPending(customer) && (
-                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-red-50 text-red-700 border border-red-100">
-                        <Clock size={12} className="text-red-500" />
-                        {t('cs_pending')}
-                      </span>
-                    )}
-                    {isCustomerPreReserved(customer) && (
-                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-orange-50 text-orange-700 border border-orange-100">
-                        <Clock size={12} className="text-orange-500" />
-                        {t('cs_pre_reserved')}
-                      </span>
-                    )}
-                    {isCustomerClosed(customer) && (
-                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-green-50 text-green-700 border border-green-100">
-                        <CheckCircle size={12} className="text-green-500" />
-                        {t('cs_closed')}
-                      </span>
-                    )}
+                  <td className="p-4">
+                    <div className="flex flex-wrap gap-1">
+                      {activeState === 'pending' && isCustomerPending(customer) && (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-red-50 text-red-700 border border-red-100">
+                          <Clock size={12} className="text-red-500" />
+                          {t('cs_pending')}
+                        </span>
+                      )}
+                      {activeState === 'pre-reserved' && (
+                        <>
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-orange-50 text-orange-700 border border-orange-100">
+                            <Clock size={12} className="text-orange-500" />
+                            {t('cs_pre_reserved')}
+                          </span>
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-red-50 text-red-700 border border-red-100">
+                            <Clock size={12} className="text-red-500" />
+                            {t('cs_pending')}
+                          </span>
+                        </>
+                      )}
+                      {activeState === 'closed' && isCustomerClosed(customer) && (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-green-50 text-green-700 border border-green-100">
+                          <CheckCircle size={12} className="text-green-500" />
+                          {t('cs_closed')}
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td className="p-4 text-right">
                     <div className="flex items-center gap-2 justify-end">
@@ -440,14 +590,43 @@ const CustomersList = () => {
                             setLiberateSuccess(false);
                             setLiberateModalOpen(true);
                           }}
-                          className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap"
+                          className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap shadow-sm cursor-pointer"
                         >
                           {t('cl_liberate_btn')}
                         </button>
                       )}
+                      {activeState === 'pre-reserved' && (
+                        <>
+                          <button
+                            onClick={() => handleReminderClick(customer)}
+                            className="bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap inline-flex items-center gap-1 shadow-sm cursor-pointer"
+                          >
+                            <Bell size={14} />
+                            {t('send_reminder') || 'Send Reminder'}
+                          </button>
+                          {(() => {
+                            const preReservedAd = getCustomerPreReservedAd(customer);
+                            if (preReservedAd) {
+                              return (
+                                <button
+                                  onClick={() => {
+                                    if (onSelectPage) {
+                                      onSelectPage(preReservedAd.page_number);
+                                    }
+                                  }}
+                                  className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap shadow-sm cursor-pointer"
+                                >
+                                  {t('edit_status') || 'Edit Status'}
+                                </button>
+                              );
+                            }
+                            return null;
+                          })()}
+                        </>
+                      )}
                       <button 
                         onClick={() => handleEditCustomer(customer)}
-                        className="text-blue-600 hover:text-blue-800 font-medium text-sm"
+                        className="text-blue-600 hover:text-blue-800 font-medium text-sm cursor-pointer"
                       >
                         {t('edit')}
                       </button>
@@ -493,19 +672,25 @@ const CustomersList = () => {
                 
                 {/* State badges on top right */}
                 <div className="flex flex-col items-end gap-1 shrink-0">
-                  {isCustomerPending(customer) && (
+                  {activeState === 'pending' && isCustomerPending(customer) && (
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-red-50 text-red-700 border border-red-100">
                       <Clock size={10} className="text-red-500" />
                       {t('cs_pending')}
                     </span>
                   )}
-                  {isCustomerPreReserved(customer) && (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-orange-50 text-orange-700 border border-orange-100">
-                      <Clock size={10} className="text-orange-500" />
-                      {t('cs_pre_reserved')}
-                    </span>
+                  {activeState === 'pre-reserved' && (
+                    <>
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-orange-50 text-orange-700 border border-orange-100">
+                        <Clock size={10} className="text-orange-500" />
+                        {t('cs_pre_reserved')}
+                      </span>
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-red-50 text-red-700 border border-red-100">
+                        <Clock size={10} className="text-red-500" />
+                        {t('cs_pending')}
+                      </span>
+                    </>
                   )}
-                  {isCustomerClosed(customer) && (
+                  {activeState === 'closed' && isCustomerClosed(customer) && (
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-green-50 text-green-700 border border-green-100">
                       <CheckCircle size={10} className="text-green-500" />
                       {t('cs_closed')}
@@ -528,11 +713,26 @@ const CustomersList = () => {
                     <span>{customer.whatsapp}</span>
                   </div>
                 )}
-                {customer.address && (
-                  <div className="flex items-start gap-2">
-                    <MapPin size={12} className="text-gray-400 mt-0.5 shrink-0" />
-                    <span className="line-clamp-2">{customer.address}</span>
-                  </div>
+                {activeState === 'pre-reserved' ? (
+                  (() => {
+                    const preReservedAd = getCustomerPreReservedAd(customer);
+                    if (!preReservedAd) return null;
+                    const expDate = new Date(preReservedAd.expires_at);
+                    const formattedDate = `${expDate.getDate()}/${expDate.getMonth() + 1}/${expDate.getFullYear()}`;
+                    return (
+                      <div className="flex items-center gap-2 font-medium text-orange-700 bg-orange-50 border border-orange-100 px-2 py-1 rounded-md w-fit">
+                        <Clock size={12} className="text-orange-500 shrink-0" />
+                        <span>Pág. {preReservedAd.page_number} · Exp: {formattedDate}</span>
+                      </div>
+                    );
+                  })()
+                ) : (
+                  customer.address && (
+                    <div className="flex items-start gap-2">
+                      <MapPin size={12} className="text-gray-400 mt-0.5 shrink-0" />
+                      <span className="line-clamp-2">{customer.address}</span>
+                    </div>
+                  )
                 )}
                 {customer.last_year_product && (
                   <div className="flex items-start gap-2 pt-1 border-t border-gray-100 mt-1">
@@ -558,11 +758,40 @@ const CustomersList = () => {
                       setLiberateSuccess(false);
                       setLiberateModalOpen(true);
                     }}
-                    className="w-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-2 px-3 rounded-lg transition-colors flex items-center justify-center gap-1 shadow-sm"
+                    className="w-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-2 px-3 rounded-lg transition-colors flex items-center justify-center gap-1 shadow-sm cursor-pointer"
                   >
                     <CheckCircle size={14} />
                     {t('cl_liberate_btn')}
                   </button>
+                </div>
+              )}
+              {activeState === 'pre-reserved' && (
+                <div className="flex gap-2 justify-end border-t border-gray-100 pt-3 mt-1">
+                  <button
+                    onClick={() => handleReminderClick(customer)}
+                    className="flex-1 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold py-2 px-3 rounded-lg transition-colors flex items-center justify-center gap-1 shadow-sm cursor-pointer"
+                  >
+                    <Bell size={14} />
+                    {t('send_reminder') || 'Send Reminder'}
+                  </button>
+                  {(() => {
+                    const preReservedAd = getCustomerPreReservedAd(customer);
+                    if (preReservedAd) {
+                      return (
+                        <button
+                          onClick={() => {
+                            if (onSelectPage) {
+                              onSelectPage(preReservedAd.page_number);
+                            }
+                          }}
+                          className="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2 px-3 rounded-lg transition-colors flex items-center justify-center gap-1 shadow-sm cursor-pointer"
+                        >
+                          {t('edit_status') || 'Edit Status'}
+                        </button>
+                      );
+                    }
+                    return null;
+                  })()}
                 </div>
               )}
             </div>
@@ -656,6 +885,121 @@ const CustomersList = () => {
                 </div>
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Reminder Modal */}
+      {reminderModalOpen && reminderCustomer && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl p-6 sm:p-8 max-w-md w-full relative">
+            <button
+              onClick={() => {
+                setReminderModalOpen(false);
+                setReminderCustomer(null);
+              }}
+              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors p-1"
+            >
+              <X size={20} />
+            </button>
+            
+            <h3 className="text-xl font-bold text-gray-900 mb-1">
+              {t('send_reminder') || 'Send Reminder'}
+            </h3>
+            <p className="text-gray-500 text-sm mb-6">
+              {reminderCustomer.commercial_name || reminderCustomer.fiscal_name}
+            </p>
+
+            {(() => {
+              const preReservedAd = getCustomerPreReservedAd(reminderCustomer);
+              if (!preReservedAd) return null;
+              
+              const expDate = new Date(preReservedAd.expires_at);
+              const formattedDate = `${expDate.getDate()}/${expDate.getMonth() + 1}/${expDate.getFullYear()}`;
+              
+              return (
+                <div className="bg-slate-50 border border-slate-200/60 rounded-xl p-4 mb-6 text-sm">
+                  <div className="font-semibold text-slate-800 mb-2">
+                    {language === 'es' ? 'Detalles de la Pre-reserva' : 'Pre-reservation Details'}
+                  </div>
+                  <div className="space-y-1.5">
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">{t('page') || 'Page'}</span>
+                      <span className="font-bold text-blue-600">Pág. {preReservedAd.page_number}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">{language === 'es' ? 'Producto' : 'Product'}</span>
+                      <span className="font-medium text-slate-800">{preReservedAd.ad_type}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">{t('fecha_exp') || 'Expiration Date'}</span>
+                      <span className="font-medium text-slate-800">{formattedDate}</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
+            <div className="flex flex-col gap-3">
+              {/* Send Email Button */}
+              <button
+                onClick={handleSendEmailReminder}
+                disabled={!reminderCustomer.email || emailReminderStatus.sending}
+                className={`w-full py-2.5 px-4 rounded-xl border font-bold text-sm transition-colors flex items-center justify-center gap-2 cursor-pointer ${
+                  emailReminderStatus.success
+                    ? 'bg-green-50 text-green-700 border-green-200'
+                    : 'bg-blue-600 hover:bg-blue-700 text-white border-blue-600 disabled:opacity-50 disabled:bg-gray-100 disabled:text-gray-400 disabled:border-gray-200'
+                }`}
+              >
+                <Mail size={16} />
+                {emailReminderStatus.success
+                  ? (language === 'es' ? '¡Recordatorio por Correo Enviado!' : 'Email Reminder Sent!')
+                  : emailReminderStatus.sending
+                    ? (language === 'es' ? 'Enviando...' : 'Sending...')
+                    : (t('email_reminder') || 'Send Email Reminder')}
+              </button>
+
+              {/* Send WhatsApp Button */}
+              {(() => {
+                const preReservedAd = getCustomerPreReservedAd(reminderCustomer);
+                const url = getWhatsAppReminderUrl(reminderCustomer, preReservedAd);
+                return (
+                  <a
+                    href={url}
+                    target="_blank"
+                    rel="noreferrer"
+                    onClick={() => {
+                      setReminderModalOpen(false);
+                      setReminderCustomer(null);
+                    }}
+                    className={`w-full py-2.5 px-4 rounded-xl font-bold text-sm text-center transition-colors flex items-center justify-center gap-2 border cursor-pointer ${
+                      !reminderCustomer.whatsapp
+                        ? 'bg-gray-100 text-gray-400 border-gray-200 pointer-events-none'
+                        : 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-650'
+                    }`}
+                  >
+                    <Phone size={16} />
+                    {t('whatsapp_reminder') || 'Send WhatsApp Reminder'}
+                  </a>
+                );
+              })()}
+            </div>
+
+            {emailReminderStatus.error && (
+              <p className="text-xs text-red-600 font-medium mt-3 text-center">
+                ❌ Error: {emailReminderStatus.error}
+              </p>
+            )}
+            
+            <button
+              onClick={() => {
+                setReminderModalOpen(false);
+                setReminderCustomer(null);
+              }}
+              className="w-full mt-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold rounded-xl transition-colors text-sm cursor-pointer"
+            >
+              {t('close') || 'Close'}
+            </button>
           </div>
         </div>
       )}

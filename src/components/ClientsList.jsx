@@ -13,6 +13,7 @@ const ClientsList = () => {
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
 
+
   const fetchCustomers = async () => {
     try {
       setLoading(true);
@@ -85,6 +86,16 @@ const ClientsList = () => {
     }
   };
 
+  if (loading) {
+    return (
+      <div className="p-8 flex justify-center items-center h-64">
+        <div className="text-gray-500 font-medium">
+          {language === 'es' ? 'Cargando clientes...' : 'Loading customers...'}
+        </div>
+      </div>
+    );
+  }
+
   const filteredCustomers = customers.filter(c => {
     if (!searchTerm) return true;
     const term = searchTerm.toLowerCase();
@@ -97,16 +108,6 @@ const ClientsList = () => {
       (c.category || '').toLowerCase().includes(term)
     );
   });
-
-  if (loading) {
-    return (
-      <div className="p-8 flex justify-center items-center h-64">
-        <div className="text-gray-500 font-medium">
-          {language === 'es' ? 'Cargando clientes...' : 'Loading customers...'}
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-3 sm:p-6 max-w-6xl mx-auto">
@@ -160,7 +161,9 @@ const ClientsList = () => {
             {filteredCustomers.map((customer) => (
               <tr key={customer.id} className="hover:bg-slate-50/50 transition-colors">
                 <td className="p-4">
-                  <div className="font-bold text-gray-800">{customer.commercial_name || customer.fiscal_name}</div>
+                  <div className="flex items-center gap-2">
+                    <div className="font-bold text-gray-800">{customer.commercial_name || customer.fiscal_name}</div>
+                  </div>
                   {customer.commercial_name && customer.fiscal_name && (
                     <div className="text-xs text-gray-400 mt-0.5">{customer.fiscal_name}</div>
                   )}

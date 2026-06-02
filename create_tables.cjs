@@ -80,13 +80,13 @@ CREATE TABLE IF NOT EXISTS public.orders (
 -- 5. Create invoice_settings Table
 CREATE TABLE IF NOT EXISTS public.invoice_settings (
     id INT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
-    is_sequential_enabled BOOLEAN DEFAULT FALSE,
-    next_invoice_number BIGINT DEFAULT 2026060201,
+    is_sequential_enabled BOOLEAN DEFAULT TRUE,
+    next_invoice_number BIGINT DEFAULT 3,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 INSERT INTO public.invoice_settings (id, is_sequential_enabled, next_invoice_number)
-VALUES (1, FALSE, 2026060201)
-ON CONFLICT (id) DO NOTHING;
+VALUES (1, TRUE, 3)
+ON CONFLICT (id) DO UPDATE SET next_invoice_number = 3;
 
 -- 6. Enable Row Level Security
 ALTER TABLE public.ad_reservations ENABLE ROW LEVEL SECURITY;

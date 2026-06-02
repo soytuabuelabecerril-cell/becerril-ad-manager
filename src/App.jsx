@@ -16,7 +16,7 @@ import Login from './components/Login';
 
 function App() {
   const { t, language, setLanguage } = useLanguage();
-  const { session, loading } = useDatabase();
+  const { session, loading, pages } = useDatabase();
   const [selectedPage, setSelectedPage] = useState(null);
   const [locationData, setLocationData] = useState(null);
   const [currentTab, setCurrentTab] = useState('magazine');
@@ -33,6 +33,27 @@ function App() {
 
   const handleLocationSelect = (data) => {
     setLocationData(data);
+  };
+
+  const getHeaderTitle = () => {
+    switch (currentTab) {
+      case 'magazine':
+        return t('header_dashboard');
+      case 'customers':
+        return t('nav_customers');
+      case 'clients':
+        return t('nav_clients');
+      case 'invoices':
+        return t('nav_invoices');
+      case 'pending':
+        return t('nav_pending');
+      case 'returns':
+        return t('nav_returns');
+      case 'financial':
+        return t('nav_financial');
+      default:
+        return t('header_dashboard');
+    }
   };
 
   if (loading) {
@@ -144,7 +165,7 @@ function App() {
       {/* Main Content */}
       <div className="flex-1 overflow-auto">
         <header className="bg-white border-b border-gray-200 px-4 md:px-8 py-5 flex justify-between items-center">
-          <h2 className="text-xl md:text-2xl font-bold text-gray-800">{t('header_dashboard')}</h2>
+          <h2 className="text-xl md:text-2xl font-bold text-gray-800">{getHeaderTitle()}</h2>
           <div className="flex items-center gap-4">
             <div className="hidden md:flex h-10 w-10 rounded-full bg-blue-100 items-center justify-center text-blue-800 font-bold">
               IA
@@ -159,7 +180,16 @@ function App() {
         </header>
 
         <main className="p-3 sm:p-4 md:p-8">
-          {currentTab === 'customers' && <CustomersList />}
+          {currentTab === 'customers' && (
+            <CustomersList 
+              onSelectPage={(pageNum) => {
+                const pageObj = pages.find(p => p.page_number === pageNum);
+                if (pageObj) {
+                  setSelectedPage(pageObj);
+                }
+              }} 
+            />
+          )}
           {currentTab === 'clients' && <ClientsList />}
           {currentTab === 'invoices' && <InvoicesList onSelectPage={setSelectedPage} />}
           {currentTab === 'returns' && <MoneyReturnsList />}
@@ -185,7 +215,7 @@ function App() {
       </div>
 
       {/* Modal Overlay for Reservation Panel */}
-      {selectedPage && currentTab !== 'customers' && (
+      {selectedPage && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-3 sm:p-4 overflow-y-auto animate-in fade-in duration-200">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[94dvh] sm:max-h-[90dvh] overflow-y-auto relative my-auto animate-in zoom-in-95 duration-200">
             <ReservationPanel 

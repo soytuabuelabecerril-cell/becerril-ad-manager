@@ -30,8 +30,8 @@ export const getInvoices = () => {
 
 // ─── Invoicing Settings ──────────────────────────────────────────────────────
 let settings = {
-  isSequentialEnabled: false,
-  nextInvoiceNumber: 2026060201
+  isSequentialEnabled: true,
+  nextInvoiceNumber: 3
 };
 
 if (isBrowser) {
@@ -63,14 +63,14 @@ export const saveInvoiceSettings = (newSettings) => {
 };
 
 export const addInvoice = (invoice) => {
-  let invoiceId = '';
+  let invoiceId;
   if (settings.isSequentialEnabled && settings.nextInvoiceNumber) {
     const nextNum = parseInt(settings.nextInvoiceNumber, 10);
-    invoiceId = '#FACT.' + nextNum.toString();
+    invoiceId = String(nextNum).padStart(2, '0') + '_2601';
     settings.nextInvoiceNumber = nextNum + 1;
     saveSettingsToLocalStorage();
   } else {
-    invoiceId = '#FACT.' + Math.floor(Math.random() * 1000000).toString().padStart(6, '0');
+    invoiceId = String(Math.floor(Math.random() * 1000000)).padStart(6, '0') + '_2601';
   }
 
   const newInvoice = {
@@ -103,14 +103,14 @@ export const cancelInvoice = (id, generateRefund = false) => {
   inv.status = 'Cancelled';
   
   if (generateRefund) {
-    let refundId = '';
+    let refundId;
     if (settings.isSequentialEnabled && settings.nextInvoiceNumber) {
       const nextNum = parseInt(settings.nextInvoiceNumber, 10);
-      refundId = 'REF-' + nextNum.toString();
+      refundId = 'REF-' + String(nextNum).padStart(2, '0') + '_2601';
       settings.nextInvoiceNumber = nextNum + 1;
       saveSettingsToLocalStorage();
     } else {
-      refundId = 'REF-' + Math.floor(Math.random() * 1000000).toString().padStart(6, '0');
+      refundId = 'REF-' + String(Math.floor(Math.random() * 1000000)).padStart(6, '0') + '_2601';
     }
 
     const refundInvoice = {
@@ -136,11 +136,19 @@ export const cancelInvoice = (id, generateRefund = false) => {
 export const deleteInvoice = (id) => {
   invoices = invoices.filter(i => i.id !== id);
   saveInvoicesToLocalStorage();
+  if (invoices.length === 0) {
+    settings.nextInvoiceNumber = 3;
+    saveSettingsToLocalStorage();
+  }
 };
 
 export const hardDeleteInvoice = (id) => {
   invoices = invoices.filter(i => i.id !== id && i.originalInvoiceId !== id);
   saveInvoicesToLocalStorage();
+  if (invoices.length === 0) {
+    settings.nextInvoiceNumber = 3;
+    saveSettingsToLocalStorage();
+  }
 };
 
 /**
@@ -153,7 +161,7 @@ export const reserveInvoiceNumber = (note = '') => {
   if (!settings.isSequentialEnabled || !settings.nextInvoiceNumber) return null;
   
   const nextNum = parseInt(settings.nextInvoiceNumber, 10);
-  const invoiceId = '#FACT.' + nextNum.toString();
+  const invoiceId = String(nextNum).padStart(2, '0') + '_2601';
   settings.nextInvoiceNumber = nextNum + 1;
   saveSettingsToLocalStorage();
 

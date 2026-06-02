@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useDatabase } from '../context/DatabaseContext';
 import { getReciboWhatsAppMessage } from '../utils/invoicesStore';
-import { FileText, Download, Receipt, Mail, MessageCircle, XCircle, Star, CheckCircle, Eye, X, Trash2, Search, Settings } from 'lucide-react';
+import { FileText, Download, Receipt, Mail, MessageCircle, XCircle, CheckCircle, Eye, X, Trash2, Search, Settings, Lock } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
 import { useLanguage } from '../context/LanguageContext';
 
-const InvoicesList = ({ onSelectPage }) => {
+const InvoicesList = () => {
   const { t, language } = useLanguage();
   const {
     invoices,
@@ -17,8 +17,7 @@ const InvoicesList = ({ onSelectPage }) => {
     hardDeleteInvoice,
     deleteRecibo,
     saveInvoiceSettings,
-    reserveInvoiceNumber,
-    pages
+    reserveInvoiceNumber
   } = useDatabase();
 
   const [renderingInvoice, setRenderingInvoice] = useState(null);
@@ -28,7 +27,7 @@ const InvoicesList = ({ onSelectPage }) => {
   const [sendingEmailId, setSendingEmailId] = useState(null);
   const [activeSection, setActiveSection] = useState('invoices'); // 'invoices' | 'recibos'
   const [isConfigOpen, setIsConfigOpen] = useState(false);
-  const [configSettings, setConfigSettings] = useState({ isSequentialEnabled: false, nextInvoiceNumber: 2026060201 });
+  const [configSettings, setConfigSettings] = useState({ isSequentialEnabled: true, nextInvoiceNumber: 3 });
   const [reserveNote, setReserveNote] = useState('');
 
   useEffect(() => {
@@ -36,6 +35,38 @@ const InvoicesList = ({ onSelectPage }) => {
       setConfigSettings(settings);
     }
   }, [settings]);
+
+  const handleReserveInvoiceDirect = async () => {
+    if (!settings?.isSequentialEnabled) {
+      const seqMsg = language === 'es'
+        ? "La numeración secuencial no está activada en la configuración."
+        : "Sequential numbering is not enabled in settings.";
+      alert(seqMsg);
+      return;
+    }
+
+    const displayId = String(settings.nextInvoiceNumber).padStart(2, '0') + '_2601';
+    const confirmMessage = language === 'es' 
+      ? `¿Estás seguro de que quieres reservar el número de factura ${displayId} para uso externo?`
+      : `Are you sure you want to reserve invoice number ${displayId} for external use?`;
+      
+    if (!window.confirm(confirmMessage)) return;
+
+    try {
+      const res = await reserveInvoiceNumber("Número Factura reservada");
+      if (res) {
+        const successMessage = language === 'es'
+          ? `Factura ${res.id} reservada correctamente.`
+          : `Invoice ${res.id} reserved successfully.`;
+        alert(successMessage);
+      } else {
+        alert("Failed to reserve invoice number.");
+      }
+    } catch (e) {
+      console.error("Error reserving invoice directly:", e);
+      alert("Error reserving invoice number: " + e.message);
+    }
+  };
 
   const generatePDF = (inv) => {
     setRenderingInvoice(inv);
@@ -447,26 +478,15 @@ const InvoicesList = ({ onSelectPage }) => {
                 {t('il_pending_payment_filter') || 'Pending payment'}
               </button>
             </div>
-            <div className="flex gap-2 justify-between md:justify-start">
-              <button
-                onClick={() => {
-                  const page = pages.find(p => p.page_number === 91);
-                  if (onSelectPage) onSelectPage(page);
-                }}
-                className="flex-1 md:flex-none flex items-center justify-center gap-1.5 px-2.5 py-1.5 bg-orange-100 hover:bg-orange-200 text-orange-800 text-[10px] sm:text-xs font-bold rounded border border-orange-200 transition-colors"
-              >
-                <Star size={12} /> {t('il_book_pg_91') || 'Book Pg. 91'}
-              </button>
-              <button
-                onClick={() => {
-                  const page = pages.find(p => p.page_number === 92);
-                  if (onSelectPage) onSelectPage(page);
-                }}
-                className="flex-1 md:flex-none flex items-center justify-center gap-1.5 px-2.5 py-1.5 bg-orange-100 hover:bg-orange-200 text-orange-800 text-[10px] sm:text-xs font-bold rounded border border-orange-200 transition-colors"
-              >
-                <Star size={12} /> {t('il_book_pg_92') || 'Book Pg. 92'}
-              </button>
-            </div>
+
+            <button
+              onClick={handleReserveInvoiceDirect}
+              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-900 text-white text-xs sm:text-sm font-medium rounded text-center flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+            >
+              <Lock size={14} />
+              {t('reserve_invoice')}
+            </button>
+
             <span className="text-xs text-gray-500 text-right md:text-left">{displayInvoices.length} {t('il_active_cancelled') || 'active/cancelled'}</span>
           </div>
         )}
@@ -521,7 +541,10 @@ const InvoicesList = ({ onSelectPage }) => {
                       </td>
                       <td className="p-3">
                         <div className="font-medium text-gray-900">{inv.customerName === 'System User' ? t('system_user') : inv.customerName}</div>
-                        <div className="text-xs text-gray-500 truncate max-w-[200px]">{inv.productName === 'Reserved ID' ? t('reserved_id_desc') : inv.productName}</div>
+                        <div className="text-xs text-gray-500 truncate max-w-[200px]">
+                          {inv.assignedPage ? `P${inv.assignedPage} - ` : ''}
+                          {inv.productName === 'Reserved ID' ? t('reserved_id_desc') : inv.productName}
+                        </div>
                       </td>
                       <td className="p-3">
                         {inv.status === 'Reserved' ? (
@@ -650,7 +673,10 @@ const InvoicesList = ({ onSelectPage }) => {
                   {/* Customer details */}
                   <div className="text-sm">
                     <div className="font-bold text-gray-800">{inv.customerName === 'System User' ? t('system_user') : inv.customerName}</div>
-                    <div className="text-xs text-gray-500 mt-0.5">{inv.productName === 'Reserved ID' ? t('reserved_id_desc') : inv.productName}</div>
+                    <div className="text-xs text-gray-500 mt-0.5">
+                      {inv.assignedPage ? `P${inv.assignedPage} - ` : ''}
+                      {inv.productName === 'Reserved ID' ? t('reserved_id_desc') : inv.productName}
+                    </div>
                     <div className="text-xs text-blue-600 mt-1 font-semibold">{t('inv_page_assignment') || 'Page:'} {inv.assignedPage}</div>
                   </div>
 
@@ -1020,25 +1046,24 @@ const InvoicesList = ({ onSelectPage }) => {
                   />
                   <button
                     type="button"
-                    onClick={() => {
+                    onClick={async () => {
                       if (!configSettings.nextInvoiceNumber) return;
-                      if (!window.confirm(`${t('config_reserve_btn')} (#FACT.${configSettings.nextInvoiceNumber})?`)) return;
+                      const displayId = String(configSettings.nextInvoiceNumber).padStart(2, '0') + '_2601';
+                      if (!window.confirm(`${t('config_reserve_btn')} (${displayId})?`)) return;
                       
                       // Save settings first so store knows the sequence
-                      saveInvoiceSettings(configSettings);
+                      await saveInvoiceSettings(configSettings);
                       
                       // Reserve number
-                      reserveInvoiceNumber(reserveNote);
+                      await reserveInvoiceNumber(reserveNote);
                       
                       // Reload store state
-                      setInvoices(getInvoices());
-                      setConfigSettings(getInvoiceSettings());
                       setReserveNote('');
                       alert('ID reserved successfully!');
                     }}
                     className="w-full py-2 bg-slate-800 hover:bg-slate-900 text-white font-bold text-sm rounded-lg transition-colors flex items-center justify-center gap-2 shadow-sm cursor-pointer"
                   >
-                    {t('config_reserve_btn')} (#FACT.{configSettings.nextInvoiceNumber})
+                    {t('config_reserve_btn')} ({String(configSettings.nextInvoiceNumber).padStart(2, '0')}_2601)
                   </button>
                 </div>
               )}

@@ -90,7 +90,8 @@ const fromDbOrder = (row) => ({
   artworkComment: row.artwork_comment,
   orderType: row.order_type,
   customerEmail: row.customer_email,
-  customerPhone: row.customer_phone
+  customerPhone: row.customer_phone,
+  reminderSentAt: row.reminder_sent_at
 });
 
 const toDbOrder = (ord) => ({
@@ -123,7 +124,8 @@ const fromDbAd = (row) => ({
   paymentMethod: row.payment_method,
   isNew: row.is_new,
   isRecibo: row.is_recibo,
-  createdAt: row.created_at
+  createdAt: row.created_at,
+  reminderSentAt: row.reminder_sent_at
 });
 
 const toDbAd = (ad, pageNum) => ({
@@ -159,8 +161,8 @@ export const DatabaseProvider = ({ children }) => {
   const [recibos, setRecibos] = useState([]);
   const [orders, setOrders] = useState([]);
   const [settings, setSettings] = useState({
-    isSequentialEnabled: false,
-    nextInvoiceNumber: 2026060201
+    isSequentialEnabled: true,
+    nextInvoiceNumber: 3
   });
   const [loading, setLoading] = useState(true);
   const [session, setSession] = useState(null);
@@ -348,17 +350,35 @@ export const DatabaseProvider = ({ children }) => {
 
   // Helper to generate Invoice ID
   const getNextInvoiceId = async () => {
-    if (settings.isSequentialEnabled && settings.nextInvoiceNumber) {
-      const nextNum = parseInt(settings.nextInvoiceNumber, 10);
-      const invoiceId = '#FACT.' + nextNum.toString();
+    // Fetch latest settings from DB to prevent race conditions or stale state
+    let isSeq = settings.isSequentialEnabled;
+    let nextNum = settings.nextInvoiceNumber;
+    try {
+      const { data: dbSettings, error: dbErr } = await supabase
+        .from('invoice_settings')
+        .select('*')
+        .eq('id', 1)
+        .single();
+      if (!dbErr && dbSettings) {
+        const fetched = fromDbSettings(dbSettings);
+        isSeq = fetched.isSequentialEnabled;
+        nextNum = fetched.nextInvoiceNumber;
+      }
+    } catch (e) {
+      console.error("Error fetching settings for next invoice ID:", e);
+    }
+
+    if (isSeq && nextNum) {
+      const parsedNum = parseInt(nextNum, 10);
+      const invoiceId = String(parsedNum).padStart(2, '0') + '_2601';
       
-      // Increment sequentially in DB
+      // Increment sequentially in DB and local state
       await saveInvoiceSettings({
-        nextInvoiceNumber: nextNum + 1
+        nextInvoiceNumber: parsedNum + 1
       });
       return invoiceId;
     } else {
-      return '#FACT.' + Math.floor(Math.random() * 1000000).toString().padStart(6, '0');
+      return String(Math.floor(Math.random() * 1000000)).padStart(6, '0') + '_2601';
     }
   };
 
@@ -379,6 +399,7 @@ export const DatabaseProvider = ({ children }) => {
         .from('invoices')
         .insert([toDbInvoice(newInvoice)]);
       if (error) throw error;
+      setInvoices(prev => [newInvoice, ...prev]);
       return newInvoice;
     } catch (err) {
       console.error("Error inserting invoice:", err);
@@ -435,13 +456,30 @@ export const DatabaseProvider = ({ children }) => {
       }
 
       if (generateRefund) {
+        let isSeq = settings.isSequentialEnabled;
+        let nextNum = settings.nextInvoiceNumber;
+        try {
+          const { data: dbSettings, error: dbErr } = await supabase
+            .from('invoice_settings')
+            .select('*')
+            .eq('id', 1)
+            .single();
+          if (!dbErr && dbSettings) {
+            const fetched = fromDbSettings(dbSettings);
+            isSeq = fetched.isSequentialEnabled;
+            nextNum = fetched.nextInvoiceNumber;
+          }
+        } catch (e) {
+          console.error("Error fetching settings for refund ID:", e);
+        }
+
         let refundId = '';
-        if (settings.isSequentialEnabled && settings.nextInvoiceNumber) {
-          const nextNum = parseInt(settings.nextInvoiceNumber, 10);
-          refundId = 'REF-' + nextNum.toString();
-          await saveInvoiceSettings({ nextInvoiceNumber: nextNum + 1 });
+        if (isSeq && nextNum) {
+          const parsedNum = parseInt(nextNum, 10);
+          refundId = 'REF-' + String(parsedNum).padStart(2, '0') + '_2601';
+          await saveInvoiceSettings({ nextInvoiceNumber: parsedNum + 1 });
         } else {
-          refundId = 'REF-' + Math.floor(Math.random() * 1000000).toString().padStart(6, '0');
+          refundId = 'REF-' + String(Math.floor(Math.random() * 1000000)).padStart(6, '0') + '_2601';
         }
 
         const refundInvoice = {
@@ -512,13 +550,13 @@ export const DatabaseProvider = ({ children }) => {
       }
 
       if (generateRefund) {
-        let refundId = '';
+        let refundId;
         if (settings.isSequentialEnabled && settings.nextInvoiceNumber) {
           const nextNum = parseInt(settings.nextInvoiceNumber, 10);
-          refundId = 'REF-' + nextNum.toString();
+          refundId = 'REF-' + String(nextNum).padStart(2, '0') + '_2601';
           saveInvoiceSettings({ nextInvoiceNumber: nextNum + 1 });
         } else {
-          refundId = 'REF-' + Math.floor(Math.random() * 1000000).toString().padStart(6, '0');
+          refundId = 'REF-' + String(Math.floor(Math.random() * 1000000)).padStart(6, '0') + '_2601';
         }
 
         const refundInvoice = {
@@ -549,6 +587,14 @@ export const DatabaseProvider = ({ children }) => {
         .delete()
         .eq('id', id);
       if (error) throw error;
+
+      // Reset sequence if no invoices left
+      const { count, error: countErr } = await supabase
+        .from('invoices')
+        .select('*', { count: 'exact', head: true });
+      if (!countErr && count === 0) {
+        await saveInvoiceSettings({ nextInvoiceNumber: 3 });
+      }
     } catch (err) {
       console.error("Error deleting invoice:", err);
     }
@@ -561,16 +607,41 @@ export const DatabaseProvider = ({ children }) => {
         .delete()
         .or(`id.eq.${id},original_invoice_id.eq.${id}`);
       if (error) throw error;
+
+      // Reset sequence if no invoices left
+      const { count, error: countErr } = await supabase
+        .from('invoices')
+        .select('*', { count: 'exact', head: true });
+      if (!countErr && count === 0) {
+        await saveInvoiceSettings({ nextInvoiceNumber: 3 });
+      }
     } catch (err) {
       console.error("Error hard deleting invoice:", err);
     }
   };
 
   const reserveInvoiceNumber = async (note = '') => {
-    if (!settings.isSequentialEnabled || !settings.nextInvoiceNumber) return null;
-    const nextNum = parseInt(settings.nextInvoiceNumber, 10);
-    const invoiceId = '#FACT.' + nextNum.toString();
-    await saveInvoiceSettings({ nextInvoiceNumber: nextNum + 1 });
+    let isSeq = settings.isSequentialEnabled;
+    let nextNum = settings.nextInvoiceNumber;
+    try {
+      const { data: dbSettings, error: dbErr } = await supabase
+        .from('invoice_settings')
+        .select('*')
+        .eq('id', 1)
+        .single();
+      if (!dbErr && dbSettings) {
+        const fetched = fromDbSettings(dbSettings);
+        isSeq = fetched.isSequentialEnabled;
+        nextNum = fetched.nextInvoiceNumber;
+      }
+    } catch (e) {
+      console.error("Error fetching settings for reservation ID:", e);
+    }
+
+    if (!isSeq || !nextNum) return null;
+    const parsedNum = parseInt(nextNum, 10);
+    const invoiceId = String(parsedNum).padStart(2, '0') + '_2601';
+    await saveInvoiceSettings({ nextInvoiceNumber: parsedNum + 1 });
 
     const reservedInvoice = {
       id: invoiceId,
@@ -582,7 +653,7 @@ export const DatabaseProvider = ({ children }) => {
       vat: 0,
       total: 0,
       assignedPage: null,
-      artworkComment: note || 'Blocked out-of-system ID.',
+      artworkComment: note || 'Factura externa al sistema.',
       paymentMethod: 'Pending',
       isPaid: false
     };
@@ -592,14 +663,16 @@ export const DatabaseProvider = ({ children }) => {
         .from('invoices')
         .insert([toDbInvoice(reservedInvoice)]);
       if (error) throw error;
+      setInvoices(prev => [reservedInvoice, ...prev]);
       return reservedInvoice;
     } catch (err) {
       console.error("Error reserving invoice ID:", err);
-      return null;
+      setInvoices(prev => [reservedInvoice, ...prev]);
+      return reservedInvoice;
     }
   };
 
-  const addOrder = async (orderData) => {
+  const addOrder = async (orderData, skipAdReservation = false) => {
     const id = 'ORD-' + Math.floor(Math.random() * 1000000).toString().padStart(6, '0');
     const newOrder = {
       id,
@@ -630,21 +703,25 @@ export const DatabaseProvider = ({ children }) => {
         .insert([toDbOrder(newOrder)]);
       if (error) throw error;
 
-      const { error: adErr } = await supabase
-        .from('ad_reservations')
-        .insert([toDbAd(adDetails, orderData.assignedPage)]);
-      if (adErr) throw adErr;
+      if (!skipAdReservation) {
+        const { error: adErr } = await supabase
+          .from('ad_reservations')
+          .insert([toDbAd(adDetails, orderData.assignedPage)]);
+        if (adErr) throw adErr;
+      }
 
       // Immediately update local pages state (don't wait for realtime)
       setOrders(prev => [newOrder, ...prev]);
-      setPages(prevPages => prevPages.map(p => {
-        if (p.page_number === orderData.assignedPage) {
-          const pageAds = p.ads ? [...p.ads] : [];
-          pageAds.push(fromDbAd(toDbAd(adDetails, orderData.assignedPage)));
-          return { ...p, ads: pageAds, status: 'Reserved' };
-        }
-        return p;
-      }));
+      if (!skipAdReservation && orderData.assignedPage) {
+        setPages(prevPages => prevPages.map(p => {
+          if (p.page_number === orderData.assignedPage) {
+            const pageAds = p.ads ? [...p.ads] : [];
+            pageAds.push(fromDbAd(toDbAd(adDetails, orderData.assignedPage)));
+            return { ...p, ads: pageAds, status: 'Reserved' };
+          }
+          return p;
+        }));
+      }
 
       return newOrder;
     } catch (err) {
@@ -654,30 +731,32 @@ export const DatabaseProvider = ({ children }) => {
       setOrders(prev => [newOrder, ...prev]);
 
       // Fallback: update local pages state
-      setPages(prevPages => {
-        const updatedPages = prevPages.map(p => {
-          if (p.page_number === orderData.assignedPage) {
-            const pageAds = p.ads ? [...p.ads] : [];
-            pageAds.push(fromDbAd(toDbAd(adDetails, orderData.assignedPage)));
-            return {
-              ...p,
-              ads: pageAds,
-              status: 'Reserved'
-            };
-          }
-          return p;
+      if (!skipAdReservation && orderData.assignedPage) {
+        setPages(prevPages => {
+          const updatedPages = prevPages.map(p => {
+            if (p.page_number === orderData.assignedPage) {
+              const pageAds = p.ads ? [...p.ads] : [];
+              pageAds.push(fromDbAd(toDbAd(adDetails, orderData.assignedPage)));
+              return {
+                ...p,
+                ads: pageAds,
+                status: 'Reserved'
+              };
+            }
+            return p;
+          });
+          return updatedPages;
         });
-        return updatedPages;
-      });
+      }
 
       return newOrder;
     }
   };
 
-  const deleteOrder = async (id) => {
+  const deleteOrder = async (id, skipAdReservation = false) => {
     try {
       const ord = orders.find(o => o.id === id);
-      if (ord && ord.assignedPage) {
+      if (!skipAdReservation && ord && ord.assignedPage) {
         // Remove from ad_reservations
         const { error: adErr } = await supabase
           .from('ad_reservations')
@@ -693,6 +772,44 @@ export const DatabaseProvider = ({ children }) => {
         .delete()
         .eq('id', id);
       if (error) throw error;
+
+      // Immediately update local states (don't wait for realtime)
+      setOrders(prev => prev.filter(o => o.id !== id));
+      if (!skipAdReservation && ord && ord.assignedPage) {
+        setPages(prevPages => {
+          const updatedPages = prevPages.map(p => {
+            if (p.page_number === ord.assignedPage) {
+              const pageAds = p.ads ? p.ads.filter(ad => !(ad.customer_name === ord.customerName && ad.ad_type === ord.productName)) : [];
+              return {
+                ...p,
+                ads: pageAds,
+                status: pageAds.length > 0 ? 'Reserved' : 'Available'
+              };
+            }
+            return p;
+          });
+
+          // Update fallbackPagesData and localStorage
+          if (typeof window !== 'undefined' && window.localStorage) {
+            try {
+              fallbackPagesData.forEach((p, idx) => {
+                if (p.page_number === ord.assignedPage) {
+                  const pageAds = p.ads ? p.ads.filter(ad => !(ad.customer_name === ord.customerName && ad.ad_type === ord.productName)) : [];
+                  fallbackPagesData[idx] = {
+                    ...p,
+                    ads: pageAds,
+                    status: pageAds.length > 0 ? 'Reserved' : 'Available'
+                  };
+                }
+              });
+              localStorage.setItem('becerril_magazine_pages', JSON.stringify(fallbackPagesData));
+            } catch (e) {
+              console.error("Error persisting to localStorage:", e);
+            }
+          }
+          return updatedPages;
+        });
+      }
     } catch (err) {
       console.error("Error deleting order:", err);
       
@@ -702,7 +819,7 @@ export const DatabaseProvider = ({ children }) => {
         setOrders(prev => prev.filter(o => o.id !== id));
 
         // Fallback: remove ad reservation from local pages state
-        if (ord.assignedPage) {
+        if (!skipAdReservation && ord.assignedPage) {
           setPages(prevPages => {
             const updatedPages = prevPages.map(p => {
               if (p.page_number === ord.assignedPage) {
@@ -847,6 +964,143 @@ export const DatabaseProvider = ({ children }) => {
       setOrders(prev => prev.filter(o => o.id !== orderId));
 
       return invoice;
+    }
+  };
+
+  const sendPaymentReminder = async (customerName, productName, pageNum, expiresAt, customerEmail, customerPhone, targetId, isOrder = false) => {
+    let emailSuccess = false;
+    const formattedDate = expiresAt ? new Date(expiresAt).toLocaleDateString() : '';
+
+    if (customerEmail) {
+      try {
+        const subject = `Recordatorio de Reserva: Pág. ${pageNum} - Revista Becerril`;
+        const text = `Hola,\n\nLe recordamos que tiene una reserva de espacio publicitario pendiente de pago en la Revista Becerril:\n\n` +
+          `- Cliente: ${customerName}\n` +
+          `- Producto: ${productName}\n` +
+          `- Página Asignada: ${pageNum}\n` +
+          `- Fecha límite para confirmar (pago): ${formattedDate}\n\n` +
+          `Por favor, complete el pago para garantizar que su espacio no sea liberado.\n\n` +
+          `Gracias,\nEquipo Revista Becerril`;
+
+        const apiUrl = import.meta.env.VITE_API_URL || (window.location.hostname === 'localhost' ? 'http://localhost:3001/api/send-email' : '/api/send-email');
+        const response = await fetch(apiUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ to: customerEmail, subject, text })
+        });
+        const data = await response.json();
+        if (data.success) {
+          emailSuccess = true;
+        }
+      } catch (err) {
+        console.error('Error sending payment reminder email:', err);
+      }
+    }
+
+    const now = new Date().toISOString();
+    try {
+      if (isOrder) {
+        const { error } = await supabase
+          .from('orders')
+          .update({ reminder_sent_at: now })
+          .eq('id', targetId);
+        if (error) throw error;
+
+        // Also update local state
+        setOrders(prev => prev.map(o => o.id === targetId ? { ...o, reminderSentAt: now } : o));
+      } else {
+        const { error } = await supabase
+          .from('ad_reservations')
+          .update({ reminder_sent_at: now })
+          .eq('id', targetId);
+        if (error) throw error;
+
+        // Also update local state inside pages
+        setPages(prevPages => prevPages.map(p => {
+          if (p.page_number === pageNum) {
+            const updatedAds = p.ads ? p.ads.map(ad => ad.id === targetId ? { ...ad, reminderSentAt: now } : ad) : [];
+            return {
+              ...p,
+              ads: updatedAds
+            };
+          }
+          return p;
+        }));
+      }
+    } catch (err) {
+      console.error('Error updating database with reminder timestamp:', err);
+      // Local fallback updates
+      if (isOrder) {
+        setOrders(prev => prev.map(o => o.id === targetId ? { ...o, reminderSentAt: now } : o));
+      } else {
+        setPages(prevPages => prevPages.map(p => {
+          if (p.page_number === pageNum) {
+            const updatedAds = p.ads ? p.ads.map(ad => ad.id === targetId ? { ...ad, reminderSentAt: now } : ad) : [];
+            return {
+              ...p,
+              ads: updatedAds
+            };
+          }
+          return p;
+        }));
+      }
+    }
+
+    return { emailSuccess };
+  };
+
+  const addInvoiceWithReservation = async (invoiceData, adDetails) => {
+    const id = await getNextInvoiceId();
+    const newInvoice = {
+      id,
+      status: 'Active',
+      paymentMethod: 'Cash',
+      isPaid: true,
+      ...invoiceData
+    };
+
+    const pageNum = invoiceData.assignedPage;
+
+    try {
+      const { error: invErr } = await supabase
+        .from('invoices')
+        .insert([toDbInvoice(newInvoice)]);
+      if (invErr) throw invErr;
+
+      const { error: adErr } = await supabase
+        .from('ad_reservations')
+        .insert([toDbAd(adDetails, pageNum)]);
+      if (adErr) throw adErr;
+
+      // Immediately update local states (don't wait for realtime)
+      setInvoices(prev => [newInvoice, ...prev]);
+      if (pageNum) {
+        setPages(prevPages => prevPages.map(p => {
+          if (p.page_number === pageNum) {
+            const pageAds = p.ads ? [...p.ads] : [];
+            pageAds.push(fromDbAd(toDbAd(adDetails, pageNum)));
+            return { ...p, ads: pageAds, status: 'Reserved' };
+          }
+          return p;
+        }));
+      }
+
+      return newInvoice;
+    } catch (err) {
+      console.error("Error creating invoice with reservation:", err);
+      // Fallback update
+      setInvoices(prev => [newInvoice, ...prev]);
+      if (pageNum) {
+        setPages(prevPages => prevPages.map(p => {
+          if (p.page_number === pageNum) {
+            const pageAds = p.ads ? [...p.ads] : [];
+            pageAds.push(fromDbAd(toDbAd(adDetails, pageNum)));
+            return { ...p, ads: pageAds, status: 'Reserved' };
+          }
+          return p;
+        }));
+      }
+      return newInvoice;
     }
   };
 
@@ -1080,31 +1334,10 @@ export const DatabaseProvider = ({ children }) => {
   };
 
   const resolvePreReservation = async (pageNum, customerName, adType, action, prolongDateStr = '') => {
-    try {
-      if (action === 'confirm') {
-        const { error } = await supabase
-          .from('ad_reservations')
-          .update({ is_pre_reserved: false, expires_at: null })
-          .eq('page_number', pageNum)
-          .eq('customer_name', customerName)
-          .eq('ad_type', adType);
-        if (error) throw error;
-      } else if (action === 'prolong') {
-        const nextWeek = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
-        const dateToUse = prolongDateStr ? new Date(prolongDateStr).toISOString() : nextWeek;
-        const { error } = await supabase
-          .from('ad_reservations')
-          .update({ expires_at: dateToUse })
-          .eq('page_number', pageNum)
-          .eq('customer_name', customerName)
-          .eq('ad_type', adType);
-        if (error) throw error;
-      } else if (action === 'cancel') {
-        await deleteAdReservationDirect(pageNum, customerName, adType);
-      }
-    } catch (err) {
-      console.error("Error resolving pre-reservation:", err);
-      
+    const nextWeek = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+    const dateToUse = prolongDateStr ? new Date(prolongDateStr).toISOString() : nextWeek;
+
+    const updateLocalState = () => {
       setPages(prevPages => {
         const updatedPages = prevPages.map(p => {
           if (p.page_number === pageNum) {
@@ -1113,8 +1346,7 @@ export const DatabaseProvider = ({ children }) => {
                 if (action === 'confirm') {
                   return { ...ad, isPreReserved: false, expires_at: null };
                 } else if (action === 'prolong') {
-                  const nextWeek = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
-                  return { ...ad, expires_at: prolongDateStr ? new Date(prolongDateStr).toISOString() : nextWeek };
+                  return { ...ad, expires_at: dateToUse };
                 }
               }
               return ad;
@@ -1136,15 +1368,15 @@ export const DatabaseProvider = ({ children }) => {
                     if (action === 'confirm') {
                       return { ...ad, isPreReserved: false, expires_at: null };
                     } else if (action === 'prolong') {
-                      const nextWeek = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
-                      return { ...ad, expires_at: prolongDateStr ? new Date(prolongDateStr).toISOString() : nextWeek };
+                      return { ...ad, expires_at: dateToUse };
                     }
                   }
                   return ad;
                 }) : [];
                 fallbackPagesData[idx] = {
                   ...p,
-                  ads: pageAds
+                  ads: pageAds,
+                  status: 'Reserved'
                 };
               }
             });
@@ -1155,6 +1387,37 @@ export const DatabaseProvider = ({ children }) => {
         }
         return updatedPages;
       });
+    };
+
+    try {
+      if (action === 'confirm') {
+        const { error } = await supabase
+          .from('ad_reservations')
+          .update({ is_pre_reserved: false, expires_at: null })
+          .eq('page_number', pageNum)
+          .eq('customer_name', customerName)
+          .eq('ad_type', adType);
+        if (error) throw error;
+      } else if (action === 'prolong') {
+        const { error } = await supabase
+          .from('ad_reservations')
+          .update({ expires_at: dateToUse })
+          .eq('page_number', pageNum)
+          .eq('customer_name', customerName)
+          .eq('ad_type', adType);
+        if (error) throw error;
+      } else if (action === 'cancel') {
+        await deleteAdReservationDirect(pageNum, customerName, adType);
+      }
+
+      if (action !== 'cancel') {
+        updateLocalState();
+      }
+    } catch (err) {
+      console.error("Error resolving pre-reservation:", err);
+      if (action !== 'cancel') {
+        updateLocalState();
+      }
     }
   };
 
@@ -1168,6 +1431,7 @@ export const DatabaseProvider = ({ children }) => {
       loading,
       session,
       addInvoice,
+      addInvoiceWithReservation,
       updateInvoicePayment,
       cancelInvoice,
       deleteInvoice,
@@ -1182,6 +1446,7 @@ export const DatabaseProvider = ({ children }) => {
       addAdReservation,
       deleteAdReservationDirect,
       resolvePreReservation,
+      sendPaymentReminder,
       reload: loadAllData
     }}>
       {children}

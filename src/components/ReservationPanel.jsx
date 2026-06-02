@@ -5,7 +5,13 @@ import { products } from '../utils/products';
 import { useDatabase } from '../context/DatabaseContext';
 import { CheckCircle, FileText, X, Trash2, CreditCard } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
-import { getReciboWhatsAppMessage } from '../utils/invoicesStore';
+import { getReciboWhatsAppMessage, getProductAbbreviation } from '../utils/invoicesStore';
+
+const getInvoiceWhatsAppMessage = (invoice) => {
+  const abbrev = getProductAbbreviation(invoice.productName);
+  const amount = invoice.total.toFixed(2);
+  return `Confirmación de pago y Factura Nro. ${invoice.id} – ${abbrev} – ${invoice.customerName} – ${amount}€`;
+};
 
 const getOrderWhatsAppMessage = (order, language) => {
   const isEs = language === 'es';
@@ -69,6 +75,7 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
     recibos,
     orders,
     addInvoice,
+    addInvoiceWithReservation,
     updateInvoicePayment,
     deleteInvoice,
     addRecibo,
@@ -114,6 +121,7 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
   
   const [invoiceModalOpen, setInvoiceModalOpen] = useState(false);
   const [invoiceDetails, setInvoiceDetails] = useState(null);
+  const [efectivoPreviewOpen, setEfectivoPreviewOpen] = useState(false);
   
   const [paymentMethod, setPaymentMethod] = useState('Transfer');
   const [reservationPaymentMethod, setReservationPaymentMethod] = useState('Transfer');
@@ -146,12 +154,12 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
   }, [dropdownOpen]);
 
   useEffect(() => {
-    if (orderConfirmModalOpen || reciboModalOpen) {
+    if (orderConfirmModalOpen || reciboModalOpen || invoiceModalOpen) {
       setEmailStatus({ sending: false, status: null, error: '' });
     }
-  }, [orderConfirmModalOpen, reciboModalOpen]);
+  }, [orderConfirmModalOpen, reciboModalOpen, invoiceModalOpen]);
 
-  const handleSendEmail = async (details, isPreReservation, isRecibo = false) => {
+  const handleSendEmail = async (details, isPreReservation, isRecibo = false, isInvoice = false) => {
     const to = details.customerEmail;
     if (!to) {
       alert(language === 'es' ? 'No hay correo electrónico registrado para este cliente' : 'No email address registered for this customer');
@@ -166,6 +174,9 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
       if (isRecibo) {
         subject = `Recibo de Pago Revista Becerril: Pág. ${details.assignedPage}`;
         text = `Hola,\n\nConfirmamos la reserva y el recibo de pago en efectivo para su anuncio en la Revista Becerril:\n\n- Producto: ${details.productName}\n- Página Asignada: ${details.assignedPage}\n- Precio Base: ${details.price.toFixed(2)}€\n${details.designPrice > 0 ? `- Precio Diseño: ${details.designPrice.toFixed(2)}€\n` : ''}- Total Cobrado (Efectivo sin IVA): ${details.total.toFixed(2)}€\n\nGracias,\nEquipo Revista Becerril`;
+      } else if (isInvoice) {
+        subject = `Factura Revista Becerril: Nro. ${details.id}`;
+        text = `Hola,\n\nAdjuntamos la confirmación de pago y factura correspondiente a su anuncio en la Revista Becerril:\n\n- Número de Factura: ${details.id}\n- Producto: ${details.productName}\n- Página Asignada: ${details.assignedPage}\n- Método de Pago: Efectivo\n- Precio Base: ${details.price.toFixed(2)}€\n${details.designPrice > 0 ? `- Precio Diseño: ${details.designPrice.toFixed(2)}€\n` : ''}- Subtotal: ${(details.price + details.designPrice).toFixed(2)}€\n- IVA (21%): ${details.vat.toFixed(2)}€\n- Total Pagado: ${details.total.toFixed(2)}€\n\nGracias,\nEquipo Revista Becerril`;
       } else {
         subject = isPreReservation
           ? `Pre-Reserva Revista Becerril: Pág. ${details.assignedPage}`
@@ -661,6 +672,210 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
     }
   };
 
+  // --- Efectivo flow ---
+  // Step 1: validate form, build preview data, open preview modal
+  const handleOpenEfectivoPreview = () => {
+    if (!selectedProductId || (!selectedCustomerId && !isAddingNew)) {
+      alert(t('rp_alert_select_cust_prod'));
+      return;
+    }
+
+    if (!artworkOption) {
+      alert(t('rp_alert_select_artwork'));
+      return;
+    }
+
+    if (isAddingNew && (!newCustomer.commercial_name || !newCustomer.email)) {
+      alert(t('rp_alert_provide_name_email'));
+      return;
+    }
+
+    const prod = products.find(p => p.id === parseInt(selectedProductId));
+    if (!prod) return;
+
+    const basePrice = parseFloat(prod.price);
+    let designPrice = 0;
+    if (artworkOption === '3' && designWorkOption === '1') {
+      designPrice = parseFloat(designWorkPrice) || 0;
+    }
+    const subtotal = basePrice + designPrice;
+    const vatAmount = parseFloat((subtotal * 0.21).toFixed(2));
+    const total = parseFloat((subtotal + vatAmount).toFixed(2));
+
+    let customerName = '';
+    let customerEmail = '';
+    let customerPhone = '';
+    if (isAddingNew) {
+      customerName = newCustomer.commercial_name || newCustomer.fiscal_name;
+      customerEmail = newCustomer.email;
+      customerPhone = newCustomer.whatsapp;
+    } else {
+      const cust = customers.find(c => c.id === selectedCustomerId || c.nif === selectedCustomerId);
+      customerName = cust ? (cust.commercial_name || cust.fiscal_name) : '';
+      customerEmail = cust ? (cust.email || '') : '';
+      customerPhone = cust ? (cust.whatsapp || '') : '';
+    }
+
+    // Store preview details in invoiceDetails (reuse state), flag via efectivoPreviewOpen
+    setInvoiceDetails({
+      _preview: true,
+      customerName,
+      customerEmail,
+      customerPhone,
+      productName: prod.name,
+      productId: prod.id,
+      assignedPage: selectedPage.page_number,
+      price: basePrice,
+      designPrice,
+      vat: vatAmount,
+      total,
+    });
+    setEfectivoPreviewOpen(true);
+  };
+
+  // Step 2: triggered from inside the preview modal — actually saves
+  const handleConfirmEfectivoSale = async () => {
+    if (!selectedProductId || (!selectedCustomerId && !isAddingNew)) {
+      alert(t('rp_alert_select_cust_prod'));
+      return;
+    }
+
+    let checkEmail = '';
+    let checkPhone = '';
+
+    if (isAddingNew) {
+      checkEmail = newCustomer.email;
+      checkPhone = newCustomer.whatsapp;
+    } else {
+      const cust = customers.find(c => c.id === selectedCustomerId || c.nif === selectedCustomerId);
+      if (cust) {
+        checkEmail = cust.email;
+        checkPhone = cust.whatsapp;
+      }
+    }
+
+    setIsSaving(true);
+    const prod = products.find(p => p.id === parseInt(selectedProductId));
+
+    try {
+      let finalCustomerId = selectedCustomerId;
+      let finalCustomerName = '';
+
+      if (isAddingNew) {
+        if (!newCustomer.commercial_name) {
+          alert(t('rp_alert_cust_name_req'));
+          setIsSaving(false); return;
+        }
+        const nifToUse = newCustomer.nif || `UNKNOWN-${Date.now()}`;
+        const { data, error } = await safeInsertCustomer({
+          fiscal_name: newCustomer.fiscal_name,
+          commercial_name: newCustomer.commercial_name,
+          nif: nifToUse,
+          contact_name: newCustomer.contact_name,
+          email: newCustomer.email,
+          whatsapp: newCustomer.whatsapp,
+          address: newCustomer.address,
+          category: newCustomer.category,
+          last_year_product: newCustomer.last_year_product
+        });
+        if (error) {
+          alert(t('rp_alert_cust_db_error') + error.message);
+          setIsSaving(false); return;
+        }
+        if (data && data.length > 0) {
+          finalCustomerId = data[0].id;
+          finalCustomerName = data[0].commercial_name || data[0].fiscal_name;
+          checkEmail = data[0].email || '';
+          checkPhone = data[0].whatsapp || '';
+          setCustomers(prev => [...prev, data[0]]);
+        } else {
+          alert(t('rp_alert_cust_create_error'));
+          setIsSaving(false); return;
+        }
+      } else {
+        const cust = customers.find(c => c.id === finalCustomerId || c.nif === finalCustomerId);
+        finalCustomerName = cust ? (cust.commercial_name || cust.fiscal_name) : (t('rp_unknown_customer') || 'Unknown Customer');
+      }
+
+      // Auto-assign page if Unassigned
+      let targetPageNumber = selectedPage.page_number;
+      if (targetPageNumber === 'Unassigned') {
+        const fallbackPages = pages;
+        let availablePages = fallbackPages.filter(p => p.status !== 'Locked' && productFitsInPage(prod, p));
+        const normalAvailable = availablePages.filter(p => p.page_number !== 91 && p.page_number !== 92);
+        if (normalAvailable.length > 0) availablePages = normalAvailable;
+        if (assignmentPref === 'par') availablePages = availablePages.filter(p => p.page_number % 2 === 0);
+        else if (assignmentPref === 'impar') availablePages = availablePages.filter(p => p.page_number % 2 !== 0);
+        if (availablePages.length === 0) {
+          alert(t('rp_alert_no_pages'));
+          setIsSaving(false); return;
+        }
+        const randomIdx = Math.floor(Math.random() * availablePages.length);
+        targetPageNumber = availablePages[randomIdx].page_number;
+      }
+
+      let artworkComment = "";
+      if (artworkOption === '1') artworkComment = t('artwork_note_opt1');
+      else if (artworkOption === '2') artworkComment = t('artwork_note_opt2');
+      else if (artworkOption === '3') {
+        if (designWorkOption === '1') artworkComment = t('artwork_note_opt3_1');
+        else if (designWorkOption === '2') artworkComment = t('artwork_note_opt3_2');
+        else if (designWorkOption === '3') artworkComment = t('artwork_note_opt3_3');
+      }
+
+      const basePrice = parseFloat(prod.price);
+      let designPrice = 0;
+      if (artworkOption === '3' && designWorkOption === '1') {
+        designPrice = parseFloat(designWorkPrice) || 0;
+      }
+
+      const subtotal = basePrice + designPrice;
+      const vatAmount = parseFloat((subtotal * 0.21).toFixed(2));
+      const total = parseFloat((subtotal + vatAmount).toFixed(2));
+
+      const adDetails = {
+        ad_type: prod.name,
+        customer_id: finalCustomerId || 'legacy',
+        customer_name: finalCustomerName,
+        isPreReserved: false,
+        expiresAt: null,
+        artworkOption: artworkOption,
+        designWorkOption: designWorkOption || null,
+        designWorkPrice: designPrice,
+        isNew: true,
+        isPaid: true,
+        paymentMethod: 'Cash',
+        isRecibo: false
+      };
+
+      const newInvoice = await addInvoiceWithReservation({
+        customerName: finalCustomerName,
+        productName: prod.name,
+        price: basePrice,
+        designPrice,
+        vat: vatAmount,
+        total,
+        assignedPage: targetPageNumber,
+        artworkComment,
+        paymentMethod: 'Cash',
+        isPaid: true,
+        customerEmail: checkEmail,
+        customerPhone: checkPhone
+      }, adDetails);
+
+      // Close preview, open the success modal with real invoice data
+      setEfectivoPreviewOpen(false);
+      setInvoiceDetails(newInvoice);
+      setInvoiceModalOpen(true);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+
+
   const handleConfirmReciboAndClose = () => {
     setReciboModalOpen(false);
     if (onReservationComplete) {
@@ -766,6 +981,17 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
         else if (ad.designWorkOption === '3') artworkComment = t('artwork_note_opt3_3');
       }
 
+      // Delete the old pre-reserved order first
+      const oldOrder = orders.find(o => 
+        o.assignedPage === selectedPage.page_number && 
+        o.customerName === customerName &&
+        o.productName === adType &&
+        o.orderType === 'pre-reserved'
+      );
+      if (oldOrder) {
+        await deleteOrder(oldOrder.id, true);
+      }
+
       const newOrder = await addOrder({
         customerName: customerName,
         productName: adType,
@@ -776,7 +1002,7 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
         artworkComment: artworkComment,
         orderType: 'transfer',
         customerId: ad.customer_id
-      });
+      }, true);
       await resolvePreReservation(selectedPage.page_number, customerName, adType, 'confirm');
       setOrderDetails(newOrder);
       setOrderConfirmModalOpen(true);
@@ -886,7 +1112,9 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
         <div className="flex items-center gap-3">
           {selectedPage.page_number !== 'Unassigned' && (
             <span className={`px-2 py-1 text-xs font-bold rounded-md ${selectedPage.status === 'Reserved' ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
-              {selectedPage.status === 'Reserved' ? t('status_reserved') : selectedPage.status}
+              {selectedPage.status === 'Reserved' 
+                ? t('status_reserved') 
+                : (selectedPage.status === 'Available' ? t('po_available') : selectedPage.status)}
             </span>
           )}
           {onCancel && (
@@ -1355,15 +1583,14 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
         </div>
 
         {/* Payment Method Selector */}
-        <div className="mb-6 bg-gray-50 p-4 rounded-lg border border-gray-200">
+        <div className="mb-4 bg-gray-50 p-4 rounded-lg border border-gray-200">
           <label className="block text-sm font-bold text-gray-700 mb-3">
             {t('cl_liberate_payment_method') || 'Payment Method'}
           </label>
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-2 gap-2">
             {[
               { id: 'Transfer', key: 'rp_transfer', default: 'Transfer' },
-              { id: 'Bizum', key: 'rp_bizum', default: 'Bizum' },
-              { id: 'Cash', key: 'rp_cash', default: 'Cash (Pending)' }
+              { id: 'Bizum', key: 'rp_bizum', default: 'Bizum' }
             ].map(method => (
               <button
                 key={method.id}
@@ -1376,15 +1603,20 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
                 }`}
               >
                 {t(method.key) || method.default}
-                {method.id === 'Cash' && (
-                  <span className="block text-[9px] opacity-75 font-normal">
-                    {language === 'en' ? 'pending pick-up' : 'pdte. cobro'}
-                  </span>
-                )}
               </button>
             ))}
           </div>
         </div>
+
+        {/* Efectivo — standalone action button that opens the sale-closing modal */}
+        <button
+          type="button"
+          onClick={handleOpenEfectivoPreview}
+          disabled={isSaving}
+          className="w-full py-3 mb-4 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 disabled:bg-emerald-300 text-white font-bold text-sm rounded-xl shadow-md hover:shadow-lg transition-all duration-200 flex items-center justify-center gap-2"
+        >
+          💵 {language === 'es' ? 'Efectivo' : 'Cash Payment'}
+        </button>
 
         <button 
           onClick={() => handleSave(false)}
@@ -1405,6 +1637,8 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
         >
           {isSaving ? t('rp_saving') : t('rp_btn_prereserve')}
         </button>
+
+
 
         <button 
           onClick={handleRecibo}
@@ -1570,6 +1804,229 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
                 className="w-full py-2.5 bg-gray-800 hover:bg-gray-900 text-white font-bold rounded-lg transition-colors shadow-sm"
               >
                 {t('rp_order_close')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* ── EFECTIVO PRE-SALE PREVIEW MODAL ── */}
+      {efectivoPreviewOpen && invoiceDetails && invoiceDetails._preview && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[115] flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-5 sm:p-6 max-h-[92dvh] overflow-y-auto relative my-auto animate-in zoom-in-95 duration-200">
+            
+            {/* Close button */}
+            <button
+              onClick={() => setEfectivoPreviewOpen(false)}
+              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors p-1 z-20"
+              title={language === 'es' ? 'Cancelar' : 'Cancel'}
+            >
+              <X size={22} />
+            </button>
+
+            {/* Header */}
+            <div className="flex flex-col items-center text-center mb-5">
+              <div className="w-14 h-14 rounded-full bg-emerald-100 flex items-center justify-center mb-3">
+                <span className="text-2xl">💵</span>
+              </div>
+              <h2 className="text-xl font-bold text-gray-900">
+                {language === 'es' ? 'Cobrar en Efectivo' : 'Charge in Cash'}
+              </h2>
+              <p className="text-sm text-gray-500 mt-1">
+                {language === 'es'
+                  ? 'Revisa el resumen antes de cerrar la venta y generar la factura.'
+                  : 'Review the summary before closing the sale and generating the invoice.'}
+              </p>
+            </div>
+
+            {/* Summary Card */}
+            <div className="bg-gray-50 rounded-xl border border-gray-200 p-4 mb-4 space-y-2 text-sm">
+              <div className="flex justify-between pb-2 border-b border-gray-200">
+                <span className="text-gray-500 font-medium">{language === 'es' ? 'Cliente' : 'Customer'}</span>
+                <span className="font-semibold text-gray-900">{invoiceDetails.customerName}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500 font-medium">{language === 'es' ? 'Producto' : 'Product'}</span>
+                <span className="font-semibold text-gray-900">{invoiceDetails.productName}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500 font-medium">{language === 'es' ? 'Página' : 'Page'}</span>
+                <span className="font-bold text-blue-600">
+                  {invoiceDetails.assignedPage === 'Unassigned'
+                    ? (language === 'es' ? 'Auto-asignada' : 'Auto-assigned')
+                    : `P${invoiceDetails.assignedPage}`}
+                </span>
+              </div>
+
+              {/* Price breakdown */}
+              <div className="pt-2 mt-1 border-t border-gray-200 space-y-1.5">
+                <div className="flex justify-between">
+                  <span className="text-gray-500">{language === 'es' ? 'Base' : 'Base price'}</span>
+                  <span className="text-gray-800">{invoiceDetails.price.toFixed(2)} €</span>
+                </div>
+                {invoiceDetails.designPrice > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">{language === 'es' ? 'Diseño' : 'Design'}</span>
+                    <span className="text-gray-800">{invoiceDetails.designPrice.toFixed(2)} €</span>
+                  </div>
+                )}
+                <div className="flex justify-between">
+                  <span className="text-gray-500">IVA (21%)</span>
+                  <span className="text-gray-800">{invoiceDetails.vat.toFixed(2)} €</span>
+                </div>
+                <div className="flex justify-between pt-2 border-t border-gray-200 font-bold text-base">
+                  <span className="text-gray-800">TOTAL</span>
+                  <span className="text-emerald-600">{invoiceDetails.total.toFixed(2)} €</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Status badge */}
+            <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2 mb-5 text-sm text-emerald-800 font-medium">
+              <CheckCircle size={16} className="text-emerald-600 shrink-0" />
+              {language === 'es' ? 'Factura PAGADA — estado: Pagado' : 'Invoice PAID — status: Paid'}
+            </div>
+
+            {/* Action buttons */}
+            <div className="space-y-2">
+              <button
+                onClick={handleConfirmEfectivoSale}
+                disabled={isSaving}
+                className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 disabled:bg-emerald-300 text-white font-bold rounded-xl shadow transition-all duration-200 flex items-center justify-center gap-2"
+              >
+                {isSaving
+                  ? (language === 'es' ? 'Generando factura…' : 'Generating invoice…')
+                  : (language === 'es' ? '✔ Confirmar y Generar Factura' : '✔ Confirm & Generate Invoice')}
+              </button>
+              <button
+                type="button"
+                onClick={() => setEfectivoPreviewOpen(false)}
+                disabled={isSaving}
+                className="w-full py-2.5 bg-gray-100 hover:bg-gray-200 disabled:opacity-50 text-gray-700 font-semibold rounded-xl transition-colors text-sm"
+              >
+                {language === 'es' ? 'Cancelar' : 'Cancel'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Invoice Success Modal Overlay */}
+      {invoiceModalOpen && invoiceDetails && !invoiceDetails._preview && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[110] flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-5 sm:p-6 max-h-[92dvh] sm:max-h-[85dvh] overflow-y-auto relative my-auto animate-in zoom-in-95 duration-200">
+            <button 
+              onClick={handleCloseInvoice} 
+              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors p-1 z-20"
+              title={language === 'es' ? 'Cerrar' : 'Close'}
+            >
+              <X size={24} />
+            </button>
+            <div className="text-center w-full flex flex-col items-center">
+              <div className="inline-flex items-center justify-center w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-emerald-100 mb-3 sm:mb-4 shrink-0">
+                <CheckCircle className="w-6 h-6 sm:w-8 sm:h-8 text-emerald-600" />
+              </div>
+              <h2 className="text-lg sm:text-xl font-bold text-gray-900 mb-1 leading-tight">
+                {language === 'es' ? 'Factura Generada' : 'Invoice Generated'}
+              </h2>
+              <p className="text-xs sm:text-sm text-gray-500 mb-4 sm:mb-6">
+                {language === 'es' ? 'Venta completada con IVA en efectivo' : 'Sale completed in cash with VAT'}
+              </p>
+
+              <div className="bg-gray-50 rounded-lg p-3 sm:p-4 text-left mb-3 sm:mb-4 border border-gray-100 w-full">
+                <div className="flex items-center gap-2 mb-3 pb-3 border-b border-gray-200">
+                  <FileText className="w-4 h-4 text-gray-400" />
+                  <span className="font-medium text-sm text-gray-700">
+                    {language === 'es' ? 'Detalles de la Factura' : 'Invoice Details'}
+                  </span>
+                </div>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">{t('rp_customer_label')}</span>
+                    <span className="font-medium text-gray-900">{invoiceDetails.customerName}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">{t('rp_product_label')}</span>
+                    <span className="font-medium text-gray-900">{invoiceDetails.productName}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">{t('rp_assigned_page_label')}</span>
+                    <span className="font-bold text-blue-600">{invoiceDetails.assignedPage}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">{language === 'es' ? 'Número Factura' : 'Invoice Number'}</span>
+                    <span className="font-bold text-gray-800 font-mono">{invoiceDetails.id}</span>
+                  </div>
+                  <div className="flex justify-between pt-2 mt-2 border-t border-gray-200">
+                    <span className="text-gray-500 font-medium">{t('rp_base_price_label')}</span>
+                    <span className="font-medium text-gray-900">{invoiceDetails.price.toFixed(2)}€</span>
+                  </div>
+                  {invoiceDetails.designPrice > 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-500 font-medium">{t('rp_design_price_label')}</span>
+                      <span className="font-medium text-gray-900">{invoiceDetails.designPrice.toFixed(2)}€</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between pt-2 mt-2 border-t border-gray-200">
+                    <span className="text-gray-500">{language === 'es' ? 'Subtotal' : 'Subtotal'}</span>
+                    <span className="font-medium text-gray-900">{(invoiceDetails.price + invoiceDetails.designPrice).toFixed(2)}€</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">{language === 'es' ? 'IVA (21%)' : 'VAT (21%)'}</span>
+                    <span className="font-medium text-gray-900">{invoiceDetails.vat.toFixed(2)}€</span>
+                  </div>
+                  <div className="flex justify-between items-center mt-2 p-2 bg-emerald-50 rounded border border-emerald-200">
+                    <span className="text-emerald-700 text-xs font-semibold uppercase tracking-wide">
+                      {language === 'es' ? 'Total (Efectivo)' : 'Total (Cash)'}
+                    </span>
+                    <span className="font-bold text-emerald-700 text-lg">{invoiceDetails.total.toFixed(2)}€</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Manual Send Confirmation options */}
+              <div className="mt-3 mb-3 p-3 bg-slate-50 border border-slate-200 rounded-xl text-left w-full">
+                <h4 className="text-xs sm:text-sm font-bold text-slate-800 mb-2 sm:mb-3">
+                  {language === 'es' ? 'Enviar Confirmación' : 'Send Confirmation'}
+                </h4>
+                
+                <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
+                  <button
+                    type="button"
+                    disabled={!invoiceDetails.customerEmail || emailStatus.sending}
+                    onClick={() => handleSendEmail(invoiceDetails, false, false, true)}
+                    className={`flex-1 py-2 px-3 text-xs font-bold rounded-lg transition-colors border flex items-center justify-center gap-2 ${
+                      emailStatus.status === 'success'
+                        ? 'bg-green-50 text-green-700 border-green-200'
+                        : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-300 disabled:opacity-50'
+                    }`}
+                  >
+                    {emailStatus.status === 'success' 
+                      ? (language === 'es' ? '✓ Email Enviado' : '✓ Email Sent') 
+                      : (emailStatus.sending ? (language === 'es' ? 'Enviando...' : 'Sending...') : '📧 Enviar Email')}
+                  </button>
+
+                  <a
+                    href={`https://wa.me/${(invoiceDetails.customerPhone || '').replace(/\D/g, '')}?text=${encodeURIComponent(getInvoiceWhatsAppMessage(invoiceDetails))}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex-1 py-2 px-3 text-xs font-bold rounded-lg bg-green-50 hover:bg-green-100 text-green-750 border border-green-300 transition-colors flex items-center justify-center gap-2 text-center"
+                  >
+                    📲 WhatsApp
+                  </a>
+                </div>
+
+                {emailStatus.status === 'error' && (
+                  <p className="text-[11px] text-red-600 font-medium mt-2">
+                    ❌ Error: {emailStatus.error}
+                  </p>
+                )}
+              </div>
+
+              <button 
+                onClick={handleCloseInvoice}
+                className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg transition-colors shadow-sm"
+              >
+                {language === 'es' ? 'Confirmar y Cerrar' : 'Confirm and Close'}
               </button>
             </div>
           </div>

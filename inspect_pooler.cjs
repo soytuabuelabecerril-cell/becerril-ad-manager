@@ -15,13 +15,7 @@ async function testRegion(region) {
     console.log(`\n>>> FOUND THE REGION! Successfully connected in: ${region} <<<\n`);
     return true;
   } catch (err) {
-    if (err.message && err.message.includes('tenant/user')) {
-      // Wrong region, continue
-      process.stdout.write('.');
-    } else {
-      // Some other error (e.g., auth, network)
-      console.log(`\nRegion ${region} failed with:`, err.message);
-    }
+    console.log(`Region ${region} failed with:`, err.message);
     return false;
   } finally {
     try {
