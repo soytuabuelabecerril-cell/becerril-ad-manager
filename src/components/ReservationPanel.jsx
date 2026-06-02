@@ -58,6 +58,18 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
     last_year_product: ''
   });
   const [isSavingCustomer, setIsSavingCustomer] = useState(false);
+  const [isEditingExisting, setIsEditingExisting] = useState(false);
+  const [editedCustomer, setEditedCustomer] = useState({
+    fiscal_name: '',
+    commercial_name: '',
+    nif: '',
+    contact_name: '',
+    email: '',
+    whatsapp: '',
+    address: '',
+    category: '',
+    last_year_product: ''
+  });
 
   const [assignmentPref, setAssignmentPref] = useState('aleatorio');
   
@@ -92,6 +104,27 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
       setCustomerSearchQuery('');
     }
   }, [dropdownOpen]);
+
+  useEffect(() => {
+    if (selectedCustomerId && selectedCustomerId !== 'new') {
+      const cust = customers.find(c => c.id === selectedCustomerId || c.nif === selectedCustomerId);
+      if (cust) {
+        setEditedCustomer({
+          fiscal_name: cust.fiscal_name || '',
+          commercial_name: cust.commercial_name || '',
+          nif: cust.nif || '',
+          contact_name: cust.contact_name || '',
+          email: cust.email || '',
+          whatsapp: cust.whatsapp || '',
+          address: cust.address || '',
+          category: cust.category || '',
+          last_year_product: cust.last_year_product || ''
+        });
+      }
+    } else {
+      setIsEditingExisting(false);
+    }
+  }, [selectedCustomerId, customers]);
 
   const filteredCustomers = customers.filter(c => {
     const query = customerSearchQuery.toLowerCase().trim();
@@ -203,9 +236,77 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
     return product.requiredSlots.every(slot => availableSlots.has(slot));
   };
 
+  const handleUpdateExistingCustomer = async () => {
+    if (!editedCustomer.commercial_name) {
+      alert(t('rp_alert_cust_name_req'));
+      return;
+    }
+    
+    // Clean data payload for database column mismatch
+    const cleanData = {
+      fiscal_name: editedCustomer.fiscal_name || '',
+      commercial_name: editedCustomer.commercial_name || '',
+      nif: editedCustomer.nif || '',
+      category: editedCustomer.category || '',
+      address: editedCustomer.address || '',
+      email: editedCustomer.email || '',
+      whatsapp: editedCustomer.whatsapp || '',
+      last_year_product: editedCustomer.last_year_product || ''
+    };
+
+    setIsSavingCustomer(true);
+    try {
+      if (!selectedCustomerId.startsWith('ext-')) {
+        // Real Supabase customer
+        const { error } = await supabase
+          .from('customers')
+          .update(cleanData)
+          .eq('id', selectedCustomerId);
+        if (error) throw error;
+        
+        // Update local state
+        setCustomers(prev => prev.map(c => (c.id === selectedCustomerId ? { ...c, ...cleanData } : c)));
+      } else {
+        // Mock fallback customer
+        setCustomers(prev => prev.map(c => (c.id === selectedCustomerId ? { ...c, ...cleanData } : c)));
+      }
+      setIsEditingExisting(false);
+    } catch (err) {
+      console.error("Error updating customer:", err);
+      alert(language === 'es' ? 'Error al actualizar el cliente' : 'Error updating customer details');
+    } finally {
+      setIsSavingCustomer(false);
+    }
+  };
+
   const handleSave = async (isPreReservation = false) => {
     if (!selectedProductId || (!selectedCustomerId && !isAddingNew)) {
       alert(t('rp_alert_select_cust_prod'));
+      return;
+    }
+    
+    // Check contact info: must have email and/or telephone (whatsapp) number
+    let checkEmail = '';
+    let checkPhone = '';
+    
+    if (isAddingNew) {
+      checkEmail = newCustomer.email;
+      checkPhone = newCustomer.whatsapp;
+    } else {
+      const cust = customers.find(c => c.id === selectedCustomerId || c.nif === selectedCustomerId);
+      if (cust) {
+        checkEmail = cust.email;
+        checkPhone = cust.whatsapp;
+      }
+    }
+    
+    if (!checkEmail && !checkPhone) {
+      alert(language === 'es' 
+        ? 'El cliente debe tener un correo electrónico y/o número de teléfono (WhatsApp) para continuar con la reserva.' 
+        : 'The customer must have an email and/or telephone number (WhatsApp) to continue with the reservation.');
+      if (!isAddingNew) {
+        setIsEditingExisting(true);
+      }
       return;
     }
     
@@ -414,6 +515,32 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
       alert(t('rp_alert_select_cust_prod'));
       return;
     }
+
+    // Check contact info: must have email and/or telephone (whatsapp) number
+    let checkEmail = '';
+    let checkPhone = '';
+    
+    if (isAddingNew) {
+      checkEmail = newCustomer.email;
+      checkPhone = newCustomer.whatsapp;
+    } else {
+      const cust = customers.find(c => c.id === selectedCustomerId || c.nif === selectedCustomerId);
+      if (cust) {
+        checkEmail = cust.email;
+        checkPhone = cust.whatsapp;
+      }
+    }
+    
+    if (!checkEmail && !checkPhone) {
+      alert(language === 'es' 
+        ? 'El cliente debe tener un correo electrónico y/o número de teléfono (WhatsApp) para continuar con la reserva.' 
+        : 'The customer must have an email and/or telephone number (WhatsApp) to continue with the reservation.');
+      if (!isAddingNew) {
+        setIsEditingExisting(true);
+      }
+      return;
+    }
+
     if (!artworkOption) {
       alert(t('rp_alert_select_artwork'));
       return;
@@ -987,6 +1114,139 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
                   +
                 </button>
               </div>
+
+              {selectedCustomerId && selectedCustomerId !== 'new' && !isAddingNew && (
+                <div className="mt-3 p-4 bg-slate-50 rounded-lg border border-slate-200">
+                  <div className="flex justify-between items-start mb-2 border-b border-slate-200/60 pb-2">
+                    <div>
+                      <h4 className="text-sm font-bold text-slate-800">
+                        {(() => {
+                          const cust = customers.find(c => c.id === selectedCustomerId || c.nif === selectedCustomerId);
+                          return cust ? (cust.commercial_name || cust.fiscal_name) : '';
+                        })()}
+                      </h4>
+                      <p className="text-[11px] text-slate-500 font-mono mt-0.5">
+                        NIF: {(() => {
+                          const cust = customers.find(c => c.id === selectedCustomerId || c.nif === selectedCustomerId);
+                          return cust ? (cust.nif || '—') : '';
+                        })()}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!isEditingExisting) {
+                          const cust = customers.find(c => c.id === selectedCustomerId || c.nif === selectedCustomerId);
+                          if (cust) {
+                            setEditedCustomer({
+                              fiscal_name: cust.fiscal_name || '',
+                              commercial_name: cust.commercial_name || '',
+                              nif: cust.nif || '',
+                              contact_name: cust.contact_name || '',
+                              email: cust.email || '',
+                              whatsapp: cust.whatsapp || '',
+                              address: cust.address || '',
+                              category: cust.category || '',
+                              last_year_product: cust.last_year_product || ''
+                            });
+                          }
+                        }
+                        setIsEditingExisting(!isEditingExisting);
+                      }}
+                      className="text-xs font-bold text-blue-600 hover:text-blue-800 px-2.5 py-1 rounded bg-blue-50 hover:bg-blue-100 transition-colors"
+                    >
+                      {isEditingExisting ? (language === 'es' ? 'Cancelar' : 'Cancel') : (language === 'es' ? 'Editar Datos' : 'Edit Details')}
+                    </button>
+                  </div>
+
+                  {/* Warning if no contact info */}
+                  {(() => {
+                    const cust = customers.find(c => c.id === selectedCustomerId || c.nif === selectedCustomerId);
+                    const hasEmail = cust && cust.email;
+                    const hasPhone = cust && cust.whatsapp;
+                    if (!hasEmail && !hasPhone) {
+                      return (
+                        <div className="mb-3 p-2 bg-red-50 text-red-700 text-xs rounded border border-red-200 font-medium">
+                          ⚠️ {language === 'es' 
+                            ? 'Falta correo electrónico o teléfono. Es obligatorio para continuar con la reserva.' 
+                            : 'Missing email or telephone. Required to proceed with reservation.'}
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
+
+                  {isEditingExisting ? (
+                    <div className="space-y-3 pt-1">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-[11px] font-medium text-slate-500 mb-0.5">{t('commercial_name') || 'Commercial Name'}</label>
+                          <input type="text" className="w-full p-2 border border-slate-200 rounded text-xs" value={editedCustomer.commercial_name} onChange={e => setEditedCustomer({...editedCustomer, commercial_name: e.target.value})} />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-medium text-slate-500 mb-0.5">{t('fiscal_name') || 'Fiscal Name'}</label>
+                          <input type="text" className="w-full p-2 border border-slate-200 rounded text-xs" value={editedCustomer.fiscal_name} onChange={e => setEditedCustomer({...editedCustomer, fiscal_name: e.target.value})} />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-medium text-slate-500 mb-0.5">NIF / CIF</label>
+                          <input type="text" className="w-full p-2 border border-slate-200 rounded text-xs" value={editedCustomer.nif} onChange={e => setEditedCustomer({...editedCustomer, nif: e.target.value})} />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-medium text-slate-500 mb-0.5">{t('category') || 'Category'}</label>
+                          <input type="text" className="w-full p-2 border border-slate-200 rounded text-xs" value={editedCustomer.category} onChange={e => setEditedCustomer({...editedCustomer, category: e.target.value})} />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-medium text-slate-500 mb-0.5">{t('contact_name') || 'Contact Name'}</label>
+                          <input type="text" className="w-full p-2 border border-slate-200 rounded text-xs" value={editedCustomer.contact_name} onChange={e => setEditedCustomer({...editedCustomer, contact_name: e.target.value})} />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-medium text-slate-500 mb-0.5">{t('email') || 'Email'}</label>
+                          <input type="email" className="w-full p-2 border border-slate-200 rounded text-xs" value={editedCustomer.email} onChange={e => setEditedCustomer({...editedCustomer, email: e.target.value})} />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-medium text-slate-500 mb-0.5">{t('whatsapp') || 'WhatsApp'} / {t('phone') || 'Phone'}</label>
+                          <input type="tel" className="w-full p-2 border border-slate-200 rounded text-xs" value={editedCustomer.whatsapp} onChange={e => setEditedCustomer({...editedCustomer, whatsapp: e.target.value})} />
+                        </div>
+                        <div className="md:col-span-2">
+                          <label className="block text-[11px] font-medium text-slate-500 mb-0.5">{t('address') || 'Address'}</label>
+                          <input type="text" className="w-full p-2 border border-slate-200 rounded text-xs" value={editedCustomer.address} onChange={e => setEditedCustomer({...editedCustomer, address: e.target.value})} />
+                        </div>
+                        <div className="md:col-span-2">
+                          <label className="block text-[11px] font-medium text-slate-500 mb-0.5">{t('last_year_product') || 'Last Year Product'}</label>
+                          <textarea className="w-full p-2 border border-slate-200 rounded text-xs resize-none" rows="2" value={editedCustomer.last_year_product} onChange={e => setEditedCustomer({...editedCustomer, last_year_product: e.target.value})}></textarea>
+                        </div>
+                      </div>
+                      <div className="flex justify-end pt-1">
+                        <button 
+                          type="button"
+                          onClick={handleUpdateExistingCustomer}
+                          disabled={isSavingCustomer}
+                          className="px-3.5 py-1.5 bg-blue-600 text-white rounded text-xs font-bold hover:bg-blue-700 disabled:opacity-50 transition-colors flex items-center gap-1"
+                        >
+                          {isSavingCustomer ? t('rp_saving') || 'Saving...' : (language === 'es' ? 'Guardar Cambios' : 'Save Changes')}
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5 text-xs text-slate-600 mt-1">
+                      <div><span className="font-semibold text-slate-700">{t('email') || 'Email'}:</span> {(() => {
+                        const cust = customers.find(c => c.id === selectedCustomerId || c.nif === selectedCustomerId);
+                        return cust && cust.email ? cust.email : '—';
+                      })()}</div>
+                      <div><span className="font-semibold text-slate-700">{t('whatsapp') || 'WhatsApp'}:</span> {(() => {
+                        const cust = customers.find(c => c.id === selectedCustomerId || c.nif === selectedCustomerId);
+                        return cust && cust.whatsapp ? cust.whatsapp : '—';
+                      })()}</div>
+                      {(() => {
+                        const cust = customers.find(c => c.id === selectedCustomerId || c.nif === selectedCustomerId);
+                        return cust && cust.address ? (
+                          <div className="sm:col-span-2"><span className="font-semibold text-slate-700">{t('address') || 'Address'}:</span> {cust.address}</div>
+                        ) : null;
+                      })()}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {isAddingNew && (
                 <div className="mt-3 p-4 bg-gray-50 rounded-lg border border-gray-200 space-y-4">
