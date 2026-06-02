@@ -10,7 +10,7 @@ export const generateWhatsAppLink = (phoneNumber, customerName, pageNumber, invo
   // Clean phone number (remove non-digits, keep optional leading +)
   const cleanPhone = phoneNumber.replace(/[^\d+]/g, '');
   
-  const message = `Hola ${customerName}! 🌟\n\nTu reserva para la página ${pageNumber} en la revista "Becerril" ha sido registrada.\n\nPuedes descargar tu nota de reserva aquí: ${invoiceUrl}\n\n¡Gracias por confiar en "I am your Abuela S.L."!`;
+  const message = `Hola ${customerName}! 🌟\n\nTu reserva para la página ${pageNumber} en la revista "Becerril" ha sido registrada.\n\nPuedes descargar tu nota de reserva aquí: ${invoiceUrl}\n\n¡Gracias por confiar en "I AM YOUR GRANNY S.L."!`;
   
   const encodedMessage = encodeURIComponent(message);
   

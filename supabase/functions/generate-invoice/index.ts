@@ -13,7 +13,7 @@ serve(async (req) => {
     const page = pdfDoc.addPage([600, 400]);
 
     // Add some text
-    page.drawText('I am your Abuela S.L. - Reservation Note', {
+    page.drawText('I AM YOUR GRANNY S.L. - Reservation Note', {
       x: 50,
       y: 350,
       size: 20,

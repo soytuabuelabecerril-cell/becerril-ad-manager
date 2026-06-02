@@ -1,7 +1,7 @@
 export const translations = {
   en: {
     // App Navigation & Header
-    app_title: 'Abuela Ads',
+    app_title: 'I AM YOUR GRANNY S.L.',
     nav_magazine: 'Magazine Grid',
     nav_customers: 'Orders',
     nav_clients: 'Customers',
@@ -84,7 +84,7 @@ export const translations = {
     rp_select_product: '-- Select Product --',
     rp_artwork: '3. Artwork & Design',
     rp_art_opt1: '1) we will use same artwork as last year (2025)',
-    rp_art_opt2: '2) please send us visual art to email address: xxxxx@gmail.com',
+    rp_art_opt2: '2) please send us visual art to email address: hola@yosoytuabuela.com',
     rp_art_opt3: '3) we will elaborate artwork for you',
     rp_design_price: 'Design Price (€)',
     rp_design_opt1: '1) Diseño y arte final',
@@ -134,7 +134,7 @@ export const translations = {
     rp_pending_payment: 'Pending payment',
     rp_confirm_close: 'Confirm Payment & Close',
     artwork_note_opt1: 'we will use same artwork as last year (2025)',
-    artwork_note_opt2: 'please send us visual art to email address: xxxxx@gmail.com',
+    artwork_note_opt2: 'please send us visual art to email address: hola@yosoytuabuela.com',
     artwork_note_opt3_1: 'we will elaborate artwork for you (Diseño y arte final).',
     artwork_note_opt3_2: 'we will elaborate artwork for you (Sin coste).',
     artwork_note_opt3_3: 'we will elaborate artwork for you (un vale en el establecimiento).',
@@ -326,7 +326,7 @@ export const translations = {
   },
   es: {
     // App Navigation & Header
-    app_title: 'Abuela Ads',
+    app_title: 'I AM YOUR GRANNY S.L.',
     nav_magazine: 'Cuadrícula de la Revista',
     nav_customers: 'Pedidos',
     nav_clients: 'Clientes',
@@ -410,7 +410,7 @@ export const translations = {
     rp_select_product: '-- Seleccionar Producto --',
     rp_artwork: '3. Arte final y Diseño',
     rp_art_opt1: '1) usaremos el mismo arte final del año pasado (2025)',
-    rp_art_opt2: '2) envíanos el arte visual al correo: xxxxx@gmail.com',
+    rp_art_opt2: '2) envíanos el arte visual al correo: hola@yosoytuabuela.com',
     rp_art_opt3: '3) elaboraremos el arte final para ti',
     rp_design_price: 'Precio del Diseño (€)',
     rp_design_opt1: '1) Diseño y arte final',
@@ -460,7 +460,7 @@ export const translations = {
     rp_pending_payment: 'Pago Pendiente',
     rp_confirm_close: 'Confirmar Pago y Cerrar',
     artwork_note_opt1: 'usaremos el mismo arte final del año pasado (2025)',
-    artwork_note_opt2: 'por favor envíanos el arte visual al correo: xxxxx@gmail.com',
+    artwork_note_opt2: 'por favor envíanos el arte visual al correo: hola@yosoytuabuela.com',
     artwork_note_opt3_1: 'elaboraremos el arte final para ti (Diseño y arte final).',
     artwork_note_opt3_2: 'elaboraremos el arte final para ti (Sin coste).',
     artwork_note_opt3_3: 'elaboraremos el arte final para ti (un vale en el establecimiento).',

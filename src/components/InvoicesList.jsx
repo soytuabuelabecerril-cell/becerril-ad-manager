@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useDatabase } from '../context/DatabaseContext';
 import { getReciboWhatsAppMessage } from '../utils/invoicesStore';
-import { FileText, Download, Receipt, Mail, MessageCircle, XCircle, CheckCircle, Eye, X, Trash2, Search, Settings, Lock } from 'lucide-react';
+import { FileText, Download, Receipt, Mail, MessageCircle, XCircle, CheckCircle, Eye, X, Trash2, Search, Settings } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
 import { useLanguage } from '../context/LanguageContext';
@@ -142,7 +142,7 @@ const InvoicesList = () => {
             body: JSON.stringify({
               to: email,
               subject: `Factura Reserva: ${inv.id}`,
-              text: `Hola,\n\nAdjuntamos la factura ${inv.id} correspondiente a su reserva de ${inv.productName}.\n\nNota importante sobre arte: ${inv.artworkComment}\n\nGracias,\nEquipo Abuela Ads`,
+              text: `Hola,\n\nAdjuntamos la factura ${inv.id} correspondiente a su reserva de ${inv.productName}.\n\nNota importante sobre arte: ${inv.artworkComment}\n\nGracias,\nEquipo I AM YOUR GRANNY S.L.`,
               attachmentBase64: base64DataUri,
               attachmentName: `Factura_${inv.id}.pdf`
             })
@@ -172,7 +172,7 @@ const InvoicesList = () => {
 
   const getEmailLink = (inv) => {
     const subject = `Factura Reserva: ${inv.id}`;
-    const body = `Hola,\n\nAdjuntamos la factura ${inv.id} correspondiente a su reserva de ${inv.productName}.\n\nNota importante sobre arte: ${inv.artworkComment}\n\nGracias,\nEquipo Abuela Ads`;
+    const body = `Hola,\n\nAdjuntamos la factura ${inv.id} correspondiente a su reserva de ${inv.productName}.\n\nNota importante sobre arte: ${inv.artworkComment}\n\nGracias,\nEquipo I AM YOUR GRANNY S.L.`;
     return `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   };
 
@@ -228,9 +228,11 @@ const InvoicesList = () => {
           <p className="text-gray-500 mt-1">{inv.id}</p>
         </div>
         <div className="text-right">
-          <h2 className="text-xl font-bold text-gray-800">Abuela Ads</h2>
-          <p className="text-gray-500 text-sm">CIF: B12345678</p>
-          <p className="text-gray-500 text-sm">Calle Mayor 1, Madrid</p>
+          <h2 className="text-xl font-bold text-gray-800">I AM YOUR GRANNY S.L.</h2>
+          <p className="text-gray-500 text-sm">CIF: B72877640</p>
+          <p className="text-gray-500 text-sm">Ctra. Guadarama-Cercedilla S/N</p>
+          <p className="text-gray-500 text-sm">Portal 10 3C</p>
+          <p className="text-gray-500 text-sm">28470 Cercedilla</p>
         </div>
       </div>
       
@@ -327,9 +329,11 @@ const InvoicesList = () => {
           <p style={{ color: '#6b7280', marginTop: '4px', fontSize: '13px' }}>{inv.id}</p>
         </div>
         <div style={{ textAlign: 'right' }}>
-          <h2 style={{ fontSize: '18px', fontWeight: '700', color: '#1f2937', margin: 0 }}>Abuela Ads</h2>
-          <p style={{ color: '#6b7280', fontSize: '12px', margin: '2px 0 0' }}>CIF: B12345678</p>
-          <p style={{ color: '#6b7280', fontSize: '12px', margin: '2px 0 0' }}>Calle Mayor 1, Madrid</p>
+          <h2 style={{ fontSize: '18px', fontWeight: '700', color: '#1f2937', margin: 0 }}>I AM YOUR GRANNY S.L.</h2>
+          <p style={{ color: '#6b7280', fontSize: '12px', margin: '2px 0 0' }}>CIF: B72877640</p>
+          <p style={{ color: '#6b7280', fontSize: '12px', margin: '2px 0 0' }}>Ctra. Guadarama-Cercedilla S/N</p>
+          <p style={{ color: '#6b7280', fontSize: '12px', margin: '2px 0 0' }}>Portal 10 3C</p>
+          <p style={{ color: '#6b7280', fontSize: '12px', margin: '2px 0 0' }}>28470 Cercedilla</p>
         </div>
       </div>
 
@@ -481,10 +485,10 @@ const InvoicesList = () => {
 
             <button
               onClick={handleReserveInvoiceDirect}
-              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-900 text-white text-xs sm:text-sm font-medium rounded text-center flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+              title="Reservar Facturar"
+              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold rounded transition-colors cursor-pointer tracking-wide"
             >
-              <Lock size={14} />
-              {t('reserve_invoice')}
+              RF
             </button>
 
             <span className="text-xs text-gray-500 text-right md:text-left">{displayInvoices.length} {t('il_active_cancelled') || 'active/cancelled'}</span>

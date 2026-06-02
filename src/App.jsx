@@ -4,8 +4,6 @@ import PagesOverview from './components/PagesOverview';
 import CustomersList from './components/CustomersList';
 import ClientsList from './components/ClientsList';
 import InvoicesList from './components/InvoicesList';
-import PendingOrdersList from './components/PendingOrdersList';
-import MoneyReturnsList from './components/MoneyReturnsList';
 import ReservationPanel from './components/ReservationPanel';
 import FinancialDashboard from './components/FinancialDashboard';
 import { BookOpen, MapPin, Users, Settings, Receipt, Clock, RefreshCcw, Globe, Menu, X, TrendingUp, FileText, LogOut } from 'lucide-react';
@@ -45,10 +43,6 @@ function App() {
         return t('nav_clients');
       case 'invoices':
         return t('nav_invoices');
-      case 'pending':
-        return t('nav_pending');
-      case 'returns':
-        return t('nav_returns');
       case 'financial':
         return t('nav_financial');
       default:
@@ -133,18 +127,6 @@ function App() {
             <Receipt size={20} /> {t('nav_invoices')}
           </button>
           <button 
-            onClick={() => handleTabChange('pending')}
-            className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${currentTab === 'pending' ? 'bg-orange-500 text-white' : 'hover:bg-slate-800 text-slate-300'}`}
-          >
-            <Clock size={20} /> {t('nav_pending')}
-          </button>
-          <button 
-            onClick={() => handleTabChange('returns')}
-            className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${currentTab === 'returns' ? 'bg-red-600 text-white' : 'hover:bg-slate-800 text-slate-300'}`}
-          >
-            <RefreshCcw size={20} /> {t('nav_returns')}
-          </button>
-          <button 
             onClick={() => handleTabChange('financial')}
             className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${currentTab === 'financial' ? 'bg-indigo-600 text-white' : 'hover:bg-slate-800 text-slate-300'}`}
           >
@@ -192,16 +174,7 @@ function App() {
           )}
           {currentTab === 'clients' && <ClientsList />}
           {currentTab === 'invoices' && <InvoicesList onSelectPage={setSelectedPage} />}
-          {currentTab === 'returns' && <MoneyReturnsList />}
           {currentTab === 'financial' && <FinancialDashboard />}
-          {currentTab === 'pending' && (
-            <PendingOrdersList 
-              onGoToPage={(page) => {
-                setSelectedPage(page);
-                setCurrentTab('magazine');
-              }} 
-            />
-          )}
           
           {currentTab === 'magazine' && (
             <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">

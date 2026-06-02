@@ -158,8 +158,62 @@ const CustomersList = ({ onSelectPage }) => {
   };
 
   const getCustomerPreReservedAd = (customer) => {
+    // First check ad_reservations via pages
     const ads = getCustomerAds(customer);
-    return ads.find(ad => ad.isPreReserved);
+    const fromAds = ads.find(ad => ad.isPreReserved);
+    if (fromAds) return fromAds;
+
+    // Fallback: check orders table (pre-reservations that haven't been confirmed yet
+    // live in orders, not in ad_reservations, on the production flow)
+    const name = (customer.commercial_name || customer.fiscal_name || '').toLowerCase();
+    const order = orders.find(o =>
+      o.orderType === 'pre-reserved' &&
+      !o.isPaid &&
+      o.customerName?.toLowerCase() === name
+    );
+    if (order) {
+      // Derive expires_at: orders don't store it directly; estimate 7 days from creation
+      const expiresAt = order.expires_at ||
+        (order.createdAt ? new Date(new Date(order.createdAt).getTime() + 7 * 24 * 60 * 60 * 1000).toISOString() : null);
+      return {
+        ad_type: order.productName,
+        customer_name: order.customerName,
+        page_number: order.assignedPage,
+        expires_at: expiresAt,
+        isPreReserved: true,
+        id: order.id,
+        _fromOrder: true
+      };
+    }
+    return undefined;
+  };
+
+  const getCustomerPageNumbersStr = (customer) => {
+    const pagesList = [];
+    
+    // 1. Ads from database/pages
+    const ads = getCustomerAds(customer);
+    ads.forEach(ad => {
+      if (ad.page_number) {
+        pagesList.push(ad.page_number);
+      }
+    });
+
+    // 2. Orders from database/orders
+    const name = (customer.commercial_name || customer.fiscal_name || '').toLowerCase();
+    if (orders && orders.length > 0 && name) {
+      orders.forEach(o => {
+        if (o.customerName?.toLowerCase() === name && o.assignedPage) {
+          pagesList.push(o.assignedPage);
+        }
+      });
+    }
+
+    if (pagesList.length === 0) return '';
+
+    // Get unique page numbers, sorted numerically
+    const uniquePages = [...new Set(pagesList)].sort((a, b) => Number(a) - Number(b));
+    return uniquePages.map(p => `P${p}`).join(', ');
   };
 
   // const getCustomerExpirationDate = (customer) => {
@@ -188,7 +242,7 @@ const CustomersList = ({ onSelectPage }) => {
         reminderCustomer.email,
         reminderCustomer.whatsapp,
         preReservedAd.id,
-        false
+        preReservedAd._fromOrder === true  // isOrder flag: true when sourced from orders table
       );
       if (res && res.emailSuccess) {
         setEmailReminderStatus({ sending: false, success: true, error: '' });
@@ -500,7 +554,17 @@ const CustomersList = ({ onSelectPage }) => {
                         {customer.commercial_name ? customer.commercial_name.charAt(0) : customer.fiscal_name.charAt(0)}
                       </div>
                       <div>
-                        <div className="font-bold text-gray-800">{customer.commercial_name || customer.fiscal_name}</div>
+                        <div className="font-bold text-gray-800 flex items-center gap-2">
+                          {(() => {
+                            const pagesStr = getCustomerPageNumbersStr(customer);
+                            return pagesStr ? (
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-100 shrink-0">
+                                {pagesStr}
+                              </span>
+                            ) : null;
+                          })()}
+                          <span>{customer.commercial_name || customer.fiscal_name}</span>
+                        </div>
                         <div className="text-xs text-gray-500">NIF: {customer.nif}</div>
                       </div>
                     </div>
@@ -664,6 +728,14 @@ const CustomersList = ({ onSelectPage }) => {
                       >
                         <Edit2 size={14} />
                       </button>
+                      {(() => {
+                        const pagesStr = getCustomerPageNumbersStr(customer);
+                        return pagesStr ? (
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-100 shrink-0">
+                            {pagesStr}
+                          </span>
+                        ) : null;
+                      })()}
                       <span className="font-bold text-gray-800 leading-tight">{customer.commercial_name || customer.fiscal_name}</span>
                     </div>
                     <div className="text-xs text-gray-500 mt-0.5">NIF: {customer.nif}</div>
