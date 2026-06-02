@@ -71,7 +71,26 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
 
   // Customer dropdown
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [customerSearchQuery, setCustomerSearchQuery] = useState('');
   const dropdownRef = useRef(null);
+
+  useEffect(() => {
+    if (!dropdownOpen) {
+      setCustomerSearchQuery('');
+    }
+  }, [dropdownOpen]);
+
+  const filteredCustomers = customers.filter(c => {
+    const query = customerSearchQuery.toLowerCase().trim();
+    if (!query) return true;
+    return (
+      (c.commercial_name || '').toLowerCase().includes(query) ||
+      (c.fiscal_name || '').toLowerCase().includes(query) ||
+      (c.contact_name || '').toLowerCase().includes(query) ||
+      (c.category || '').toLowerCase().includes(query) ||
+      (c.nif || '').toLowerCase().includes(query)
+    );
+  });
 
   useEffect(() => {
     const fetchCustomers = async () => {
@@ -808,35 +827,54 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
                     <span className="text-gray-400 ml-2 shrink-0">&#9660;</span>
                   </button>
                   {dropdownOpen && (
-                    <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-2xl max-h-56 overflow-y-auto">
-                      {customers.map(c => {
-                        const status = getCustomerStatus(c);
-                        const val = c.id || c.nif;
-                        return (
-                          <div
-                            key={val}
-                            onClick={() => {
-                              setSelectedCustomerId(val);
-                              setIsAddingNew(false);
-                              setDropdownOpen(false);
-                            }}
-                            className={`flex items-center gap-2 px-3 py-2 cursor-pointer text-sm hover:bg-blue-50 transition-colors ${selectedCustomerId === val ? 'bg-blue-50 font-medium' : ''}`}
-                          >
-                            {status === 'ok' && <span className="inline-flex items-center px-1.5 py-0.5 text-xs font-bold rounded bg-green-500 text-white shrink-0">OK</span>}
-                            {status === 'recibo' && <span className="inline-flex items-center px-1.5 py-0.5 text-xs font-bold rounded bg-emerald-600 text-white shrink-0">Recibo</span>}
-                            {status === 'pt' && <span className="inline-flex items-center px-1.5 py-0.5 text-xs font-bold rounded bg-blue-600 text-white shrink-0">TP</span>}
-                            {status?.startsWith('pr:') && <span className="inline-flex items-center px-1.5 py-0.5 text-xs font-bold rounded bg-orange-500 text-white shrink-0">RESERVA TEMPORAL ({status.split(':')[1]})</span>}
-                            <span className="truncate text-gray-800">{c.commercial_name || c.fiscal_name}</span>
+                    <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-2xl max-h-64 flex flex-col">
+                      <div className="p-2 border-b border-gray-100 bg-gray-50 rounded-t-lg sticky top-0 z-10">
+                        <input
+                          type="text"
+                          placeholder={language === 'en' ? 'Search customer...' : 'Buscar cliente...'}
+                          value={customerSearchQuery}
+                          onChange={(e) => setCustomerSearchQuery(e.target.value)}
+                          className="w-full p-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                          onClick={(e) => e.stopPropagation()}
+                          autoFocus
+                        />
+                      </div>
+                      <div className="overflow-y-auto flex-1 max-h-40">
+                        {filteredCustomers.length === 0 ? (
+                          <div className="p-3 text-sm text-gray-500 text-center">
+                            {language === 'en' ? 'No customers found' : 'No se encontraron clientes'}
                           </div>
-                        );
-                      })}
+                        ) : (
+                          filteredCustomers.map(c => {
+                            const status = getCustomerStatus(c);
+                            const val = c.id || c.nif;
+                            return (
+                              <div
+                                key={val}
+                                onClick={() => {
+                                  setSelectedCustomerId(val);
+                                  setIsAddingNew(false);
+                                  setDropdownOpen(false);
+                                }}
+                                className={`flex items-center gap-2 px-3 py-2 cursor-pointer text-sm hover:bg-blue-50 transition-colors ${selectedCustomerId === val ? 'bg-blue-50 font-medium' : ''}`}
+                              >
+                                {status === 'ok' && <span className="inline-flex items-center px-1.5 py-0.5 text-xs font-bold rounded bg-green-500 text-white shrink-0">OK</span>}
+                                {status === 'recibo' && <span className="inline-flex items-center px-1.5 py-0.5 text-xs font-bold rounded bg-emerald-600 text-white shrink-0">Recibo</span>}
+                                {status === 'pt' && <span className="inline-flex items-center px-1.5 py-0.5 text-xs font-bold rounded bg-blue-600 text-white shrink-0">TP</span>}
+                                {status?.startsWith('pr:') && <span className="inline-flex items-center px-1.5 py-0.5 text-xs font-bold rounded bg-orange-500 text-white shrink-0">RESERVA TEMPORAL ({status.split(':')[1]})</span>}
+                                <span className="truncate text-gray-800">{c.commercial_name || c.fiscal_name}</span>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
                       <div
                         onClick={() => {
                           setSelectedCustomerId('new');
                           setIsAddingNew(true);
                           setDropdownOpen(false);
                         }}
-                        className="flex items-center gap-2 px-3 py-2 cursor-pointer text-sm font-bold text-blue-600 border-t border-gray-100 hover:bg-blue-50 transition-colors"
+                        className="flex items-center gap-2 px-3 py-2 cursor-pointer text-sm font-bold text-blue-600 border-t border-gray-100 hover:bg-blue-50 transition-colors sticky bottom-0 bg-white"
                       >
                         + {t('rp_new_customer')}
                       </div>
