@@ -9,7 +9,18 @@ import { useLanguage } from '../context/LanguageContext';
 
 // Helper: insert a customer, falling back to core fields if schema cache is stale
 const safeInsertCustomer = async (payload) => {
-  const { data, error } = await supabase.from('customers').insert([payload]).select();
+  const cleanData = {
+    fiscal_name: payload.fiscal_name || '',
+    commercial_name: payload.commercial_name || '',
+    nif: payload.nif || '',
+    category: payload.category || '',
+    address: payload.address || '',
+    email: payload.email || '',
+    whatsapp: payload.whatsapp || '',
+    last_year_product: payload.last_year_product || ''
+  };
+
+  const { data, error } = await supabase.from('customers').insert([cleanData]).select();
   if (error && error.message && error.message.includes('schema cache')) {
     // Schema cache stale — retry with only the original guaranteed columns
     const corePayload = {
@@ -23,6 +34,7 @@ const safeInsertCustomer = async (payload) => {
   }
   return { data, error };
 };
+
 
 const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => {
   const { t, language } = useLanguage();

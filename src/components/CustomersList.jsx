@@ -85,12 +85,23 @@ const CustomersList = () => {
   };
 
   const handleSaveCustomer = async (customerData) => {
+    const cleanData = {
+      fiscal_name: customerData.fiscal_name || '',
+      commercial_name: customerData.commercial_name || '',
+      nif: customerData.nif || '',
+      category: customerData.category || '',
+      address: customerData.address || '',
+      email: customerData.email || '',
+      whatsapp: customerData.whatsapp || '',
+      last_year_product: customerData.last_year_product || ''
+    };
+
     try {
       if (selectedCustomer && selectedCustomer.id && !selectedCustomer.id.startsWith('ext-')) {
         // Update existing in Supabase
         const { error } = await supabase
           .from('customers')
-          .update(customerData)
+          .update(cleanData)
           .eq('id', selectedCustomer.id);
           
         if (error) throw error;
@@ -105,7 +116,7 @@ const CustomersList = () => {
           // Create new
           const { data, error } = await supabase
             .from('customers')
-            .insert([customerData])
+            .insert([cleanData])
             .select();
             
           if (error) throw error;

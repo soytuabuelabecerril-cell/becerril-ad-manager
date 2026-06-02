@@ -34,26 +34,62 @@ const initialData = [
   { page_number: 92, ad_type: "Contraportada", status: "Available" }
 ];
 
-// Initialize the array once to serve as an in-memory DB 
-export const fallbackPagesData = Array.from({ length: 92 }, (_, i) => {
-  const pageNum = i + 1;
-  const existing = initialData.find(p => p.page_number === pageNum);
-  
-  const page = existing ? { ...existing } : { page_number: pageNum, status: 'Available', ad_type: null };
-  
-  // Create an array to hold multiple ads for this page.
-  // We'll optionally populate it with the legacy `ad_type` if it exists.
-  page.ads = [];
-  
-  if (page.ad_type) {
-    page.ads.push({
-      ad_type: page.ad_type,
-      customer_id: 'legacy'
-    });
+const isBrowser = typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
+
+const getInitialPagesData = () => {
+  if (isBrowser) {
+    try {
+      const stored = localStorage.getItem('becerril_magazine_pages');
+      if (stored) {
+        return JSON.parse(stored);
+      }
+    } catch (e) {
+      console.error("Error loading magazine pages from localStorage", e);
+    }
   }
-  
-  return page;
-});
+
+  const defaultPages = Array.from({ length: 92 }, (_, i) => {
+    const pageNum = i + 1;
+    const existing = initialData.find(p => p.page_number === pageNum);
+    
+    const page = existing ? { ...existing } : { page_number: pageNum, status: 'Available', ad_type: null };
+    
+    page.ads = [];
+    
+    if (page.ad_type) {
+      page.ads.push({
+        ad_type: page.ad_type,
+        customer_id: 'legacy'
+      });
+    }
+    
+    return page;
+  });
+
+  if (isBrowser) {
+    try {
+      localStorage.setItem('becerril_magazine_pages', JSON.stringify(defaultPages));
+    } catch (e) {
+      console.error("Error saving initial magazine pages to localStorage", e);
+    }
+  }
+
+  return defaultPages;
+};
+
+// Initialize the array once to serve as an in-memory DB 
+export const fallbackPagesData = getInitialPagesData();
+
+// Periodically auto-save the page reservations state to localStorage to prevent data loss on HMR/reload
+if (isBrowser) {
+  setInterval(() => {
+    try {
+      localStorage.setItem('becerril_magazine_pages', JSON.stringify(fallbackPagesData));
+    } catch (e) {
+      // Silently ignore storage exceptions
+    }
+  }, 1000);
+}
 
 export const getFullPages = () => {
   return fallbackPagesData; // Return reference to mutated state
