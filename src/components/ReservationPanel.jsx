@@ -851,7 +851,8 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
                             return (
                               <div
                                 key={val}
-                                onClick={() => {
+                                onMouseDown={(e) => {
+                                  e.preventDefault(); // Prevent input blur
                                   setSelectedCustomerId(val);
                                   setIsAddingNew(false);
                                   setDropdownOpen(false);
@@ -869,7 +870,8 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
                         )}
                       </div>
                       <div
-                        onClick={() => {
+                        onMouseDown={(e) => {
+                          e.preventDefault(); // Prevent input blur
                           setSelectedCustomerId('new');
                           setIsAddingNew(true);
                           setDropdownOpen(false);
