@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useDatabase } from '../context/DatabaseContext';
 import { getReciboWhatsAppMessage } from '../utils/invoicesStore';
+import { supabase } from '../lib/supabase';
 import { FileText, Download, Receipt, Mail, MessageCircle, XCircle, CheckCircle, Eye, X, Trash2, Search, Settings } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
@@ -25,6 +26,7 @@ const InvoicesList = () => {
   const [filter, setFilter] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [sendingEmailId, setSendingEmailId] = useState(null);
+  const [sentEmailIds, setSentEmailIds] = useState([]);
   const [activeSection, setActiveSection] = useState('invoices'); // 'invoices' | 'recibos'
   const [isConfigOpen, setIsConfigOpen] = useState(false);
   const [configSettings, setConfigSettings] = useState({ isSequentialEnabled: true, nextInvoiceNumber: 3 });
@@ -105,7 +107,21 @@ const InvoicesList = () => {
 
 
   const sendInvoiceEmail = async (inv) => {
-    const email = window.prompt(`Introduce el correo del cliente para ${inv.customerName}:`);
+    let defaultEmail = '';
+    try {
+      const { data, error } = await supabase
+        .from('customers')
+        .select('email')
+        .or(`commercial_name.eq."${inv.customerName}",fiscal_name.eq."${inv.customerName}"`)
+        .limit(1);
+      if (data && data[0]) {
+        defaultEmail = data[0].email || '';
+      }
+    } catch (err) {
+      console.error('Error fetching customer email:', err);
+    }
+
+    const email = window.prompt(`Introduce el correo del cliente para ${inv.customerName}:`, defaultEmail);
     if (!email) return;
 
     setSendingEmailId(inv.id);
@@ -150,6 +166,7 @@ const InvoicesList = () => {
           
           const data = await response.json();
           if (data.success) {
+            setSentEmailIds(prev => [...prev, inv.id]);
             alert('Email sent successfully!');
           } else {
             alert('Failed to send email: ' + (data.error || 'Unknown error'));
@@ -599,7 +616,7 @@ const InvoicesList = () => {
                               <button 
                                 onClick={() => sendInvoiceEmail(inv)}
                                 disabled={renderingInvoice !== null || sendingEmailId === inv.id}
-                                className={`p-2 rounded transition-colors ${inv.status === 'Cancelled' ? 'pointer-events-none opacity-50' : 'text-gray-600 hover:text-blue-600 hover:bg-blue-50'} ${sendingEmailId === inv.id ? 'animate-pulse text-blue-400' : ''}`}
+                                className={`p-2 rounded transition-colors ${inv.status === 'Cancelled' ? 'pointer-events-none opacity-50' : (sentEmailIds.includes(inv.id) ? 'text-green-600 hover:text-green-700 hover:bg-green-50' : 'text-gray-600 hover:text-blue-600 hover:bg-blue-50')} ${sendingEmailId === inv.id ? 'animate-pulse text-blue-400' : ''}`}
                                 title="Send via Email"
                               >
                                 <Mail size={18} />
@@ -737,7 +754,7 @@ const InvoicesList = () => {
                         <button 
                           onClick={() => sendInvoiceEmail(inv)}
                           disabled={renderingInvoice !== null || sendingEmailId === inv.id}
-                          className={`p-2 bg-gray-50 rounded-lg transition-colors ${inv.status === 'Cancelled' ? 'pointer-events-none opacity-50' : 'hover:bg-blue-50 hover:text-blue-600 text-gray-600'} ${sendingEmailId === inv.id ? 'animate-pulse text-blue-400' : ''}`}
+                          className={`p-2 bg-gray-50 rounded-lg transition-colors ${inv.status === 'Cancelled' ? 'pointer-events-none opacity-50' : (sentEmailIds.includes(inv.id) ? 'bg-green-50 text-green-600 hover:bg-green-100 hover:text-green-700' : 'hover:bg-blue-50 hover:text-blue-600 text-gray-600')} ${sendingEmailId === inv.id ? 'animate-pulse text-blue-400' : ''}`}
                           title="Send via Email"
                         >
                           <Mail size={16} />
@@ -961,9 +978,9 @@ const InvoicesList = () => {
                 <button 
                   onClick={() => sendInvoiceEmail(viewingInvoice)}
                   disabled={sendingEmailId === viewingInvoice.id}
-                  className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 text-sm font-medium flex items-center gap-2 transition-colors"
+                  className={`px-4 py-2 text-white rounded text-sm font-medium flex items-center gap-2 transition-colors ${sentEmailIds.includes(viewingInvoice.id) ? 'bg-green-600 hover:bg-green-700' : 'bg-indigo-600 hover:bg-indigo-700'}`}
                 >
-                  <Mail size={16} /> {sendingEmailId === viewingInvoice.id ? t('il_modal_sending') : t('il_modal_send_email')}
+                  <Mail size={16} /> {sendingEmailId === viewingInvoice.id ? t('il_modal_sending') : (sentEmailIds.includes(viewingInvoice.id) ? (language === 'es' ? 'Email Enviado' : 'Email Sent') : t('il_modal_send_email'))}
                 </button>
                 <button 
                   onClick={() => { generatePDF(viewingInvoice); setViewingInvoice(null); }}
