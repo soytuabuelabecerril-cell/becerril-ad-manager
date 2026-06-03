@@ -22,7 +22,8 @@ const fromDbInvoice = (row) => ({
   total: parseFloat(row.total || 0),
   assignedPage: row.assigned_page,
   artworkComment: row.artwork_comment,
-  originalInvoiceId: row.original_invoice_id
+  originalInvoiceId: row.original_invoice_id,
+  emailSentAt: row.email_sent_at
 });
 
 const toDbInvoice = (inv) => ({
@@ -38,7 +39,8 @@ const toDbInvoice = (inv) => ({
   total: inv.total,
   assigned_page: inv.assignedPage,
   artwork_comment: inv.artworkComment,
-  original_invoice_id: inv.originalInvoiceId
+  original_invoice_id: inv.originalInvoiceId,
+  email_sent_at: inv.emailSentAt
 });
 
 const fromDbRecibo = (row) => ({
@@ -56,7 +58,8 @@ const fromDbRecibo = (row) => ({
   assignedPage: row.assigned_page,
   customerEmail: row.customer_email,
   customerPhone: row.customer_phone,
-  artworkComment: row.artwork_comment
+  artworkComment: row.artwork_comment,
+  emailSentAt: row.email_sent_at
 });
 
 const toDbRecibo = (rec) => ({
@@ -73,7 +76,8 @@ const toDbRecibo = (rec) => ({
   assigned_page: rec.assignedPage,
   customer_email: rec.customerEmail,
   customer_phone: rec.customerPhone,
-  artwork_comment: rec.artworkComment
+  artwork_comment: rec.artworkComment,
+  email_sent_at: rec.emailSentAt
 });
 
 const fromDbOrder = (row) => ({
@@ -430,6 +434,34 @@ export const DatabaseProvider = ({ children }) => {
       }
     } catch (err) {
       console.error("Error updating invoice payment:", err);
+    }
+  };
+
+  const markInvoiceEmailSent = async (id) => {
+    try {
+      const emailSentAt = new Date().toISOString();
+      const { error } = await supabase
+        .from('invoices')
+        .update({ email_sent_at: emailSentAt })
+        .eq('id', id);
+      if (error) throw error;
+      setInvoices(prev => prev.map(inv => inv.id === id ? { ...inv, emailSentAt } : inv));
+    } catch (err) {
+      console.error("Error updating invoice email_sent_at:", err);
+    }
+  };
+
+  const markReciboEmailSent = async (id) => {
+    try {
+      const emailSentAt = new Date().toISOString();
+      const { error } = await supabase
+        .from('recibos')
+        .update({ email_sent_at: emailSentAt })
+        .eq('id', id);
+      if (error) throw error;
+      setRecibos(prev => prev.map(rec => rec.id === id ? { ...rec, emailSentAt } : rec));
+    } catch (err) {
+      console.error("Error updating recibo email_sent_at:", err);
     }
   };
 
@@ -1468,6 +1500,8 @@ export const DatabaseProvider = ({ children }) => {
       confirmOrderPayment,
       addRecibo,
       deleteRecibo,
+      markInvoiceEmailSent,
+      markReciboEmailSent,
       saveInvoiceSettings,
       addAdReservation,
       deleteAdReservationDirect,

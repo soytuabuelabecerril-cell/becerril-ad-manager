@@ -18,7 +18,9 @@ const InvoicesList = () => {
     hardDeleteInvoice,
     deleteRecibo,
     saveInvoiceSettings,
-    reserveInvoiceNumber
+    reserveInvoiceNumber,
+    markInvoiceEmailSent,
+    markReciboEmailSent
   } = useDatabase();
 
   const [renderingInvoice, setRenderingInvoice] = useState(null);
@@ -26,9 +28,13 @@ const InvoicesList = () => {
   const [filter, setFilter] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [sendingEmailId, setSendingEmailId] = useState(null);
-  const [sentEmailIds, setSentEmailIds] = useState([]);
   const [sentWhatsappIds, setSentWhatsappIds] = useState([]);
   const [sendingReciboEmailId, setSendingReciboEmailId] = useState(null);
+
+  const sentEmailIds = [
+    ...invoices.filter(inv => inv.emailSentAt).map(inv => inv.id),
+    ...recibos.filter(rec => rec.emailSentAt).map(rec => rec.id)
+  ];
   const [activeSection, setActiveSection] = useState('invoices'); // 'invoices' | 'recibos'
   const [isConfigOpen, setIsConfigOpen] = useState(false);
   const [configSettings, setConfigSettings] = useState({ isSequentialEnabled: true, nextInvoiceNumber: 3 });
@@ -123,7 +129,15 @@ const InvoicesList = () => {
       console.error('Error fetching customer email:', err);
     }
 
-    const email = window.prompt(`Introduce el correo del cliente para ${inv.customerName}:`, defaultEmail);
+    let email = defaultEmail;
+    if (!email) {
+      email = window.prompt(
+        language === 'es'
+          ? `Introduce el correo del cliente para ${inv.customerName}:`
+          : `Enter the client's email for ${inv.customerName}:`,
+        ''
+      );
+    }
     if (!email) return;
 
     setSendingEmailId(inv.id);
@@ -168,7 +182,7 @@ const InvoicesList = () => {
           
           const data = await response.json();
           if (data.success) {
-            setSentEmailIds(prev => [...prev, inv.id]);
+            await markInvoiceEmailSent(inv.id);
             alert('Email sent successfully!');
           } else {
             alert('Failed to send email: ' + (data.error || 'Unknown error'));
@@ -201,7 +215,15 @@ const InvoicesList = () => {
       }
     }
 
-    const email = window.prompt(`Introduce el correo del cliente para ${rec.customerName}:`, defaultEmail);
+    let email = defaultEmail;
+    if (!email) {
+      email = window.prompt(
+        language === 'es'
+          ? `Introduce el correo del cliente para ${rec.customerName}:`
+          : `Enter the client's email for ${rec.customerName}:`,
+        ''
+      );
+    }
     if (!email) return;
 
     setSendingReciboEmailId(rec.id);
@@ -218,7 +240,7 @@ const InvoicesList = () => {
       
       const data = await response.json();
       if (data.success) {
-        setSentEmailIds(prev => [...prev, rec.id]);
+        await markReciboEmailSent(rec.id);
         alert('Email sent successfully!');
       } else {
         alert('Failed to send email: ' + (data.error || 'Unknown error'));

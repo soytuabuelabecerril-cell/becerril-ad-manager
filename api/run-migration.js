@@ -35,6 +35,18 @@ export default async function handler(req, res) {
       ADD COLUMN IF NOT EXISTS reminder_sent_at TIMESTAMP WITH TIME ZONE;
     `);
 
+    // 3. Alter invoices
+    await client.query(`
+      ALTER TABLE public.invoices 
+      ADD COLUMN IF NOT EXISTS email_sent_at TIMESTAMP WITH TIME ZONE;
+    `);
+
+    // 4. Alter recibos
+    await client.query(`
+      ALTER TABLE public.recibos 
+      ADD COLUMN IF NOT EXISTS email_sent_at TIMESTAMP WITH TIME ZONE;
+    `);
+
     return res.status(200).json({ success: true, message: 'Database migrated successfully!' });
   } catch (err) {
     console.error('Migration failed:', err);

@@ -85,6 +85,16 @@ app.all('/api/run-migration', async (req, res) => {
       ADD COLUMN IF NOT EXISTS reminder_sent_at TIMESTAMP WITH TIME ZONE;
     `);
 
+    await client.query(`
+      ALTER TABLE public.invoices 
+      ADD COLUMN IF NOT EXISTS email_sent_at TIMESTAMP WITH TIME ZONE;
+    `);
+
+    await client.query(`
+      ALTER TABLE public.recibos 
+      ADD COLUMN IF NOT EXISTS email_sent_at TIMESTAMP WITH TIME ZONE;
+    `);
+
     res.status(200).json({ success: true, message: 'Database migrated successfully!' });
   } catch (err) {
     console.error('Migration failed:', err);

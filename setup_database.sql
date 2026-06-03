@@ -37,7 +37,8 @@ CREATE TABLE public.invoices (
     total NUMERIC DEFAULT 0,
     assigned_page INT REFERENCES public.magazine_pages(page_number) ON DELETE SET NULL,
     artwork_comment TEXT,
-    original_invoice_id VARCHAR(50)
+    original_invoice_id VARCHAR(50),
+    email_sent_at TIMESTAMP WITH TIME ZONE
 );
 
 -- 3. Create recibos Table (Cash receipts)
@@ -56,7 +57,8 @@ CREATE TABLE IF NOT EXISTS public.recibos (
     assigned_page INT REFERENCES public.magazine_pages(page_number) ON DELETE SET NULL,
     customer_email VARCHAR(255),
     customer_phone VARCHAR(50),
-    artwork_comment TEXT
+    artwork_comment TEXT,
+    email_sent_at TIMESTAMP WITH TIME ZONE
 );
 
 -- 4. Create orders Table (Pending orders)
