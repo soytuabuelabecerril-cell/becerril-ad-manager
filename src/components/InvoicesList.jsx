@@ -27,6 +27,8 @@ const InvoicesList = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [sendingEmailId, setSendingEmailId] = useState(null);
   const [sentEmailIds, setSentEmailIds] = useState([]);
+  const [sentWhatsappIds, setSentWhatsappIds] = useState([]);
+  const [sendingReciboEmailId, setSendingReciboEmailId] = useState(null);
   const [activeSection, setActiveSection] = useState('invoices'); // 'invoices' | 'recibos'
   const [isConfigOpen, setIsConfigOpen] = useState(false);
   const [configSettings, setConfigSettings] = useState({ isSequentialEnabled: true, nextInvoiceNumber: 3 });
@@ -180,6 +182,53 @@ const InvoicesList = () => {
         setSendingEmailId(null);
       }
     }, 600);
+  };
+
+  const sendReciboEmail = async (rec) => {
+    let defaultEmail = rec.customerEmail || '';
+    if (!defaultEmail) {
+      try {
+        const { data, error } = await supabase
+          .from('customers')
+          .select('email')
+          .or(`commercial_name.eq."${rec.customerName}",fiscal_name.eq."${rec.customerName}"`)
+          .limit(1);
+        if (data && data[0]) {
+          defaultEmail = data[0].email || '';
+        }
+      } catch (err) {
+        console.error('Error fetching customer email:', err);
+      }
+    }
+
+    const email = window.prompt(`Introduce el correo del cliente para ${rec.customerName}:`, defaultEmail);
+    if (!email) return;
+
+    setSendingReciboEmailId(rec.id);
+    try {
+      const subject = `Recibo de Pago Revista Becerril: Pág. ${rec.assignedPage}`;
+      const text = `Hola,\n\nConfirmamos la reserva y el recibo de pago en efectivo para su anuncio en la Revista Becerril:\n\n- Producto: ${rec.productName}\n- Página Asignada: ${rec.assignedPage}\n- Precio Base: ${rec.price.toFixed(2)}€\n${rec.designPrice > 0 ? `- Precio Diseño: ${rec.designPrice.toFixed(2)}€\n` : ''}- Total Cobrado (Efectivo sin IVA): ${rec.total.toFixed(2)}€\n\nGracias,\nEquipo Revista Becerril`;
+
+      const apiUrl = import.meta.env.VITE_API_URL || '/api/send-email';
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ to: email, subject, text })
+      });
+      
+      const data = await response.json();
+      if (data.success) {
+        setSentEmailIds(prev => [...prev, rec.id]);
+        alert('Email sent successfully!');
+      } else {
+        alert('Failed to send email: ' + (data.error || 'Unknown error'));
+      }
+    } catch (err) {
+      console.error('Error sending recibo email:', err);
+      alert('Error al enviar el correo. Asegúrate de que el servidor esté activo.');
+    } finally {
+      setSendingReciboEmailId(null);
+    }
   };
 
   const getWhatsAppLink = (inv) => {
@@ -625,7 +674,8 @@ const InvoicesList = () => {
                               <a 
                                 href={getWhatsAppLink(inv)} 
                                 target="_blank" rel="noreferrer"
-                                className={`p-2 rounded transition-colors ${inv.status === 'Cancelled' ? 'pointer-events-none opacity-50' : 'text-gray-600 hover:text-green-600 hover:bg-green-50'}`}
+                                onClick={() => setSentWhatsappIds(prev => [...prev, inv.id])}
+                                className={`p-2 rounded transition-colors ${inv.status === 'Cancelled' ? 'pointer-events-none opacity-50' : (sentWhatsappIds.includes(inv.id) ? 'text-green-600 hover:text-green-700 hover:bg-green-50' : 'text-gray-600 hover:text-green-600 hover:bg-green-50')}`}
                                 title="Send via WhatsApp"
                               >
                                 <MessageCircle size={18} />
@@ -763,7 +813,8 @@ const InvoicesList = () => {
                         <a 
                           href={getWhatsAppLink(inv)} 
                           target="_blank" rel="noreferrer"
-                          className={`p-2 bg-gray-50 rounded-lg transition-colors flex items-center justify-center ${inv.status === 'Cancelled' ? 'pointer-events-none opacity-50' : 'hover:bg-green-50 hover:text-green-600 text-gray-600'}`}
+                          onClick={() => setSentWhatsappIds(prev => [...prev, inv.id])}
+                          className={`p-2 bg-gray-50 rounded-lg transition-colors flex items-center justify-center ${inv.status === 'Cancelled' ? 'pointer-events-none opacity-50' : (sentWhatsappIds.includes(inv.id) ? 'bg-green-50 text-green-600 hover:bg-green-100 hover:text-green-700' : 'hover:bg-green-50 hover:text-green-600 text-gray-600')}`}
                           title="Send via WhatsApp"
                         >
                           <MessageCircle size={16} />
@@ -853,11 +904,21 @@ const InvoicesList = () => {
                       </td>
                       <td className="p-3 text-right">
                         <div className="flex justify-end gap-2 items-center">
+                          <button
+                            onClick={() => sendReciboEmail(rec)}
+                            disabled={sendingReciboEmailId === rec.id}
+                            className={`p-2 rounded transition-colors ${sentEmailIds.includes(rec.id) ? 'text-green-600 hover:text-green-700 hover:bg-green-50' : 'text-gray-600 hover:text-blue-600 hover:bg-blue-50'} ${sendingReciboEmailId === rec.id ? 'animate-pulse text-blue-400' : ''}`}
+                            title="Send via Email"
+                          >
+                            <Mail size={18} />
+                          </button>
+                          
                           <a
                             href={`https://wa.me/?text=${encodeURIComponent(getReciboWhatsAppMessage(rec))}`}
                             target="_blank"
                             rel="noreferrer"
-                            className="p-2 text-gray-600 hover:text-green-600 hover:bg-green-50 rounded transition-colors"
+                            onClick={() => setSentWhatsappIds(prev => [...prev, rec.id])}
+                            className={`p-2 rounded transition-colors ${sentWhatsappIds.includes(rec.id) ? 'text-green-600 hover:text-green-700 hover:bg-green-50' : 'text-gray-600 hover:text-green-600 hover:bg-green-50'}`}
                             title={t('il_recibos_whatsapp')}
                           >
                             <MessageCircle size={18} />
@@ -918,11 +979,21 @@ const InvoicesList = () => {
                     </div>
                     
                     <div className="flex gap-1.5">
+                      <button
+                        onClick={() => sendReciboEmail(rec)}
+                        disabled={sendingReciboEmailId === rec.id}
+                        className={`p-2 rounded-lg transition-colors flex items-center justify-center border ${sentEmailIds.includes(rec.id) ? 'bg-green-50 text-green-600 hover:bg-green-100 border-green-100' : 'bg-white text-blue-600 hover:bg-blue-50 border-blue-100'} ${sendingReciboEmailId === rec.id ? 'animate-pulse text-blue-400' : ''}`}
+                        title="Send via Email"
+                      >
+                        <Mail size={16} />
+                      </button>
+
                       <a
                         href={`https://wa.me/?text=${encodeURIComponent(getReciboWhatsAppMessage(rec))}`}
                         target="_blank"
                         rel="noreferrer"
-                        className="p-2 bg-white text-emerald-700 hover:bg-emerald-50 border border-emerald-100 rounded-lg transition-colors flex items-center justify-center"
+                        onClick={() => setSentWhatsappIds(prev => [...prev, rec.id])}
+                        className={`p-2 rounded-lg transition-colors flex items-center justify-center border ${sentWhatsappIds.includes(rec.id) ? 'bg-green-50 text-green-600 hover:bg-green-100 border-green-100' : 'bg-white text-emerald-700 hover:bg-emerald-50 border-emerald-100'}`}
                         title={t('il_recibos_whatsapp')}
                       >
                         <MessageCircle size={16} />
