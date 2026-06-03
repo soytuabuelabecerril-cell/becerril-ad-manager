@@ -882,6 +882,19 @@ export const DatabaseProvider = ({ children }) => {
         isPaid: true
       });
 
+      // Send automatic payment confirmation email in the background
+      if (order.customerEmail) {
+        const subject = `Confirmación de Pago: Factura Nro. ${invoice.id} - Revista Becerril`;
+        const text = `Hola,\n\nConfirmamos que hemos recibido el pago correspondiente a su espacio publicitario en la Revista Becerril:\n\n- Número de Factura: ${invoice.id}\n- Producto: ${invoice.productName}\n- Página Asignada: ${invoice.assignedPage}\n- Método de Pago: ${paymentMethod}\n- Precio Base: ${invoice.price.toFixed(2)}€\n${invoice.designPrice > 0 ? `- Precio Diseño: ${invoice.designPrice.toFixed(2)}€\n` : ''}- Subtotal: ${(invoice.price + invoice.designPrice).toFixed(2)}€\n- IVA (21%): ${invoice.vat.toFixed(2)}€\n- Total Pagado: ${invoice.total.toFixed(2)}€\n\nGracias,\nEquipo Revista Becerril`;
+        
+        const apiUrl = import.meta.env.VITE_API_URL || '/api/send-email';
+        fetch(apiUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ to: order.customerEmail, subject, text })
+        }).catch(err => console.error("Error sending automatic payment confirmation email:", err));
+      }
+
       // 2. Update matching ad status in ad_reservations to isPaid=true
       const { error: adErr } = await supabase
         .from('ad_reservations')
@@ -915,6 +928,19 @@ export const DatabaseProvider = ({ children }) => {
         paymentMethod,
         isPaid: true
       });
+
+      // Send automatic payment confirmation email in the background (fallback)
+      if (order.customerEmail) {
+        const subject = `Confirmación de Pago: Factura Nro. ${invoice.id} - Revista Becerril`;
+        const text = `Hola,\n\nConfirmamos que hemos recibido el pago correspondiente a su espacio publicitario en la Revista Becerril:\n\n- Número de Factura: ${invoice.id}\n- Producto: ${invoice.productName}\n- Página Asignada: ${invoice.assignedPage}\n- Método de Pago: ${paymentMethod}\n- Precio Base: ${invoice.price.toFixed(2)}€\n${invoice.designPrice > 0 ? `- Precio Diseño: ${invoice.designPrice.toFixed(2)}€\n` : ''}- Subtotal: ${(invoice.price + invoice.designPrice).toFixed(2)}€\n- IVA (21%): ${invoice.vat.toFixed(2)}€\n- Total Pagado: ${invoice.total.toFixed(2)}€\n\nGracias,\nEquipo Revista Becerril`;
+        
+        const apiUrl = import.meta.env.VITE_API_URL || '/api/send-email';
+        fetch(apiUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ to: order.customerEmail, subject, text })
+        }).catch(err => console.error("Error sending automatic payment confirmation email (fallback):", err));
+      }
 
       // 2. Update local pages ad status
       if (order.assignedPage) {

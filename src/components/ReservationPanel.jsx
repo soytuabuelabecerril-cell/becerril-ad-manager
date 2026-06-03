@@ -291,6 +291,33 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // Automatically send email on order confirmation modal open
+  useEffect(() => {
+    if (orderConfirmModalOpen && orderDetails && orderDetails.customerEmail) {
+      if (emailStatus.status === null && !emailStatus.sending) {
+        handleSendEmail(orderDetails, orderDetails.orderType === 'pre-reserved', false);
+      }
+    }
+  }, [orderConfirmModalOpen, orderDetails, emailStatus]);
+
+  // Automatically send email on recibo modal open
+  useEffect(() => {
+    if (reciboModalOpen && reciboDetails && reciboDetails.customerEmail) {
+      if (emailStatus.status === null && !emailStatus.sending) {
+        handleSendEmail(reciboDetails, false, true);
+      }
+    }
+  }, [reciboModalOpen, reciboDetails, emailStatus]);
+
+  // Automatically send email on invoice modal open (exclude preview mode)
+  useEffect(() => {
+    if (invoiceModalOpen && invoiceDetails && !invoiceDetails._preview && invoiceDetails.customerEmail) {
+      if (emailStatus.status === null && !emailStatus.sending) {
+        handleSendEmail(invoiceDetails, false, false, true);
+      }
+    }
+  }, [invoiceModalOpen, invoiceDetails, emailStatus]);
+
   // Helper to check if a product fits in a specific page
   const productFitsInPage = (product, page) => {
     const filledSlots = new Set();
