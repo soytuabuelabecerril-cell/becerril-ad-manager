@@ -982,7 +982,7 @@ export const DatabaseProvider = ({ children }) => {
           `Por favor, complete el pago para garantizar que su espacio no sea liberado.\n\n` +
           `Gracias,\nEquipo Revista Becerril`;
 
-        const apiUrl = import.meta.env.VITE_API_URL || (window.location.hostname === 'localhost' ? 'http://localhost:3001/api/send-email' : '/api/send-email');
+        const apiUrl = import.meta.env.VITE_API_URL || '/api/send-email';
         const response = await fetch(apiUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },

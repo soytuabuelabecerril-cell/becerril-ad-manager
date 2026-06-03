@@ -135,7 +135,7 @@ const InvoicesList = () => {
           
           const base64DataUri = pdf.output('datauristring');
           
-          const apiUrl = import.meta.env.VITE_API_URL || (window.location.hostname === 'localhost' ? 'http://localhost:3001/api/send-email' : '/api/send-email');
+          const apiUrl = import.meta.env.VITE_API_URL || '/api/send-email';
           const response = await fetch(apiUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
