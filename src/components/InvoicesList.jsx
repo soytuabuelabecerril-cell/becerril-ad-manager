@@ -183,14 +183,12 @@ const InvoicesList = () => {
           const data = await response.json();
           if (data.success) {
             await markInvoiceEmailSent(inv.id);
-            alert('Email sent successfully!');
           } else {
-            alert('Failed to send email: ' + (data.error || 'Unknown error'));
+            console.error('Failed to send email:', data.error);
           }
         }
       } catch (err) {
         console.error('Error al enviar email:', err);
-        alert('Error al enviar el correo. Asegúrate de que el servidor esté activo.');
       } finally {
         setRenderingInvoice(null);
         setSendingEmailId(null);
@@ -241,13 +239,11 @@ const InvoicesList = () => {
       const data = await response.json();
       if (data.success) {
         await markReciboEmailSent(rec.id);
-        alert('Email sent successfully!');
       } else {
-        alert('Failed to send email: ' + (data.error || 'Unknown error'));
+        console.error('Failed to send email:', data.error);
       }
     } catch (err) {
       console.error('Error sending recibo email:', err);
-      alert('Error al enviar el correo. Asegúrate de que el servidor esté activo.');
     } finally {
       setSendingReciboEmailId(null);
     }
