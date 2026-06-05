@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useDatabase } from '../context/DatabaseContext';
-import { getReciboWhatsAppMessage } from '../utils/invoicesStore';
 import { supabase } from '../lib/supabase';
+import { formatTemplate, getTemplateVariables, getHtmlEmailTemplate } from '../utils/notifications';
 import { FileText, Download, Receipt, Mail, MessageCircle, XCircle, CheckCircle, Eye, X, Trash2, Search, Settings } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
@@ -13,6 +13,7 @@ const InvoicesList = () => {
     invoices,
     recibos,
     settings,
+    templates,
     cancelInvoice,
     updateInvoicePayment,
     hardDeleteInvoice,
@@ -28,6 +29,7 @@ const InvoicesList = () => {
   const [filter, setFilter] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [sendingEmailId, setSendingEmailId] = useState(null);
+  const [sendingWhatsappId, setSendingWhatsappId] = useState(null);
   const [sentWhatsappIds, setSentWhatsappIds] = useState([]);
   const [sendingReciboEmailId, setSendingReciboEmailId] = useState(null);
 
@@ -39,6 +41,26 @@ const InvoicesList = () => {
   const [isConfigOpen, setIsConfigOpen] = useState(false);
   const [configSettings, setConfigSettings] = useState({ isSequentialEnabled: true, nextInvoiceNumber: 3 });
   const [reserveNote, setReserveNote] = useState('');
+
+  const getReciboWhatsAppText = (rec) => {
+    const waTemplate = templates?.recibo_whatsapp;
+    const vars = getTemplateVariables(rec, language);
+    if (waTemplate?.body) {
+      return formatTemplate(waTemplate.body, vars);
+    }
+    const abbrev = vars.productAbbreviation || '';
+    const amount = rec.total.toFixed(2);
+    return `Recibí, pago a cuenta – ${abbrev} – ${rec.customerName} – ${amount}€`;
+  };
+
+  const getReciboWhatsAppHref = (rec) => {
+    const text = getReciboWhatsAppText(rec);
+    const phone = rec.customerPhone || '';
+    const cleanedPhone = phone.replace(/\D/g, '');
+    return cleanedPhone 
+      ? `https://wa.me/${cleanedPhone}?text=${encodeURIComponent(text)}`
+      : `https://wa.me/?text=${encodeURIComponent(text)}`;
+  };
 
   useEffect(() => {
     if (settings) {
@@ -167,16 +189,29 @@ const InvoicesList = () => {
           
           const base64DataUri = pdf.output('datauristring');
           
+          const invoiceTemplate = templates?.invoice_email;
+          const vars = getTemplateVariables(inv, language);
+          
+          const subject = invoiceTemplate?.subject 
+            ? formatTemplate(invoiceTemplate.subject, vars) 
+            : `Factura Reserva: ${inv.id}`;
+            
+          const text = invoiceTemplate?.body 
+            ? formatTemplate(invoiceTemplate.body, vars) 
+            : `Hola,\n\nAdjuntamos la factura ${inv.id} correspondiente a su reserva de ${inv.productName}.\n\nNota importante sobre arte: ${inv.artworkComment}\n\nGracias,\nEquipo I AM YOUR GRANNY S.L.`;
+
           const apiUrl = import.meta.env.VITE_API_URL || '/api/send-email';
           const response = await fetch(apiUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               to: email,
-              subject: `Factura Reserva: ${inv.id}`,
-              text: `Hola,\n\nAdjuntamos la factura ${inv.id} correspondiente a su reserva de ${inv.productName}.\n\nNota importante sobre arte: ${inv.artworkComment}\n\nGracias,\nEquipo I AM YOUR GRANNY S.L.`,
+              subject: subject,
+              text: text,
+              html: getHtmlEmailTemplate(vars),
               attachmentBase64: base64DataUri,
-              attachmentName: `Factura_${inv.id}.pdf`
+              attachmentName: `Factura_${inv.id}.pdf`,
+              background: true
             })
           });
           
@@ -226,14 +261,22 @@ const InvoicesList = () => {
 
     setSendingReciboEmailId(rec.id);
     try {
-      const subject = `Recibo de Pago Revista Becerril: Pág. ${rec.assignedPage}`;
-      const text = `Hola,\n\nConfirmamos la reserva y el recibo de pago en efectivo para su anuncio en la Revista Becerril:\n\n- Producto: ${rec.productName}\n- Página Asignada: ${rec.assignedPage}\n- Precio Base: ${rec.price.toFixed(2)}€\n${rec.designPrice > 0 ? `- Precio Diseño: ${rec.designPrice.toFixed(2)}€\n` : ''}- Total Cobrado (Efectivo sin IVA): ${rec.total.toFixed(2)}€\n\nGracias,\nEquipo Revista Becerril`;
+      const reciboTemplate = templates?.recibo_email;
+      const vars = getTemplateVariables(rec, language);
+      
+      const subject = reciboTemplate?.subject 
+        ? formatTemplate(reciboTemplate.subject, vars)
+        : `Recibo de Pago Revista de Fiestas Patronales Becerril de la Sierra 2026: Pág. ${rec.assignedPage}`;
+        
+      const text = reciboTemplate?.body 
+        ? formatTemplate(reciboTemplate.body, vars)
+        : `Hola,\n\nConfirmamos la reserva y el recibo de pago en efectivo para su anuncio en la Revista de Fiestas Patronales Becerril de la Sierra 2026:\n\n- Producto: ${rec.productName}\n- Página Asignada: ${rec.assignedPage}\n- Precio Base: ${rec.price.toFixed(2)}€\n${rec.designPrice > 0 ? `- Precio Diseño: ${rec.designPrice.toFixed(2)}€\n` : ''}- Recibo: ${rec.total.toFixed(2)}€\n\nGracias,\nEquipo de Coordinación Publicitaria`;
 
       const apiUrl = import.meta.env.VITE_API_URL || '/api/send-email';
       const response = await fetch(apiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ to: email, subject, text })
+        body: JSON.stringify({ to: email, subject, text, html: getHtmlEmailTemplate(vars), background: true })
       });
       
       const data = await response.json();
@@ -249,9 +292,111 @@ const InvoicesList = () => {
     }
   };
 
-  const getWhatsAppLink = (inv) => {
-    const text = `Hola, adjuntamos la factura ${inv.id} correspondiente a su reserva (${inv.productName}).\n\nPor favor, revise el documento.\n\nNota: ${inv.artworkComment}`;
-    return `https://wa.me/?text=${encodeURIComponent(text)}`;
+  const formatPhoneForWhatsapp = (phone) => {
+    if (!phone) return '';
+    const cleaned = phone.replace(/\D/g, '');
+    if (cleaned.length === 9 && (cleaned.startsWith('6') || cleaned.startsWith('7') || cleaned.startsWith('8') || cleaned.startsWith('9'))) {
+      return '34' + cleaned;
+    }
+    return cleaned;
+  };
+
+  const sendInvoiceWhatsApp = async (inv) => {
+    let defaultPhone = '';
+    try {
+      const { data, error } = await supabase
+        .from('customers')
+        .select('whatsapp')
+        .or(`commercial_name.eq."${inv.customerName}",fiscal_name.eq."${inv.customerName}"`)
+        .limit(1);
+      if (data && data[0]) {
+        defaultPhone = data[0].whatsapp || '';
+      }
+    } catch (err) {
+      console.error('Error fetching customer phone:', err);
+    }
+
+    setSendingWhatsappId(inv.id);
+    setRenderingInvoice(inv);
+
+    // Allow React to paint template
+    setTimeout(async () => {
+      try {
+        const element = document.getElementById('pdf-template');
+        if (!element) throw new Error('PDF template element not found in DOM');
+
+        const canvas = await html2canvas(element, {
+          scale: 2,
+          useCORS: true,
+          logging: false,
+          scrollX: 0,
+          scrollY: 0,
+          windowWidth: element.scrollWidth,
+          windowHeight: element.scrollHeight,
+        });
+        const imgData = canvas.toDataURL('image/jpeg', 0.85);
+
+        const pdf = new jsPDF('p', 'mm', 'a4');
+        const pdfWidth = pdf.internal.pageSize.getWidth();
+        const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+        pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight, undefined, 'FAST');
+
+        const base64DataUri = pdf.output('datauristring');
+        const fileName = `Factura_${inv.id}.pdf`;
+
+        // Upload PDF to Supabase via server
+        const apiUrl = import.meta.env.VITE_API_URL || '';
+        const uploadUrl = `${apiUrl}/api/upload-pdf`;
+        
+        const uploadRes = await fetch(uploadUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            pdfBase64: base64DataUri,
+            fileName: fileName
+          })
+        });
+
+        const uploadResult = await uploadRes.json();
+        let publicPdfUrl = '';
+        if (uploadResult.success && uploadResult.url) {
+          publicPdfUrl = uploadResult.url;
+        } else {
+          console.warn('Failed to upload PDF, sending WhatsApp message without link:', uploadResult.error);
+        }
+
+        const waTemplate = templates?.invoice_whatsapp;
+        const vars = {
+          ...getTemplateVariables(inv, language),
+          pdfUrl: publicPdfUrl || ''
+        };
+        
+        let text = waTemplate?.body 
+          ? formatTemplate(waTemplate.body, vars)
+          : (language === 'es'
+              ? `Confirmación de pago y Factura Nro. ${inv.id} – ${vars.productAbbreviation} – ${inv.customerName} – ${inv.total}€`
+              : `Payment Confirmation and Invoice No. ${inv.id} – ${vars.productAbbreviation} – ${inv.customerName} – ${inv.total}€`);
+
+        if (publicPdfUrl && !text.includes(publicPdfUrl) && !text.includes('{pdfUrl}')) {
+          text += `\n\n${language === 'es' ? 'Descarga tu factura aquí' : 'Download your invoice here'}: ${publicPdfUrl}`;
+        }
+
+        const cleanedPhone = formatPhoneForWhatsapp(defaultPhone);
+        const waUrl = cleanedPhone 
+          ? `https://wa.me/${cleanedPhone}?text=${encodeURIComponent(text)}`
+          : `https://wa.me/?text=${encodeURIComponent(text)}`;
+
+        // Open WhatsApp link directly with the pre-filled message containing the invoice download link
+        window.open(waUrl, '_blank', 'noreferrer');
+        setSentWhatsappIds(prev => [...prev, inv.id]);
+      } catch (err) {
+        console.error('Error in sendInvoiceWhatsApp:', err);
+        alert(language === 'es' ? 'Error al preparar WhatsApp: ' + err.message : 'Error preparing WhatsApp: ' + err.message);
+      } finally {
+        setRenderingInvoice(null);
+        setSendingWhatsappId(null);
+      }
+    }, 600);
   };
 
   const getEmailLink = (inv) => {
@@ -302,6 +447,12 @@ const InvoicesList = () => {
     
     return true;
   });
+
+  const activeDisplayInvoices = displayInvoices.filter(inv => inv.status !== 'Cancelled' && inv.status !== 'Refund' && inv.status !== 'Reserved');
+  const totalBase = activeDisplayInvoices.reduce((sum, inv) => sum + (inv.price || 0) + (inv.designPrice || 0), 0);
+  const totalConIva = activeDisplayInvoices.reduce((sum, inv) => sum + (inv.total || 0), 0);
+  const totalIva = activeDisplayInvoices.reduce((sum, inv) => sum + (inv.vat || 0), 0);
+  const totalSinPagar = activeDisplayInvoices.filter(inv => !inv.isPaid).reduce((sum, inv) => sum + (inv.total || 0), 0);
 
   // ─── On-screen preview (Tailwind classes are fine here) ───────────────────
   const renderInvoiceTemplate = (inv) => (
@@ -581,7 +732,43 @@ const InvoicesList = () => {
       </div>
 
       {activeSection === 'invoices' && (
-        displayInvoices.length === 0 ? (
+        <>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6 p-4 bg-gray-50 rounded-xl border border-gray-100">
+            <div className="p-3 bg-white rounded-lg shadow-sm border border-gray-100">
+              <span className="text-xs text-gray-500 uppercase font-semibold block">
+                {language === 'es' ? 'Total (Base)' : 'Total (Base)'}
+              </span>
+              <span className="text-lg font-bold text-gray-800 tabular-nums">
+                {totalBase.toFixed(2)}€
+              </span>
+            </div>
+            <div className="p-3 bg-white rounded-lg shadow-sm border border-gray-100">
+              <span className="text-xs text-gray-500 uppercase font-semibold block">
+                {language === 'es' ? 'Total con IVA' : 'Total with VAT'}
+              </span>
+              <span className="text-lg font-bold text-blue-600 tabular-nums">
+                {totalConIva.toFixed(2)}€
+              </span>
+            </div>
+            <div className="p-3 bg-white rounded-lg shadow-sm border border-gray-100">
+              <span className="text-xs text-gray-500 uppercase font-semibold block">
+                {language === 'es' ? 'Total IVA' : 'Total VAT'}
+              </span>
+              <span className="text-lg font-bold text-teal-600 tabular-nums">
+                {totalIva.toFixed(2)}€
+              </span>
+            </div>
+            <div className="p-3 bg-white rounded-lg shadow-sm border border-gray-100">
+              <span className="text-xs text-gray-500 uppercase font-semibold block">
+                {language === 'es' ? 'Total sin Pagar' : 'Total Unpaid'}
+              </span>
+              <span className="text-lg font-bold text-red-600 tabular-nums">
+                {totalSinPagar.toFixed(2)}€
+              </span>
+            </div>
+          </div>
+
+          {displayInvoices.length === 0 ? (
           <div className="text-center py-12 text-gray-400">
             <FileText size={48} className="mx-auto mb-4 opacity-20" />
             <p>{t('il_no_invoices') || 'No invoices have been generated yet.'}</p>
@@ -625,7 +812,8 @@ const InvoicesList = () => {
                         {inv.status === 'Reserved' && <span className="ml-2 px-1.5 py-0.5 text-[10px] uppercase font-bold bg-slate-200 text-slate-800 rounded">{t('il_status_reserved') || 'Reserved'}</span>}
                       </td>
                       <td className="p-3 text-sm text-gray-600">
-                        {new Date(inv.createdAt).toLocaleDateString()}
+                        <div>{new Date(inv.createdAt).toLocaleDateString()}</div>
+                        <div className="text-xs text-gray-400 font-medium">{new Date(inv.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
                       </td>
                       <td className="p-3">
                         <div className="font-medium text-gray-900">{inv.customerName === 'System User' ? t('system_user') : inv.customerName}</div>
@@ -689,15 +877,14 @@ const InvoicesList = () => {
                                 <Mail size={18} />
                               </button>
                               
-                              <a 
-                                href={getWhatsAppLink(inv)} 
-                                target="_blank" rel="noreferrer"
-                                onClick={() => setSentWhatsappIds(prev => [...prev, inv.id])}
-                                className={`p-2 rounded transition-colors ${inv.status === 'Cancelled' ? 'pointer-events-none opacity-50' : (sentWhatsappIds.includes(inv.id) ? 'text-green-600 hover:text-green-700 hover:bg-green-50' : 'text-gray-600 hover:text-green-600 hover:bg-green-50')}`}
+                              <button 
+                                onClick={() => sendInvoiceWhatsApp(inv)}
+                                disabled={renderingInvoice !== null || sendingWhatsappId === inv.id}
+                                className={`p-2 rounded transition-colors ${inv.status === 'Cancelled' ? 'pointer-events-none opacity-50' : (sentWhatsappIds.includes(inv.id) ? 'text-green-600 hover:text-green-700 hover:bg-green-50' : 'text-gray-600 hover:text-green-600 hover:bg-green-50')} ${sendingWhatsappId === inv.id ? 'animate-pulse text-green-400' : ''}`}
                                 title="Send via WhatsApp"
                               >
                                 <MessageCircle size={18} />
-                              </a>
+                              </button>
                               
                               {inv.status !== 'Cancelled' && (
                                 <>
@@ -756,7 +943,9 @@ const InvoicesList = () => {
                       {inv.status === 'Cancelled' && <span className="ml-2 px-1.5 py-0.5 text-[9px] uppercase font-bold bg-red-100 text-red-800 rounded">{t('il_status_cancelled') || 'Cancelled'}</span>}
                       {inv.status === 'Reserved' && <span className="ml-2 px-1.5 py-0.5 text-[9px] uppercase font-bold bg-slate-200 text-slate-800 rounded">{t('il_status_reserved') || 'Reserved'}</span>}
                     </div>
-                    <span className="text-xs text-gray-500">{new Date(inv.createdAt).toLocaleDateString()}</span>
+                    <span className="text-xs text-gray-500">
+                      {new Date(inv.createdAt).toLocaleDateString()} {new Date(inv.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </span>
                   </div>
 
                   {/* Customer details */}
@@ -828,15 +1017,14 @@ const InvoicesList = () => {
                           <Mail size={16} />
                         </button>
                         
-                        <a 
-                          href={getWhatsAppLink(inv)} 
-                          target="_blank" rel="noreferrer"
-                          onClick={() => setSentWhatsappIds(prev => [...prev, inv.id])}
-                          className={`p-2 bg-gray-50 rounded-lg transition-colors flex items-center justify-center ${inv.status === 'Cancelled' ? 'pointer-events-none opacity-50' : (sentWhatsappIds.includes(inv.id) ? 'bg-green-50 text-green-600 hover:bg-green-100 hover:text-green-700' : 'hover:bg-green-50 hover:text-green-600 text-gray-600')}`}
+                        <button 
+                          onClick={() => sendInvoiceWhatsApp(inv)}
+                          disabled={renderingInvoice !== null || sendingWhatsappId === inv.id}
+                          className={`p-2 bg-gray-50 rounded-lg transition-colors flex items-center justify-center ${inv.status === 'Cancelled' ? 'pointer-events-none opacity-50' : (sentWhatsappIds.includes(inv.id) ? 'bg-green-50 text-green-600 hover:bg-green-100 hover:text-green-700' : 'hover:bg-green-50 hover:text-green-600 text-gray-600')} ${sendingWhatsappId === inv.id ? 'animate-pulse text-green-400' : ''}`}
                           title="Send via WhatsApp"
                         >
                           <MessageCircle size={16} />
-                        </a>
+                        </button>
                         
                         {inv.status !== 'Cancelled' && (
                           <>
@@ -874,8 +1062,9 @@ const InvoicesList = () => {
               ))}
             </div>
           </>
-        )
-      )}
+        )}
+      </>
+    )}
 
       {/* ─── Recibos Section ─── */}
       {activeSection === 'recibos' && (
@@ -907,7 +1096,8 @@ const InvoicesList = () => {
                         <span className="ml-2 px-1.5 py-0.5 text-[10px] uppercase font-bold bg-green-100 text-green-700 rounded">Efectivo</span>
                       </td>
                       <td className="p-3 text-sm text-gray-600">
-                        {new Date(rec.createdAt).toLocaleDateString()}
+                        <div>{new Date(rec.createdAt).toLocaleDateString()}</div>
+                        <div className="text-xs text-gray-400 font-medium">{new Date(rec.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
                       </td>
                       <td className="p-3">
                         <div className="font-medium text-gray-900">{rec.customerName}</div>
@@ -932,7 +1122,7 @@ const InvoicesList = () => {
                           </button>
                           
                           <a
-                            href={`https://wa.me/?text=${encodeURIComponent(getReciboWhatsAppMessage(rec))}`}
+                            href={getReciboWhatsAppHref(rec)}
                             target="_blank"
                             rel="noreferrer"
                             onClick={() => setSentWhatsappIds(prev => [...prev, rec.id])}
@@ -978,7 +1168,9 @@ const InvoicesList = () => {
                       <span className="font-mono text-sm text-emerald-700 font-bold">{rec.id}</span>
                       <span className="ml-2 px-1.5 py-0.5 text-[9px] uppercase font-bold bg-green-100 text-green-700 rounded">Efectivo</span>
                     </div>
-                    <span className="text-xs text-gray-500">{new Date(rec.createdAt).toLocaleDateString()}</span>
+                    <span className="text-xs text-gray-500">
+                      {new Date(rec.createdAt).toLocaleDateString()} {new Date(rec.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </span>
                   </div>
 
                   {/* Content */}
@@ -1007,7 +1199,7 @@ const InvoicesList = () => {
                       </button>
 
                       <a
-                        href={`https://wa.me/?text=${encodeURIComponent(getReciboWhatsAppMessage(rec))}`}
+                        href={getReciboWhatsAppHref(rec)}
                         target="_blank"
                         rel="noreferrer"
                         onClick={() => setSentWhatsappIds(prev => [...prev, rec.id])}
@@ -1076,6 +1268,13 @@ const InvoicesList = () => {
                   className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm font-medium flex items-center gap-2 transition-colors"
                 >
                   <Download size={16} /> {t('il_modal_download')}
+                </button>
+                <button 
+                  onClick={() => { sendInvoiceWhatsApp(viewingInvoice); setViewingInvoice(null); }}
+                  disabled={renderingInvoice !== null || sendingWhatsappId === viewingInvoice.id}
+                  className={`px-4 py-2 rounded text-sm font-medium flex items-center gap-2 transition-colors ${sentWhatsappIds.includes(viewingInvoice.id) ? 'bg-green-600 hover:bg-green-700 text-white' : 'bg-emerald-600 hover:bg-emerald-700 text-white'} ${sendingWhatsappId === viewingInvoice.id ? 'animate-pulse bg-emerald-400' : ''}`}
+                >
+                  <MessageCircle size={16} /> {sendingWhatsappId === viewingInvoice.id ? (language === 'es' ? 'Enviando...' : 'Sending...') : (sentWhatsappIds.includes(viewingInvoice.id) ? (language === 'es' ? 'WhatsApp Enviado' : 'WhatsApp Sent') : (language === 'es' ? 'Enviar WhatsApp' : 'Send WhatsApp'))}
                 </button>
                 <button 
                   onClick={() => setViewingInvoice(null)}

@@ -119,3 +119,35 @@ ON public.orders FOR ALL TO authenticated USING (true) WITH CHECK (true);
 -- invoice_settings
 CREATE POLICY "Enable all actions for authenticated users on invoice_settings" 
 ON public.invoice_settings FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+-- 8. Create communication_templates Table
+CREATE TABLE IF NOT EXISTS public.communication_templates (
+    id VARCHAR(50) PRIMARY KEY,
+    subject VARCHAR(255),
+    body TEXT,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Enable RLS and add policies
+ALTER TABLE public.communication_templates ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Enable all actions for authenticated users on communication_templates" 
+ON public.communication_templates FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+-- Pre-populate default templates
+INSERT INTO public.communication_templates (id, subject, body) VALUES
+('invoice_email', 'Factura Revista Becerril: Nro. {id}', 'Hola,\n\nAdjuntamos la confirmación de pago y factura correspondiente a su anuncio en la Revista Becerril:\n\n- Número de Factura: {id}\n- Producto: {productName}\n- Página Asignada: {assignedPage}\n- Método de Pago: Efectivo\n- Precio Base: {price}€\n{designPrice}- Subtotal: {subtotal}€\n- IVA (21%): {vat}€\n- Total Pagado: {total}€\n\nGracias,\nEquipo Revista Becerril'),
+
+('invoice_whatsapp', '', 'Confirmación de pago y Factura Nro. {id} – {productAbbreviation} – {customerName} – {total}€'),
+
+('recibo_email', 'Recibo de Pago Revista Becerril: Pág. {assignedPage}', 'Hola,\n\nConfirmamos la reserva y el recibo de pago en efectivo para su anuncio en la Revista Becerril:\n\n- Producto: {productName}\n- Página Asignada: {assignedPage}\n- Precio Base: {price}€\n{designPrice}- Recibo: {total}€\n\nGracias,\nEquipo Revista Becerril'),
+
+('recibo_whatsapp', '', 'Recibí, pago a cuenta – {productAbbreviation} – {customerName} – {total}€'),
+
+('order_reservation_email', 'Confirmación de Reserva Revista Becerril: Pág. {assignedPage}', 'Hola,\n\nConfirmamos la reserva del espacio publicitario en la Revista Becerril:\n\n- Producto: {productName}\n- Página Asignada: {assignedPage}\n- Método de Pago: {paymentMethod}\n- Comentarios de Arte/Diseño: {artworkComment}\n\nLa factura correspondiente se generará una vez confirmado el pago.\n\nGracias,\nEquipo Revista Becerril'),
+
+('order_reservation_whatsapp', '', 'Confirmación de Reserva - Revista Becerril:\n\n- Cliente: {customerName}\n- Producto: {productName}\n- Pág. Asignada: {assignedPage}\n- Subtotal: {subtotal}€\n- Total (con IVA): {total}€\n\nGracias,\nEquipo Revista Becerril'),
+
+('order_prereservation_email', 'Pre-Reserva Revista Becerril: Pág. {assignedPage}', 'Hola,\n\nConfirmamos la pre-reserva (retención de 1 semana) del espacio publicitario en la Revista Becerril:\n\n- Producto: {productName}\n- Página Asignada: {assignedPage}\n- Comentarios de Arte/Diseño: {artworkComment}\n\nNota: Esta reserva es temporal y vencerá en una semana si no se confirma el pago.\n\nGracias,\nEquipo Revista Becerril'),
+
+('order_prereservation_whatsapp', '', 'Confirmación de Pre-reserva (temporal 1 semana) - Revista Becerril:\n\n- Cliente: {customerName}\n- Producto: {productName}\n- Pág. Asignada: {assignedPage}\n- Subtotal: {subtotal}€\n- Total (con IVA): {total}€\n\nGracias,\nEquipo Revista Becerril')
+ON CONFLICT (id) DO NOTHING;

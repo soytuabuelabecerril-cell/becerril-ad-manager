@@ -1,8 +1,52 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { getFullPages, fallbackPagesData } from '../utils/fallbackData';
+import { getTemplateVariables, getHtmlEmailTemplate } from '../utils/notifications';
 
 const DatabaseContext = createContext();
+
+const DEFAULT_TEMPLATES = {
+  invoice_email: {
+    id: 'invoice_email',
+    subject: 'Factura Revista de Fiestas Patronales Becerril de la Sierra 2026: Nro. {id}',
+    body: 'Hola,\n\nAdjuntamos la confirmación de pago y factura correspondiente a su anuncio en la Revista de Fiestas Patronales Becerril de la Sierra 2026:\n\n- Número de Factura: {id}\n- Producto: {productName}\n- Página Asignada: {assignedPage}\n- Método de Pago: Efectivo\n- Precio Base: {price}€\n{designPrice}- Subtotal: {subtotal}€\n- IVA (21%): {vat}€\n- Total Pagado: {total}€\n\nGracias,\nEquipo de Coordinación Publicitaria'
+  },
+  invoice_whatsapp: {
+    id: 'invoice_whatsapp',
+    subject: '',
+    body: 'Confirmación de pago y Factura Nro. {id} – {productAbbreviation} – {customerName} – {total}€'
+  },
+  recibo_email: {
+    id: 'recibo_email',
+    subject: 'Recibo de Pago Revista de Fiestas Patronales Becerril de la Sierra 2026: Pág. {assignedPage}',
+    body: 'Hola,\n\nConfirmamos la reserva y el recibo de pago en efectivo para su anuncio en la Revista de Fiestas Patronales Becerril de la Sierra 2026:\n\n- Producto: {productName}\n- Página Asignada: {assignedPage}\n- Precio Base: {price}€\n{designPrice}- Recibo: {total}€\n\nGracias,\nEquipo de Coordinación Publicitaria'
+  },
+  recibo_whatsapp: {
+    id: 'recibo_whatsapp',
+    subject: '',
+    body: 'Recibí, pago a cuenta – {productAbbreviation} – {customerName} – {total}€'
+  },
+  order_reservation_email: {
+    id: 'order_reservation_email',
+    subject: 'Confirmación de Reserva Revista de Fiestas Patronales Becerril de la Sierra 2026: Pág. {assignedPage}',
+    body: 'Hola,\n\nConfirmamos la reserva del espacio publicitario en la Revista de Fiestas Patronales Becerril de la Sierra 2026:\n\n- Producto: {productName}\n- Página Asignada: {assignedPage}\n- Método de Pago: {paymentMethod}\n- Comentarios de Arte/Diseño: {artworkComment}\n\nLa factura correspondiente se generará una vez confirmado el pago.\n\nGracias,\nEquipo de Coordinación Publicitaria'
+  },
+  order_reservation_whatsapp: {
+    id: 'order_reservation_whatsapp',
+    subject: '',
+    body: 'Confirmación de Reserva - Revista de Fiestas Patronales Becerril de la Sierra 2026:\n\n- Cliente: {customerName}\n- Producto: {productName}\n- Pág. Asignada: {assignedPage}\n- Subtotal: {subtotal}€\n- Total (con IVA): {total}€\n\nGracias,\nEquipo de Coordinación Publicitaria'
+  },
+  order_prereservation_email: {
+    id: 'order_prereservation_email',
+    subject: 'Pre-Reserva Revista de Fiestas Patronales Becerril de la Sierra 2026: Pág. {assignedPage}',
+    body: 'Hola,\n\nConfirmamos la pre-reserva (retención de 1 semana) del espacio publicitario en la Revista de Fiestas Patronales Becerril de la Sierra 2026:\n\n- Producto: {productName}\n- Página Asignada: {assignedPage}\n- Comentarios de Arte/Diseño: {artworkComment}\n\nNota: Esta reserva es temporal y vencerá en una semana si no se confirma el pago.\n\nGracias,\nEquipo de Coordinación Publicitaria'
+  },
+  order_prereservation_whatsapp: {
+    id: 'order_prereservation_whatsapp',
+    subject: '',
+    body: 'Confirmación de Pre-reserva (temporal 1 semana) - Revista de Fiestas Patronales Becerril de la Sierra 2026:\n\n- Cliente: {customerName}\n- Producto: {productName}\n- Pág. Asignada: {assignedPage}\n- Subtotal: {subtotal}€\n- Total (con IVA): {total}€\n\nGracias,\nEquipo de Coordinación Publicitaria'
+  }
+};
 
 export const useDatabase = () => useContext(DatabaseContext);
 
@@ -79,7 +123,6 @@ const toDbRecibo = (rec) => ({
   artwork_comment: rec.artworkComment,
   email_sent_at: rec.emailSentAt
 });
-
 const fromDbOrder = (row) => ({
   id: row.id,
   createdAt: row.created_at,
@@ -95,7 +138,13 @@ const fromDbOrder = (row) => ({
   orderType: row.order_type,
   customerEmail: row.customer_email,
   customerPhone: row.customer_phone,
-  reminderSentAt: row.reminder_sent_at
+  reminderSentAt: row.reminder_sent_at,
+  emailReminderSentAt: row.email_reminder_sent_at,
+  whatsappReminderSentAt: row.whatsapp_reminder_sent_at,
+  emailRemindersCount: row.email_reminders_count || 0,
+  whatsappRemindersCount: row.whatsapp_reminders_count || 0,
+  lastAutoReminderDay: row.last_auto_reminder_day || 0,
+  prolongedCount: row.prolonged_count || 0
 });
 
 const toDbOrder = (ord) => ({
@@ -111,7 +160,13 @@ const toDbOrder = (ord) => ({
   artwork_comment: ord.artworkComment,
   order_type: ord.orderType,
   customer_email: ord.customerEmail,
-  customer_phone: ord.customerPhone
+  customer_phone: ord.customerPhone,
+  email_reminder_sent_at: ord.emailReminderSentAt || null,
+  whatsapp_reminder_sent_at: ord.whatsappReminderSentAt || null,
+  email_reminders_count: ord.emailRemindersCount || 0,
+  whatsapp_reminders_count: ord.whatsappRemindersCount || 0,
+  last_auto_reminder_day: ord.lastAutoReminderDay || 0,
+  prolonged_count: ord.prolongedCount || 0
 });
 
 const fromDbAd = (row) => ({
@@ -129,7 +184,13 @@ const fromDbAd = (row) => ({
   isNew: row.is_new,
   isRecibo: row.is_recibo,
   createdAt: row.created_at,
-  reminderSentAt: row.reminder_sent_at
+  reminderSentAt: row.reminder_sent_at,
+  emailReminderSentAt: row.email_reminder_sent_at,
+  whatsappReminderSentAt: row.whatsapp_reminder_sent_at,
+  emailRemindersCount: row.email_reminders_count || 0,
+  whatsappRemindersCount: row.whatsapp_reminders_count || 0,
+  lastAutoReminderDay: row.last_auto_reminder_day || 0,
+  prolongedCount: row.prolonged_count || 0
 });
 
 const toDbAd = (ad, pageNum) => ({
@@ -145,9 +206,14 @@ const toDbAd = (ad, pageNum) => ({
   is_paid: ad.isPaid || false,
   payment_method: ad.paymentMethod || 'Transfer',
   is_new: ad.isNew || false,
-  is_recibo: ad.isRecibo || false
+  is_recibo: ad.isRecibo || false,
+  email_reminder_sent_at: ad.emailReminderSentAt || null,
+  whatsapp_reminder_sent_at: ad.whatsappReminderSentAt || null,
+  email_reminders_count: ad.emailRemindersCount || 0,
+  whatsapp_reminders_count: ad.whatsappRemindersCount || 0,
+  last_auto_reminder_day: ad.lastAutoReminderDay || 0,
+  prolonged_count: ad.prolongedCount || 0
 });
-
 const fromDbSettings = (row) => ({
   isSequentialEnabled: row.is_sequential_enabled,
   nextInvoiceNumber: row.next_invoice_number
@@ -164,10 +230,99 @@ export const DatabaseProvider = ({ children }) => {
   const [invoices, setInvoices] = useState([]);
   const [recibos, setRecibos] = useState([]);
   const [orders, setOrders] = useState([]);
+  const [actionLogs, setActionLogs] = useState([]);
+
+  const logAction = async (actionType, targetId, customerName, productName, pageNumber, price, designPrice, vat, total, paymentMethod, isPaid, details = {}) => {
+    let customerEmail = details?.customerEmail || details?.customer_email || details?.newInvoice?.customerEmail || details?.newInvoice?.customer_email || details?.customer?.email || details?.email || null;
+    let customerPhone = details?.customerPhone || details?.customer_phone || details?.newInvoice?.customerPhone || details?.newInvoice?.customer_phone || details?.customer?.whatsapp || details?.whatsapp || details?.customer?.phone || details?.phone || null;
+
+    if (customerName) {
+      const nameLower = customerName.toLowerCase();
+      if (!customerEmail || !customerPhone) {
+        const matchOrder = orders.find(o => o.customerName?.toLowerCase() === nameLower && (o.customerEmail || o.customerPhone));
+        if (matchOrder) {
+          if (!customerEmail) customerEmail = matchOrder.customerEmail;
+          if (!customerPhone) customerPhone = matchOrder.customerPhone;
+        }
+      }
+      if (!customerEmail || !customerPhone) {
+        const matchRec = recibos.find(r => r.customerName?.toLowerCase() === nameLower && (r.customerEmail || r.customerPhone));
+        if (matchRec) {
+          if (!customerEmail) customerEmail = matchRec.customerEmail;
+          if (!customerPhone) customerPhone = matchRec.customerPhone;
+        }
+      }
+    }
+
+    const logData = {
+      action_type: actionType,
+      target_id: targetId ? String(targetId) : null,
+      customer_name: customerName || null,
+      customer_email: customerEmail || null,
+      customer_phone: customerPhone || null,
+      product_name: productName || null,
+      page_number: pageNumber ? parseInt(pageNumber, 10) : null,
+      price: price ? parseFloat(price) : 0,
+      design_price: designPrice ? parseFloat(designPrice) : 0,
+      vat: vat ? parseFloat(vat) : 0,
+      total: total ? parseFloat(total) : 0,
+      payment_method: paymentMethod || null,
+      is_paid: isPaid || false,
+      payment_status: details?.status || details?.payment_status || (isPaid ? 'Paid' : 'Pending'),
+      details: details ? details : {},
+      created_at: new Date().toISOString()
+    };
+
+    // 1. Save locally in localStorage as a hard fallback
+    try {
+      const localLogs = JSON.parse(localStorage.getItem('becerril_action_logs') || '[]');
+      localLogs.unshift(logData);
+      const trimmed = localLogs.slice(0, 1000);
+      localStorage.setItem('becerril_action_logs', JSON.stringify(trimmed));
+      setActionLogs(trimmed);
+    } catch (e) {
+      console.error("Failed to write log to localStorage:", e);
+    }
+
+    // 2. Try to save to Supabase action_logs table
+    try {
+      const { error } = await supabase
+        .from('action_logs')
+        .insert([logData]);
+      if (error) {
+        console.warn("Failed to insert action log in Supabase:", error.message);
+      }
+    } catch (err) {
+      console.error("Unexpected error saving action log:", err);
+    }
+  };
+
+  const fetchActionLogs = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('action_logs')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      if (data) {
+        setActionLogs(data);
+      }
+    } catch (err) {
+      console.warn("Could not load action logs from Supabase, loading from localStorage fallback:", err.message);
+      try {
+        const localLogs = JSON.parse(localStorage.getItem('becerril_action_logs') || '[]');
+        setActionLogs(localLogs);
+      } catch (e) {
+        console.error("Local storage action logs load failed:", e);
+      }
+    }
+  };
+
   const [settings, setSettings] = useState({
     isSequentialEnabled: true,
     nextInvoiceNumber: 3
   });
+  const [templates, setTemplates] = useState(DEFAULT_TEMPLATES);
   const [loading, setLoading] = useState(true);
   const [session, setSession] = useState(null);
 
@@ -272,6 +427,63 @@ export const DatabaseProvider = ({ children }) => {
     }
   };
 
+  const fetchTemplates = async () => {
+    try {
+      // Trigger database migration check over HTTP in the background
+      fetch('/api/run-migration').catch(() => {});
+
+      const { data, error } = await supabase
+        .from('communication_templates')
+        .select('*');
+      if (error) throw error;
+      if (data && data.length > 0) {
+        const mapped = {};
+        data.forEach(t => {
+          mapped[t.id] = { id: t.id, subject: t.subject || '', body: t.body || '' };
+        });
+        setTemplates(prev => ({ ...prev, ...mapped }));
+      }
+    } catch (err) {
+      console.warn("Communication templates table not loaded, using local defaults/localStorage:", err);
+      try {
+        const saved = localStorage.getItem('becerril_communication_templates');
+        if (saved) {
+          setTemplates(prev => ({ ...prev, ...JSON.parse(saved) }));
+        }
+      } catch (e) {
+        console.error("Local storage templates load failed:", e);
+      }
+    }
+  };
+
+  const saveCommunicationTemplate = async (id, subject, body) => {
+    const updatedTemplate = { id, subject, body };
+    setTemplates(prev => {
+      const next = { ...prev, [id]: updatedTemplate };
+      try {
+        localStorage.setItem('becerril_communication_templates', JSON.stringify(next));
+      } catch (e) {
+        console.error("Error saving templates to localStorage:", e);
+      }
+      return next;
+    });
+
+    if (!session) return;
+    try {
+      const { error } = await supabase
+        .from('communication_templates')
+        .upsert({
+          id,
+          subject,
+          body,
+          updated_at: new Date().toISOString()
+        });
+      if (error) throw error;
+    } catch (err) {
+      console.error("Error saving communication template in Supabase:", err);
+    }
+  };
+
   const loadAllData = async () => {
     setLoading(true);
     await Promise.all([
@@ -279,7 +491,9 @@ export const DatabaseProvider = ({ children }) => {
       fetchInvoices(),
       fetchRecibos(),
       fetchOrders(),
-      fetchSettings()
+      fetchSettings(),
+      fetchTemplates(),
+      fetchActionLogs()
     ]);
     setLoading(false);
   };
@@ -325,12 +539,28 @@ export const DatabaseProvider = ({ children }) => {
         })
         .subscribe();
 
+      const templatesSubscription = supabase
+        .channel('templates-changes')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'communication_templates' }, () => {
+          fetchTemplates();
+        })
+        .subscribe();
+
+      const actionLogsSubscription = supabase
+        .channel('action-logs-changes')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'action_logs' }, () => {
+          fetchActionLogs();
+        })
+        .subscribe();
+
       return () => {
         supabase.removeChannel(adsSubscription);
         supabase.removeChannel(invoicesSubscription);
         supabase.removeChannel(recibosSubscription);
         supabase.removeChannel(ordersSubscription);
         supabase.removeChannel(settingsSubscription);
+        supabase.removeChannel(templatesSubscription);
+        supabase.removeChannel(actionLogsSubscription);
       };
     } else {
       setLoading(false);
@@ -404,11 +634,13 @@ export const DatabaseProvider = ({ children }) => {
         .insert([toDbInvoice(newInvoice)]);
       if (error) throw error;
       setInvoices(prev => [newInvoice, ...prev]);
+      logAction('create_invoice', id, newInvoice.customerName, newInvoice.productName, newInvoice.assignedPage, newInvoice.price, newInvoice.designPrice, newInvoice.vat, newInvoice.total, newInvoice.paymentMethod, newInvoice.isPaid, newInvoice);
       return newInvoice;
     } catch (err) {
       console.error("Error inserting invoice:", err);
       // Fallback update
       setInvoices(prev => [newInvoice, ...prev]);
+      logAction('create_invoice', id, newInvoice.customerName, newInvoice.productName, newInvoice.assignedPage, newInvoice.price, newInvoice.designPrice, newInvoice.vat, newInvoice.total, newInvoice.paymentMethod, newInvoice.isPaid, newInvoice);
       return newInvoice;
     }
   };
@@ -432,8 +664,95 @@ export const DatabaseProvider = ({ children }) => {
           .eq('ad_type', invoice.productName);
         if (adErr) console.error("Ad update payment error:", adErr);
       }
+
+      // Update local invoices state immediately on success
+      setInvoices(prev => prev.map(inv => 
+        inv.id === id ? { ...inv, isPaid, paymentMethod } : inv
+      ));
+
+      // Update local pages state immediately on success
+      if (invoice && invoice.assignedPage) {
+        setPages(prevPages => {
+          const updatedPages = prevPages.map(p => {
+            if (p.page_number === invoice.assignedPage) {
+              const pageAds = p.ads ? p.ads.map(ad => {
+                if (ad.customer_name === invoice.customerName && ad.ad_type === invoice.productName) {
+                  return { ...ad, isPaid, paymentMethod };
+                }
+                return ad;
+              }) : [];
+              return { ...p, ads: pageAds };
+            }
+            return p;
+          });
+
+          if (typeof window !== 'undefined' && window.localStorage) {
+            try {
+              fallbackPagesData.forEach((p, idx) => {
+                if (p.page_number === invoice.assignedPage) {
+                  const pageAds = p.ads ? p.ads.map(ad => {
+                    if (ad.customer_name === invoice.customerName && ad.ad_type === invoice.productName) {
+                      return { ...ad, isPaid, paymentMethod };
+                    }
+                    return ad;
+                  }) : [];
+                  fallbackPagesData[idx] = { ...p, ads: pageAds };
+                }
+              });
+              localStorage.setItem('becerril_magazine_pages', JSON.stringify(fallbackPagesData));
+            } catch (e) {
+              console.error("Error persisting to localStorage:", e);
+            }
+          }
+          return updatedPages;
+        });
+      }
+      logAction(isPaid ? 'pay_invoice' : 'unpay_invoice', id, invoice?.customerName, invoice?.productName, invoice?.assignedPage, invoice?.price, invoice?.designPrice, invoice?.vat, invoice?.total, paymentMethod, isPaid, { id, paymentMethod, isPaid });
     } catch (err) {
       console.error("Error updating invoice payment:", err);
+      // Fallback local updates
+      setInvoices(prev => prev.map(inv => 
+        inv.id === id ? { ...inv, isPaid, paymentMethod } : inv
+      ));
+
+      const invoice = invoices.find(inv => inv.id === id);
+      if (invoice && invoice.assignedPage) {
+        setPages(prevPages => {
+          const updatedPages = prevPages.map(p => {
+            if (p.page_number === invoice.assignedPage) {
+              const pageAds = p.ads ? p.ads.map(ad => {
+                if (ad.customer_name === invoice.customerName && ad.ad_type === invoice.productName) {
+                  return { ...ad, isPaid, paymentMethod };
+                }
+                return ad;
+              }) : [];
+              return { ...p, ads: pageAds };
+            }
+            return p;
+          });
+
+          if (typeof window !== 'undefined' && window.localStorage) {
+            try {
+              fallbackPagesData.forEach((p, idx) => {
+                if (p.page_number === invoice.assignedPage) {
+                  const pageAds = p.ads ? p.ads.map(ad => {
+                    if (ad.customer_name === invoice.customerName && ad.ad_type === invoice.productName) {
+                      return { ...ad, isPaid, paymentMethod };
+                    }
+                    return ad;
+                  }) : [];
+                  fallbackPagesData[idx] = { ...p, ads: pageAds };
+                }
+              });
+              localStorage.setItem('becerril_magazine_pages', JSON.stringify(fallbackPagesData));
+            } catch (e) {
+              console.error("Error persisting to localStorage:", e);
+            }
+          }
+          return updatedPages;
+        });
+      }
+      logAction(isPaid ? 'pay_invoice' : 'unpay_invoice', id, invoice?.customerName, invoice?.productName, invoice?.assignedPage, invoice?.price, invoice?.designPrice, invoice?.vat, invoice?.total, paymentMethod, isPaid, { id, paymentMethod, isPaid });
     }
   };
 
@@ -446,6 +765,8 @@ export const DatabaseProvider = ({ children }) => {
         .eq('id', id);
       if (error) throw error;
       setInvoices(prev => prev.map(inv => inv.id === id ? { ...inv, emailSentAt } : inv));
+      const invoice = invoices.find(inv => inv.id === id);
+      logAction('send_invoice_email', id, invoice?.customerName, invoice?.productName, invoice?.assignedPage, invoice?.price, invoice?.designPrice, invoice?.vat, invoice?.total, invoice?.paymentMethod, invoice?.isPaid, { id, emailSentAt });
     } catch (err) {
       console.error("Error updating invoice email_sent_at:", err);
     }
@@ -460,6 +781,8 @@ export const DatabaseProvider = ({ children }) => {
         .eq('id', id);
       if (error) throw error;
       setRecibos(prev => prev.map(rec => rec.id === id ? { ...rec, emailSentAt } : rec));
+      const recibo = recibos.find(r => r.id === id);
+      logAction('send_recibo_email', id, recibo?.customerName, recibo?.productName, recibo?.assignedPage, recibo?.price, recibo?.designPrice, 0, recibo?.total, recibo?.paymentMethod, recibo?.isPaid, { id, emailSentAt });
     } catch (err) {
       console.error("Error updating recibo email_sent_at:", err);
     }
@@ -534,6 +857,52 @@ export const DatabaseProvider = ({ children }) => {
           .from('invoices')
           .insert([toDbInvoice(refundInvoice)]);
         if (refErr) throw refErr;
+
+        // Insert refund invoice to local state on success
+        setInvoices(prev => [refundInvoice, ...prev]);
+      }
+
+      // Update local invoices status on success
+      setInvoices(prev => prev.map(invoice => invoice.id === id ? { ...invoice, status: 'Cancelled' } : invoice));
+
+      // Liberate page locally on success
+      if (inv.assignedPage) {
+        setPages(prevPages => {
+          const updatedPages = prevPages.map(p => {
+            if (p.page_number === inv.assignedPage) {
+              const pageAds = p.ads ? p.ads.filter(ad => !(ad.customer_name === inv.customerName && ad.ad_type === inv.productName)) : [];
+              return {
+                ...p,
+                ads: pageAds,
+                status: pageAds.length > 0 ? 'Reserved' : 'Available'
+              };
+            }
+            return p;
+          });
+
+          if (typeof window !== 'undefined' && window.localStorage) {
+            try {
+              fallbackPagesData.forEach((p, idx) => {
+                if (p.page_number === inv.assignedPage) {
+                  const pageAds = p.ads ? p.ads.filter(ad => !(ad.customer_name === inv.customerName && ad.ad_type === inv.productName)) : [];
+                  fallbackPagesData[idx] = {
+                    ...p,
+                    ads: pageAds,
+                    status: pageAds.length > 0 ? 'Reserved' : 'Available'
+                  };
+                }
+              });
+              localStorage.setItem('becerril_magazine_pages', JSON.stringify(fallbackPagesData));
+            } catch (e) {
+              console.error("Error persisting to localStorage:", e);
+            }
+          }
+          return updatedPages;
+        });
+      }
+      logAction('cancel_invoice', id, inv?.customerName, inv?.productName, inv?.assignedPage, inv?.price, inv?.designPrice, inv?.vat, inv?.total, inv?.paymentMethod, inv?.isPaid, { id, generateRefund });
+      if (generateRefund) {
+        logAction('create_refund_invoice', refundId, inv?.customerName, 'Refund: ' + inv?.productName, inv?.assignedPage, -inv?.price, -inv?.designPrice, -inv?.vat, -inv?.total, inv?.paymentMethod, false, refundInvoice);
       }
     } catch (err) {
       console.error("Error cancelling invoice:", err);
@@ -581,8 +950,8 @@ export const DatabaseProvider = ({ children }) => {
         });
       }
 
+      let refundId;
       if (generateRefund) {
-        let refundId;
         if (settings.isSequentialEnabled && settings.nextInvoiceNumber) {
           const nextNum = parseInt(settings.nextInvoiceNumber, 10);
           refundId = 'REF-' + String(nextNum).padStart(2, '0') + '_2601';
@@ -608,11 +977,14 @@ export const DatabaseProvider = ({ children }) => {
         };
 
         setInvoices(prev => [refundInvoice, ...prev]);
+        logAction('create_refund_invoice', refundId, inv?.customerName, 'Refund: ' + inv?.productName, inv?.assignedPage, -inv?.price, -inv?.designPrice, -inv?.vat, -inv?.total, inv?.paymentMethod, false, refundInvoice);
       }
+      logAction('cancel_invoice', id, inv?.customerName, inv?.productName, inv?.assignedPage, inv?.price, inv?.designPrice, inv?.vat, inv?.total, inv?.paymentMethod, inv?.isPaid, { id, generateRefund, isFallback: true });
     }
   };
 
   const deleteInvoice = async (id) => {
+    const invoiceToDelete = invoices.find(inv => inv.id === id);
     try {
       const { error } = await supabase
         .from('invoices')
@@ -627,12 +999,20 @@ export const DatabaseProvider = ({ children }) => {
       if (!countErr && count === 0) {
         await saveInvoiceSettings({ nextInvoiceNumber: 3 });
       }
+
+      // Update local state immediately on success
+      setInvoices(prev => prev.filter(inv => inv.id !== id));
+      logAction('delete_invoice', id, invoiceToDelete?.customerName, invoiceToDelete?.productName, invoiceToDelete?.assignedPage, invoiceToDelete?.price, invoiceToDelete?.designPrice, invoiceToDelete?.vat, invoiceToDelete?.total, invoiceToDelete?.paymentMethod, invoiceToDelete?.isPaid, invoiceToDelete);
     } catch (err) {
       console.error("Error deleting invoice:", err);
+      // Fallback local update
+      setInvoices(prev => prev.filter(inv => inv.id !== id));
+      logAction('delete_invoice', id, invoiceToDelete?.customerName, invoiceToDelete?.productName, invoiceToDelete?.assignedPage, invoiceToDelete?.price, invoiceToDelete?.designPrice, invoiceToDelete?.vat, invoiceToDelete?.total, invoiceToDelete?.paymentMethod, invoiceToDelete?.isPaid, invoiceToDelete);
     }
   };
 
   const hardDeleteInvoice = async (id) => {
+    const invoiceToDelete = invoices.find(inv => inv.id === id);
     try {
       const { error } = await supabase
         .from('invoices')
@@ -647,8 +1027,15 @@ export const DatabaseProvider = ({ children }) => {
       if (!countErr && count === 0) {
         await saveInvoiceSettings({ nextInvoiceNumber: 3 });
       }
+
+      // Update local state immediately on success
+      setInvoices(prev => prev.filter(inv => inv.id !== id && inv.originalInvoiceId !== id));
+      logAction('hard_delete_invoice', id, invoiceToDelete?.customerName, invoiceToDelete?.productName, invoiceToDelete?.assignedPage, invoiceToDelete?.price, invoiceToDelete?.designPrice, invoiceToDelete?.vat, invoiceToDelete?.total, invoiceToDelete?.paymentMethod, invoiceToDelete?.isPaid, invoiceToDelete);
     } catch (err) {
       console.error("Error hard deleting invoice:", err);
+      // Fallback local update
+      setInvoices(prev => prev.filter(inv => inv.id !== id && inv.originalInvoiceId !== id));
+      logAction('hard_delete_invoice', id, invoiceToDelete?.customerName, invoiceToDelete?.productName, invoiceToDelete?.assignedPage, invoiceToDelete?.price, invoiceToDelete?.designPrice, invoiceToDelete?.vat, invoiceToDelete?.total, invoiceToDelete?.paymentMethod, invoiceToDelete?.isPaid, invoiceToDelete);
     }
   };
 
@@ -696,10 +1083,12 @@ export const DatabaseProvider = ({ children }) => {
         .insert([toDbInvoice(reservedInvoice)]);
       if (error) throw error;
       setInvoices(prev => [reservedInvoice, ...prev]);
+      logAction('reserve_invoice_number', reservedInvoice.id, reservedInvoice.customerName, reservedInvoice.productName, reservedInvoice.assignedPage, reservedInvoice.price, reservedInvoice.designPrice, reservedInvoice.vat, reservedInvoice.total, reservedInvoice.paymentMethod, reservedInvoice.isPaid, reservedInvoice);
       return reservedInvoice;
     } catch (err) {
       console.error("Error reserving invoice ID:", err);
       setInvoices(prev => [reservedInvoice, ...prev]);
+      logAction('reserve_invoice_number', reservedInvoice.id, reservedInvoice.customerName, reservedInvoice.productName, reservedInvoice.assignedPage, reservedInvoice.price, reservedInvoice.designPrice, reservedInvoice.vat, reservedInvoice.total, reservedInvoice.paymentMethod, reservedInvoice.isPaid, reservedInvoice);
       return reservedInvoice;
     }
   };
@@ -755,6 +1144,7 @@ export const DatabaseProvider = ({ children }) => {
         }));
       }
 
+      logAction(orderData.orderType === 'pre-reserved' ? 'pre_reserve_ad' : 'create_order', newOrder.id, orderData.customerName, orderData.productName, orderData.assignedPage, orderData.price, orderData.designPrice, (orderData.price + orderData.designPrice) * 0.21, (orderData.price + orderData.designPrice) * 1.21, orderData.paymentMethod, false, newOrder);
       return newOrder;
     } catch (err) {
       console.error("Error creating order:", err);
@@ -781,6 +1171,7 @@ export const DatabaseProvider = ({ children }) => {
         });
       }
 
+      logAction(orderData.orderType === 'pre-reserved' ? 'pre_reserve_ad' : 'create_order', newOrder.id, orderData.customerName, orderData.productName, orderData.assignedPage, orderData.price, orderData.designPrice, (orderData.price + orderData.designPrice) * 0.21, (orderData.price + orderData.designPrice) * 1.21, orderData.paymentMethod, false, newOrder);
       return newOrder;
     }
   };
@@ -842,6 +1233,7 @@ export const DatabaseProvider = ({ children }) => {
           return updatedPages;
         });
       }
+      logAction('delete_order', id, ord?.customerName, ord?.productName, ord?.assignedPage, ord?.price, ord?.designPrice, 0, 0, ord?.paymentMethod, ord?.isPaid, ord);
     } catch (err) {
       console.error("Error deleting order:", err);
       
@@ -887,6 +1279,46 @@ export const DatabaseProvider = ({ children }) => {
           });
         }
       }
+      logAction('delete_order', id, ord?.customerName, ord?.productName, ord?.assignedPage, ord?.price, ord?.designPrice, 0, 0, ord?.paymentMethod, ord?.isPaid, ord);
+    }
+  };
+
+  const updateOrder = async (id, orderData) => {
+    try {
+      const dbUpdate = {};
+      if (orderData.status !== undefined) dbUpdate.status = orderData.status;
+      if (orderData.isPaid !== undefined) dbUpdate.is_paid = orderData.isPaid;
+      if (orderData.paymentMethod !== undefined) dbUpdate.payment_method = orderData.paymentMethod;
+      if (orderData.customerName !== undefined) dbUpdate.customer_name = orderData.customerName;
+      if (orderData.productName !== undefined) dbUpdate.product_name = orderData.productName;
+      if (orderData.price !== undefined) dbUpdate.price = orderData.price;
+      if (orderData.designPrice !== undefined) dbUpdate.design_price = orderData.designPrice;
+      if (orderData.assignedPage !== undefined) dbUpdate.assigned_page = orderData.assignedPage;
+      if (orderData.artworkComment !== undefined) dbUpdate.artwork_comment = orderData.artworkComment;
+      if (orderData.orderType !== undefined) dbUpdate.order_type = orderData.orderType;
+      if (orderData.customerEmail !== undefined) dbUpdate.customer_email = orderData.customerEmail;
+      if (orderData.customerPhone !== undefined) dbUpdate.customer_phone = orderData.customerPhone;
+      if (orderData.emailReminderSentAt !== undefined) dbUpdate.email_reminder_sent_at = orderData.emailReminderSentAt;
+      if (orderData.whatsappReminderSentAt !== undefined) dbUpdate.whatsapp_reminder_sent_at = orderData.whatsappReminderSentAt;
+      if (orderData.emailRemindersCount !== undefined) dbUpdate.email_reminders_count = orderData.emailRemindersCount;
+      if (orderData.whatsappRemindersCount !== undefined) dbUpdate.whatsapp_reminders_count = orderData.whatsappRemindersCount;
+      if (orderData.lastAutoReminderDay !== undefined) dbUpdate.last_auto_reminder_day = orderData.lastAutoReminderDay;
+      if (orderData.prolongedCount !== undefined) dbUpdate.prolonged_count = orderData.prolongedCount;
+
+      const { error } = await supabase
+        .from('orders')
+        .update(dbUpdate)
+        .eq('id', id);
+      if (error) throw error;
+
+      setOrders(prev => prev.map(o => o.id === id ? { ...o, ...orderData } : o));
+      const order = orders.find(o => o.id === id);
+      logAction('update_order', id, orderData.customerName || order?.customerName, orderData.productName || order?.productName, orderData.assignedPage || order?.assignedPage, orderData.price || order?.price, orderData.designPrice || order?.designPrice, 0, 0, orderData.paymentMethod || order?.paymentMethod, orderData.isPaid || order?.isPaid, { id, ...orderData });
+    } catch (err) {
+      console.error("Error updating order:", err);
+      setOrders(prev => prev.map(o => o.id === id ? { ...o, ...orderData } : o));
+      const order = orders.find(o => o.id === id);
+      logAction('update_order', id, orderData.customerName || order?.customerName, orderData.productName || order?.productName, orderData.assignedPage || order?.assignedPage, orderData.price || order?.price, orderData.designPrice || order?.designPrice, 0, 0, orderData.paymentMethod || order?.paymentMethod, orderData.isPaid || order?.isPaid, { id, ...orderData, isFallback: true });
     }
   };
 
@@ -911,19 +1343,23 @@ export const DatabaseProvider = ({ children }) => {
         assignedPage: order.assignedPage,
         artworkComment: order.artworkComment || '',
         paymentMethod,
-        isPaid: true
+        isPaid: true,
+        customerEmail: order.customerEmail || null,
+        customerPhone: order.customerPhone || null
       });
 
       // Send automatic payment confirmation email in the background
       if (order.customerEmail) {
-        const subject = `Confirmación de Pago: Factura Nro. ${invoice.id} - Revista Becerril`;
-        const text = `Hola,\n\nConfirmamos que hemos recibido el pago correspondiente a su espacio publicitario en la Revista Becerril:\n\n- Número de Factura: ${invoice.id}\n- Producto: ${invoice.productName}\n- Página Asignada: ${invoice.assignedPage}\n- Método de Pago: ${paymentMethod}\n- Precio Base: ${invoice.price.toFixed(2)}€\n${invoice.designPrice > 0 ? `- Precio Diseño: ${invoice.designPrice.toFixed(2)}€\n` : ''}- Subtotal: ${(invoice.price + invoice.designPrice).toFixed(2)}€\n- IVA (21%): ${invoice.vat.toFixed(2)}€\n- Total Pagado: ${invoice.total.toFixed(2)}€\n\nGracias,\nEquipo Revista Becerril`;
+        const subject = `Confirmación de Pago: Factura Nro. ${invoice.id} - Revista de Fiestas Patronales Becerril de la Sierra 2026`;
+        const text = `Hola,\n\nConfirmamos que hemos recibido el pago correspondiente a su espacio publicitario en la Revista de Fiestas Patronales Becerril de la Sierra 2026:\n\n- Número de Factura: ${invoice.id}\n- Producto: ${invoice.productName}\n- Página Asignada: ${invoice.assignedPage}\n- Método de Pago: ${paymentMethod}\n- Precio Base: ${invoice.price.toFixed(2)}€\n${invoice.designPrice > 0 ? `- Precio Diseño: ${invoice.designPrice.toFixed(2)}€\n` : ''}- Subtotal: ${(invoice.price + invoice.designPrice).toFixed(2)}€\n- IVA (21%): ${invoice.vat.toFixed(2)}€\n- Total Pagado: ${invoice.total.toFixed(2)}€\n\nGracias,\nEquipo de Coordinación Publicitaria`;
+        const vars = getTemplateVariables(invoice, 'es');
+        const html = getHtmlEmailTemplate(vars);
         
         const apiUrl = import.meta.env.VITE_API_URL || '/api/send-email';
         fetch(apiUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ to: order.customerEmail, subject, text })
+          body: JSON.stringify({ to: order.customerEmail, subject, text, html, background: true })
         }).catch(err => console.error("Error sending automatic payment confirmation email:", err));
       }
 
@@ -936,12 +1372,59 @@ export const DatabaseProvider = ({ children }) => {
         .eq('ad_type', order.productName);
       if (adErr) throw adErr;
 
-      // 3. Delete order
+      // 3. Update order status to Paid instead of deleting it
       const { error: ordErr } = await supabase
         .from('orders')
-        .delete()
+        .update({ is_paid: true, status: 'Paid' })
         .eq('id', orderId);
       if (ordErr) throw ordErr;
+
+      // Update local pages ad status on success
+      if (order.assignedPage) {
+        setPages(prevPages => {
+          const updatedPages = prevPages.map(p => {
+            if (p.page_number === order.assignedPage) {
+              const pageAds = p.ads ? p.ads.map(ad => {
+                if (ad.customer_name === order.customerName && ad.ad_type === order.productName) {
+                  return { ...ad, isPaid: true, isPreReserved: false, expires_at: null, paymentMethod };
+                }
+                return ad;
+              }) : [];
+              return {
+                ...p,
+                ads: pageAds
+              };
+            }
+            return p;
+          });
+
+          if (typeof window !== 'undefined' && window.localStorage) {
+            try {
+              fallbackPagesData.forEach((p, idx) => {
+                if (p.page_number === order.assignedPage) {
+                  const pageAds = p.ads ? p.ads.map(ad => {
+                    if (ad.customer_name === order.customerName && ad.ad_type === order.productName) {
+                      return { ...ad, isPaid: true, isPreReserved: false, expires_at: null, paymentMethod };
+                    }
+                    return ad;
+                  }) : [];
+                  fallbackPagesData[idx] = {
+                    ...p,
+                    ads: pageAds
+                  };
+                }
+              });
+              localStorage.setItem('becerril_magazine_pages', JSON.stringify(fallbackPagesData));
+            } catch (e) {
+              console.error("Error persisting to localStorage:", e);
+            }
+          }
+          return updatedPages;
+        });
+      }
+
+      // Update order locally on success
+      setOrders(prev => prev.map(o => o.id === orderId ? { ...o, isPaid: true, status: 'Paid' } : o));
 
       return invoice;
     } catch (err) {
@@ -958,19 +1441,23 @@ export const DatabaseProvider = ({ children }) => {
         assignedPage: order.assignedPage,
         artworkComment: order.artworkComment || '',
         paymentMethod,
-        isPaid: true
+        isPaid: true,
+        customerEmail: order.customerEmail || null,
+        customerPhone: order.customerPhone || null
       });
 
       // Send automatic payment confirmation email in the background (fallback)
       if (order.customerEmail) {
-        const subject = `Confirmación de Pago: Factura Nro. ${invoice.id} - Revista Becerril`;
-        const text = `Hola,\n\nConfirmamos que hemos recibido el pago correspondiente a su espacio publicitario en la Revista Becerril:\n\n- Número de Factura: ${invoice.id}\n- Producto: ${invoice.productName}\n- Página Asignada: ${invoice.assignedPage}\n- Método de Pago: ${paymentMethod}\n- Precio Base: ${invoice.price.toFixed(2)}€\n${invoice.designPrice > 0 ? `- Precio Diseño: ${invoice.designPrice.toFixed(2)}€\n` : ''}- Subtotal: ${(invoice.price + invoice.designPrice).toFixed(2)}€\n- IVA (21%): ${invoice.vat.toFixed(2)}€\n- Total Pagado: ${invoice.total.toFixed(2)}€\n\nGracias,\nEquipo Revista Becerril`;
+        const subject = `Confirmación de Pago: Factura Nro. ${invoice.id} - Revista de Fiestas Patronales Becerril de la Sierra 2026`;
+        const text = `Hola,\n\nConfirmamos que hemos recibido el pago correspondiente a su espacio publicitario en la Revista de Fiestas Patronales Becerril de la Sierra 2026:\n\n- Número de Factura: ${invoice.id}\n- Producto: ${invoice.productName}\n- Página Asignada: ${invoice.assignedPage}\n- Método de Pago: ${paymentMethod}\n- Precio Base: ${invoice.price.toFixed(2)}€\n${invoice.designPrice > 0 ? `- Precio Diseño: ${invoice.designPrice.toFixed(2)}€\n` : ''}- Subtotal: ${(invoice.price + invoice.designPrice).toFixed(2)}€\n- IVA (21%): ${invoice.vat.toFixed(2)}€\n- Total Pagado: ${invoice.total.toFixed(2)}€\n\nGracias,\nEquipo de Coordinación Publicitaria`;
+        const vars = getTemplateVariables(invoice, 'es');
+        const html = getHtmlEmailTemplate(vars);
         
         const apiUrl = import.meta.env.VITE_API_URL || '/api/send-email';
         fetch(apiUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ to: order.customerEmail, subject, text })
+          body: JSON.stringify({ to: order.customerEmail, subject, text, html, background: true })
         }).catch(err => console.error("Error sending automatic payment confirmation email (fallback):", err));
       }
 
@@ -1018,8 +1505,8 @@ export const DatabaseProvider = ({ children }) => {
         });
       }
 
-      // 3. Remove order locally
-      setOrders(prev => prev.filter(o => o.id !== orderId));
+      // 3. Update order locally
+      setOrders(prev => prev.map(o => o.id === orderId ? { ...o, isPaid: true, status: 'Paid' } : o));
 
       return invoice;
     }
@@ -1031,20 +1518,20 @@ export const DatabaseProvider = ({ children }) => {
 
     if (customerEmail) {
       try {
-        const subject = `Recordatorio de Reserva: Pág. ${pageNum} - Revista Becerril`;
-        const text = `Hola,\n\nLe recordamos que tiene una reserva de espacio publicitario pendiente de pago en la Revista Becerril:\n\n` +
+        const subject = `Recordatorio de Reserva: Pág. ${pageNum} - Revista de Fiestas Patronales Becerril de la Sierra 2026`;
+        const text = `Hola,\n\nLe recordamos que tiene una reserva de espacio publicitario pendiente de pago en la Revista de Fiestas Patronales Becerril de la Sierra 2026:\n\n` +
           `- Cliente: ${customerName}\n` +
           `- Producto: ${productName}\n` +
           `- Página Asignada: ${pageNum}\n` +
           `- Fecha límite para confirmar (pago): ${formattedDate}\n\n` +
           `Por favor, complete el pago para garantizar que su espacio no sea liberado.\n\n` +
-          `Gracias,\nEquipo Revista Becerril`;
+          `Gracias,\nEquipo de Coordinación Publicitaria`;
 
         const apiUrl = import.meta.env.VITE_API_URL || '/api/send-email';
         const response = await fetch(apiUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ to: customerEmail, subject, text })
+          body: JSON.stringify({ to: customerEmail, subject, text, background: true })
         });
         const data = await response.json();
         if (data.success) {
@@ -1058,25 +1545,46 @@ export const DatabaseProvider = ({ children }) => {
     const now = new Date().toISOString();
     try {
       if (isOrder) {
+        const currentOrder = orders.find(o => o.id === targetId);
+        const currentCount = currentOrder?.emailRemindersCount || 0;
+        const newCount = currentCount + 1;
+
         const { error } = await supabase
           .from('orders')
-          .update({ reminder_sent_at: now })
+          .update({ 
+            reminder_sent_at: now, 
+            email_reminder_sent_at: now,
+            email_reminders_count: newCount
+          })
           .eq('id', targetId);
         if (error) throw error;
 
         // Also update local state
-        setOrders(prev => prev.map(o => o.id === targetId ? { ...o, reminderSentAt: now } : o));
+        setOrders(prev => prev.map(o => o.id === targetId ? { ...o, reminderSentAt: now, emailReminderSentAt: now, emailRemindersCount: newCount } : o));
       } else {
+        let currentCount = 0;
+        pages.forEach(p => {
+          if (p.page_number === pageNum && p.ads) {
+            const ad = p.ads.find(a => a.id === targetId);
+            if (ad) currentCount = ad.emailRemindersCount || 0;
+          }
+        });
+        const newCount = currentCount + 1;
+
         const { error } = await supabase
           .from('ad_reservations')
-          .update({ reminder_sent_at: now })
+          .update({ 
+            reminder_sent_at: now, 
+            email_reminder_sent_at: now,
+            email_reminders_count: newCount
+          })
           .eq('id', targetId);
         if (error) throw error;
 
         // Also update local state inside pages
         setPages(prevPages => prevPages.map(p => {
           if (p.page_number === pageNum) {
-            const updatedAds = p.ads ? p.ads.map(ad => ad.id === targetId ? { ...ad, reminderSentAt: now } : ad) : [];
+            const updatedAds = p.ads ? p.ads.map(ad => ad.id === targetId ? { ...ad, reminderSentAt: now, emailReminderSentAt: now, emailRemindersCount: newCount } : ad) : [];
             return {
               ...p,
               ads: updatedAds
@@ -1089,11 +1597,11 @@ export const DatabaseProvider = ({ children }) => {
       console.error('Error updating database with reminder timestamp:', err);
       // Local fallback updates
       if (isOrder) {
-        setOrders(prev => prev.map(o => o.id === targetId ? { ...o, reminderSentAt: now } : o));
+        setOrders(prev => prev.map(o => o.id === targetId ? { ...o, reminderSentAt: now, emailReminderSentAt: now, emailRemindersCount: (o.emailRemindersCount || 0) + 1 } : o));
       } else {
         setPages(prevPages => prevPages.map(p => {
           if (p.page_number === pageNum) {
-            const updatedAds = p.ads ? p.ads.map(ad => ad.id === targetId ? { ...ad, reminderSentAt: now } : ad) : [];
+            const updatedAds = p.ads ? p.ads.map(ad => ad.id === targetId ? { ...ad, reminderSentAt: now, emailReminderSentAt: now, emailRemindersCount: (ad.emailRemindersCount || 0) + 1 } : ad) : [];
             return {
               ...p,
               ads: updatedAds
@@ -1105,6 +1613,76 @@ export const DatabaseProvider = ({ children }) => {
     }
 
     return { emailSuccess };
+  };
+
+  const trackWhatsAppReminderSent = async (targetId, pageNum, isOrder = false) => {
+    const now = new Date().toISOString();
+    try {
+      if (isOrder) {
+        const currentOrder = orders.find(o => o.id === targetId);
+        const currentCount = currentOrder?.whatsappRemindersCount || 0;
+        const newCount = currentCount + 1;
+
+        const { error } = await supabase
+          .from('orders')
+          .update({ 
+            whatsapp_reminder_sent_at: now,
+            whatsapp_reminders_count: newCount
+          })
+          .eq('id', targetId);
+        if (error) throw error;
+
+        // Also update local state
+        setOrders(prev => prev.map(o => o.id === targetId ? { ...o, whatsappReminderSentAt: now, whatsappRemindersCount: newCount } : o));
+      } else {
+        let currentCount = 0;
+        pages.forEach(p => {
+          if (p.page_number === pageNum && p.ads) {
+            const ad = p.ads.find(a => a.id === targetId);
+            if (ad) currentCount = ad.whatsappRemindersCount || 0;
+          }
+        });
+        const newCount = currentCount + 1;
+
+        const { error } = await supabase
+          .from('ad_reservations')
+          .update({ 
+            whatsapp_reminder_sent_at: now,
+            whatsapp_reminders_count: newCount
+          })
+          .eq('id', targetId);
+        if (error) throw error;
+
+        // Also update local state inside pages
+        setPages(prevPages => prevPages.map(p => {
+          if (p.page_number === pageNum) {
+            const updatedAds = p.ads ? p.ads.map(ad => ad.id === targetId ? { ...ad, whatsappReminderSentAt: now, whatsappRemindersCount: newCount } : ad) : [];
+            return {
+              ...p,
+              ads: updatedAds
+            };
+          }
+          return p;
+        }));
+      }
+    } catch (err) {
+      console.error('Error updating database with whatsapp reminder timestamp:', err);
+      // Local fallback updates
+      if (isOrder) {
+        setOrders(prev => prev.map(o => o.id === targetId ? { ...o, whatsappReminderSentAt: now, whatsappRemindersCount: (o.whatsappRemindersCount || 0) + 1 } : o));
+      } else {
+        setPages(prevPages => prevPages.map(p => {
+          if (p.page_number === pageNum) {
+            const updatedAds = p.ads ? p.ads.map(ad => ad.id === targetId ? { ...ad, whatsappReminderSentAt: now, whatsappRemindersCount: (ad.whatsappRemindersCount || 0) + 1 } : ad) : [];
+            return {
+              ...p,
+              ads: updatedAds
+            };
+          }
+          return p;
+        }));
+      }
+    }
   };
 
   const addInvoiceWithReservation = async (invoiceData, adDetails) => {
@@ -1143,6 +1721,7 @@ export const DatabaseProvider = ({ children }) => {
         }));
       }
 
+      logAction('create_invoice_with_reservation', newInvoice.id, newInvoice.customerName, newInvoice.productName, newInvoice.assignedPage, newInvoice.price, newInvoice.designPrice, newInvoice.vat, newInvoice.total, newInvoice.paymentMethod, newInvoice.isPaid, { newInvoice, adDetails });
       return newInvoice;
     } catch (err) {
       console.error("Error creating invoice with reservation:", err);
@@ -1158,6 +1737,7 @@ export const DatabaseProvider = ({ children }) => {
           return p;
         }));
       }
+      logAction('create_invoice_with_reservation', newInvoice.id, newInvoice.customerName, newInvoice.productName, newInvoice.assignedPage, newInvoice.price, newInvoice.designPrice, newInvoice.vat, newInvoice.total, newInvoice.paymentMethod, newInvoice.isPaid, { newInvoice, adDetails, isFallback: true });
       return newInvoice;
     }
   };
@@ -1214,6 +1794,7 @@ export const DatabaseProvider = ({ children }) => {
         return p;
       }));
 
+      logAction('create_recibo', newRecibo.id, newRecibo.customerName, newRecibo.productName, newRecibo.assignedPage, newRecibo.price, newRecibo.designPrice, 0, newRecibo.total, newRecibo.paymentMethod, newRecibo.isPaid, newRecibo);
       return newRecibo;
     } catch (err) {
       console.error("Error inserting recibo:", err);
@@ -1231,13 +1812,14 @@ export const DatabaseProvider = ({ children }) => {
         return p;
       }));
 
+      logAction('create_recibo', newRecibo.id, newRecibo.customerName, newRecibo.productName, newRecibo.assignedPage, newRecibo.price, newRecibo.designPrice, 0, newRecibo.total, newRecibo.paymentMethod, newRecibo.isPaid, newRecibo);
       return newRecibo;
     }
   };
 
   const deleteRecibo = async (id) => {
+    const rec = recibos.find(r => r.id === id);
     try {
-      const rec = recibos.find(r => r.id === id);
       if (rec && rec.assignedPage) {
         const { error: adErr } = await supabase
           .from('ad_reservations')
@@ -1253,6 +1835,20 @@ export const DatabaseProvider = ({ children }) => {
         .delete()
         .eq('id', id);
       if (error) throw error;
+
+      // Immediately update local states
+      setRecibos(prev => prev.filter(r => r.id !== id));
+      if (rec && rec.assignedPage) {
+        setPages(prevPages => prevPages.map(p => {
+          if (p.page_number === rec.assignedPage) {
+            const pageAds = p.ads ? p.ads.filter(ad => !(ad.customer_name === rec.customerName && ad.ad_type === rec.productName)) : [];
+            return { ...p, ads: pageAds, status: pageAds.length > 0 ? 'Reserved' : 'Available' };
+          }
+          return p;
+        }));
+      }
+
+      logAction('delete_recibo', id, rec?.customerName, rec?.productName, rec?.assignedPage, rec?.price, rec?.designPrice, 0, rec?.total, rec?.paymentMethod, rec?.isPaid, rec);
     } catch (err) {
       console.error("Error deleting recibo:", err);
       
@@ -1294,6 +1890,7 @@ export const DatabaseProvider = ({ children }) => {
           });
         }
       }
+      logAction('delete_recibo', id, rec?.customerName, rec?.productName, rec?.assignedPage, rec?.price, rec?.designPrice, 0, rec?.total, rec?.paymentMethod, rec?.isPaid, rec);
     }
   };
 
@@ -1388,6 +1985,210 @@ export const DatabaseProvider = ({ children }) => {
         }
         return updatedPages;
       });
+    }
+  };
+
+  const getEmailHtml = (title, content) => {
+    return `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <style>
+          body {
+            font-family: 'Segoe UI', Helvetica, Arial, sans-serif;
+            background-color: #f8fafc;
+            margin: 0;
+            padding: 0;
+            -webkit-font-smoothing: antialiased;
+          }
+          .container {
+            max-width: 600px;
+            margin: 40px auto;
+            background-color: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+          }
+          .header {
+            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+            padding: 32px;
+            text-align: center;
+          }
+          .header h1 {
+            color: #ffffff;
+            font-size: 24px;
+            font-weight: 700;
+            margin: 0;
+          }
+          .content {
+            padding: 32px;
+            color: #334155;
+            line-height: 1.6;
+            font-size: 15px;
+          }
+          .content p {
+            margin-top: 0;
+            margin-bottom: 16px;
+          }
+          .footer {
+            background-color: #f1f5f9;
+            padding: 24px;
+            text-align: center;
+            font-size: 12px;
+            color: #64748b;
+            border-top: 1px solid #e2e8f0;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1 style="margin:0; color:#ffffff;">Revista de Fiestas Patronales Becerril de la Sierra 2026</h1>
+          </div>
+          <div class="content">
+            <h2 style="color: #0f172a; font-size: 18px; font-weight: 600; margin-top: 0; margin-bottom: 16px;">${title}</h2>
+            ${content}
+          </div>
+          <div class="footer">
+            <p style="margin:0;">Este es un correo automático de Revista de Fiestas Patronales Becerril de la Sierra 2026.</p>
+            <p style="margin:4px 0 0 0;">I am your granny S.L. &bull; &copy; 2026 Revista de Fiestas Patronales Becerril de la Sierra 2026. Todos los derechos reservados.</p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+  };
+
+  const publicConfirmPurchase = async (targetId, isOrder, customerEmail, customerName, pageNum) => {
+    try {
+      if (isOrder) {
+        const { error } = await supabase
+          .from('orders')
+          .update({ order_type: 'transfer', status: 'Pending', is_paid: false })
+          .eq('id', targetId);
+        if (error) throw error;
+        setOrders(prev => prev.map(o => o.id === targetId ? { ...o, orderType: 'transfer', status: 'Pending', isPaid: false } : o));
+      } else {
+        const { error } = await supabase
+          .from('ad_reservations')
+          .update({ is_pre_reserved: false, expires_at: null })
+          .eq('id', targetId);
+        if (error) throw error;
+        setPages(prev => prev.map(p => {
+          if (p.page_number === pageNum) {
+            const ads = p.ads ? p.ads.map(ad => ad.id === targetId ? { ...ad, isPreReserved: false, expires_at: null } : ad) : [];
+            return { ...p, ads };
+          }
+          return p;
+        }));
+      }
+
+      // Send confirmation email
+      if (customerEmail) {
+        const subject = `Compra Confirmada: Reserva Pág. ${pageNum} - Revista de Fiestas Patronales Becerril de la Sierra 2026`;
+        const text = `Hola ${customerName || 'Cliente'},\n\nConfirmamos que ha elegido comprar el anuncio y realizar una transferencia para la reserva de la página ${pageNum}.\n\nPor favor, realice la transferencia bancaria lo antes posible para completar su compra.\n\nGracias,\nEquipo de Coordinación Publicitaria`;
+        const html = getEmailHtml(
+          'Compra Confirmada',
+          `<p>Hola <strong>${customerName || 'Cliente'}</strong>,</p>
+           <p>Confirmamos que ha elegido comprar el anuncio y realizar una transferencia para la reserva de la <strong>página ${pageNum}</strong>.</p>
+           <p>Por favor, realice la transferencia bancaria lo antes posible para completar su compra.</p>
+           <p>Si tiene alguna pregunta, no dude en responder a este correo.</p>`
+        );
+        const apiUrl = import.meta.env.VITE_API_URL || '/api/send-email';
+        await fetch(apiUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ to: customerEmail, subject, text, html, background: true })
+        });
+      }
+      return true;
+    } catch (err) {
+      console.error("Error confirming purchase publicly:", err);
+      return false;
+    }
+  };
+
+  const publicProlongReservation = async (targetId, newExpiresAt, isOrder, customerEmail, customerName, pageNum) => {
+    try {
+      const formattedDate = new Date(newExpiresAt).toLocaleDateString();
+      if (isOrder) {
+        const { error } = await supabase
+          .from('orders')
+          .update({ expires_at: newExpiresAt, prolonged_count: 1 })
+          .eq('id', targetId);
+        if (error) throw error;
+        setOrders(prev => prev.map(o => o.id === targetId ? { ...o, expires_at: newExpiresAt, prolongedCount: 1 } : o));
+      } else {
+        const { error } = await supabase
+          .from('ad_reservations')
+          .update({ expires_at: newExpiresAt, prolonged_count: 1 })
+          .eq('id', targetId);
+        if (error) throw error;
+        setPages(prev => prev.map(p => {
+          if (p.page_number === pageNum) {
+            const ads = p.ads ? p.ads.map(ad => ad.id === targetId ? { ...ad, expires_at: newExpiresAt, prolongedCount: 1 } : ad) : [];
+            return { ...p, ads };
+          }
+          return p;
+        }));
+      }
+
+      // Send confirmation email
+      if (customerEmail) {
+        const subject = `Pre-reserva Prolongada: Pág. ${pageNum} - Revista de Fiestas Patronales Becerril de la Sierra 2026`;
+        const text = `Hola ${customerName || 'Cliente'},\n\nSu pre-reserva para la página ${pageNum} ha sido prolongada con éxito hasta el ${formattedDate}.\n\nGracias,\nEquipo de Coordinación Publicitaria`;
+        const html = getEmailHtml(
+          'Pre-reserva Prolongada',
+          `<p>Hola <strong>${customerName || 'Cliente'}</strong>,</p>
+           <p>Su pre-reserva para la <strong>página ${pageNum}</strong> ha sido prolongada con éxito.</p>
+           <p>La nueva fecha de vencimiento es el <strong>${formattedDate}</strong>.</p>
+           <p>Asegúrese de realizar el pago antes de esa fecha para confirmar su espacio definitivamente.</p>`
+        );
+        const apiUrl = import.meta.env.VITE_API_URL || '/api/send-email';
+        await fetch(apiUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ to: customerEmail, subject, text, html, background: true })
+        });
+      }
+      return true;
+    } catch (err) {
+      console.error("Error prolonging pre-reservation publicly:", err);
+      return false;
+    }
+  };
+
+  const publicCancelReservation = async (targetId, pageNum, customerName, adType, isOrder, customerEmail) => {
+    try {
+      if (isOrder) {
+        await deleteOrder(targetId);
+      } else {
+        await deleteAdReservationDirect(pageNum, customerName, adType);
+      }
+
+      // Send confirmation email
+      if (customerEmail) {
+        const subject = `Reserva Cancelada: Pág. ${pageNum} - Revista de Fiestas Patronales Becerril de la Sierra 2026`;
+        const text = `Hola ${customerName || 'Cliente'},\n\nConfirmamos que su pre-reserva para la página ${pageNum} ha sido cancelada y el espacio ha sido liberado.\n\nGracias,\nEquipo de Coordinación Publicitaria`;
+        const html = getEmailHtml(
+          'Pre-reserva Cancelada',
+          `<p>Hola <strong>${customerName || 'Cliente'}</strong>,</p>
+           <p>Confirmamos que su pre-reserva para la <strong>página ${pageNum}</strong> ha sido cancelada y el espacio publicitario ha sido liberado.</p>
+           <p>Esperamos volver a colaborar con usted en futuras ediciones.</p>`
+        );
+        const apiUrl = import.meta.env.VITE_API_URL || '/api/send-email';
+        await fetch(apiUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ to: customerEmail, subject, text, html, background: true })
+        });
+      }
+      return true;
+    } catch (err) {
+      console.error("Error cancelling pre-reservation publicly:", err);
+      return false;
     }
   };
 
@@ -1486,6 +2287,7 @@ export const DatabaseProvider = ({ children }) => {
       recibos,
       orders,
       settings,
+      templates,
       loading,
       session,
       addInvoice,
@@ -1497,16 +2299,24 @@ export const DatabaseProvider = ({ children }) => {
       reserveInvoiceNumber,
       addOrder,
       deleteOrder,
+      updateOrder,
       confirmOrderPayment,
       addRecibo,
       deleteRecibo,
       markInvoiceEmailSent,
       markReciboEmailSent,
       saveInvoiceSettings,
+      saveCommunicationTemplate,
       addAdReservation,
       deleteAdReservationDirect,
       resolvePreReservation,
       sendPaymentReminder,
+      trackWhatsAppReminderSent,
+      publicConfirmPurchase,
+      publicProlongReservation,
+      publicCancelReservation,
+      actionLogs,
+      logAction,
       reload: loadAllData
     }}>
       {children}

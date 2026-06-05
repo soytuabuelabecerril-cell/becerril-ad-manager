@@ -14,7 +14,8 @@ const CustomersList = ({ onSelectPage }) => {
     recibos,
     orders,
     confirmOrderPayment,
-    sendPaymentReminder
+    sendPaymentReminder,
+    trackWhatsAppReminderSent
   } = useDatabase();
 
   const [customers, setCustomers] = useState([]);
@@ -168,6 +169,7 @@ const CustomersList = ({ onSelectPage }) => {
     const name = (customer.commercial_name || customer.fiscal_name || '').toLowerCase();
     const order = orders.find(o =>
       o.orderType === 'pre-reserved' &&
+      o.status !== 'Cancelled' &&
       !o.isPaid &&
       o.customerName?.toLowerCase() === name
     );
@@ -182,7 +184,9 @@ const CustomersList = ({ onSelectPage }) => {
         expires_at: expiresAt,
         isPreReserved: true,
         id: order.id,
-        _fromOrder: true
+        _fromOrder: true,
+        emailReminderSentAt: order.emailReminderSentAt,
+        whatsappReminderSentAt: order.whatsappReminderSentAt
       };
     }
     return undefined;
@@ -262,8 +266,8 @@ const CustomersList = ({ onSelectPage }) => {
     const expDate = new Date(preReservedAd.expires_at);
     const formattedDate = `${expDate.getDate()}/${expDate.getMonth() + 1}/${expDate.getFullYear()}`;
     const text = isEs
-      ? `Hola, le recordamos que su espacio publicitario en la Revista Becerril (Pág. ${preReservedAd.page_number}) está reservado temporalmente y vencerá el ${formattedDate}. Por favor, realice el pago para confirmar su reserva. ¡Muchas gracias!`
-      : `Hello, we remind you that your advertising space in Revista Becerril (Pg. ${preReservedAd.page_number}) is temporarily reserved and will expire on ${formattedDate}. Please complete the payment to confirm your reservation. Thank you very much!`;
+      ? `Hola, le recordamos que su espacio publicitario en la Revista de Fiestas Patronales Becerril de la Sierra 2026 (Pág. ${preReservedAd.page_number}) está reservado temporalmente y vencerá el ${formattedDate}. Por favor, realice el pago para confirmar su reserva. ¡Muchas gracias!`
+      : `Hello, we remind you that your advertising space in Revista de Fiestas Patronales Becerril de la Sierra 2026 (Pg. ${preReservedAd.page_number}) is temporarily reserved and will expire on ${formattedDate}. Please complete the payment to confirm your reservation. Thank you very much!`;
     return `https://wa.me/${phone}?text=${encodeURIComponent(text)}`;
   };
 
@@ -345,6 +349,7 @@ const CustomersList = ({ onSelectPage }) => {
     );
     const hasPendingOrder = orders.some(o =>
       o.orderType === 'transfer' &&
+      o.status !== 'Cancelled' &&
       !o.isPaid &&
       o.customerName?.toLowerCase() === name
     );
@@ -357,6 +362,7 @@ const CustomersList = ({ onSelectPage }) => {
     const hasPreReservedAd = ads.some(ad => ad.isPreReserved);
     const hasPreReservedOrder = orders.some(o =>
       o.orderType === 'pre-reserved' &&
+      o.status !== 'Cancelled' &&
       o.customerName?.toLowerCase() === name
     );
     return hasPreReservedAd || hasPreReservedOrder;
@@ -380,10 +386,107 @@ const CustomersList = ({ onSelectPage }) => {
     return hasPaidAd || hasPaidInvoice || hasRecibo;
   };
 
+  const getClosedSales = () => {
+    const salesMap = new Map();
+
+    // 1. Paid ads from pages
+    pages.forEach(page => {
+      if (page.ads && page.ads.length > 0) {
+        page.ads.forEach((ad, idx) => {
+          if (ad.isPaid) {
+            const key = `${page.page_number}-${(ad.customer_name || '').toLowerCase()}-${(ad.ad_type || '').toLowerCase()}`;
+            salesMap.set(key, {
+              id: `ad-${page.page_number}-${ad.id || ad.customer_id || idx}`,
+              page_number: page.page_number,
+              customer_name: ad.customer_name,
+              customer_id: ad.customer_id,
+              ad_type: ad.ad_type,
+              paymentMethod: ad.paymentMethod || 'Transfer',
+              date: ad.createdAt || page.created_at || null,
+              source: 'ad'
+            });
+          }
+        });
+      } else if (page.status === 'Reserved' && page.payment_status === 'Paid') {
+        const key = `${page.page_number}-${(page.customer_name || '').toLowerCase()}-${(page.ad_type || '').toLowerCase()}`;
+        salesMap.set(key, {
+          id: `page-${page.page_number}`,
+          page_number: page.page_number,
+          customer_name: page.customer_name || 'Legacy Customer',
+          customer_id: page.customer_id,
+          ad_type: page.ad_type,
+          paymentMethod: 'Transfer',
+          date: page.created_at || null,
+          source: 'page-direct'
+        });
+      }
+    });
+
+    // 2. Paid invoices
+    invoices.forEach(inv => {
+      if (inv.isPaid && inv.status !== 'Cancelled' && inv.status !== 'Refund' && inv.status !== 'Reserved') {
+        const key = `${inv.assignedPage}-${(inv.customerName || '').toLowerCase()}-${(inv.productName || '').toLowerCase()}`;
+        if (!salesMap.has(key)) {
+          salesMap.set(key, {
+            id: `invoice-${inv.id}`,
+            page_number: inv.assignedPage,
+            customer_name: inv.customerName,
+            customer_id: inv.customerId,
+            ad_type: inv.productName,
+            paymentMethod: inv.paymentMethod || 'Transfer',
+            date: inv.createdAt,
+            source: 'invoice'
+          });
+        }
+      }
+    });
+
+    // 3. Recibos (cash receipts)
+    recibos.forEach(rec => {
+      if (rec.status !== 'Cancelled') {
+        const key = `${rec.assignedPage}-${(rec.customerName || '').toLowerCase()}-${(rec.productName || '').toLowerCase()}`;
+        if (!salesMap.has(key)) {
+          salesMap.set(key, {
+            id: `recibo-${rec.id}`,
+            page_number: rec.assignedPage,
+            customer_name: rec.customerName,
+            customer_id: rec.customerId,
+            ad_type: rec.productName,
+            paymentMethod: 'Cash',
+            date: rec.createdAt,
+            source: 'recibo'
+          });
+        }
+      }
+    });
+
+    return Array.from(salesMap.values()).sort((a, b) => Number(a.page_number) - Number(b.page_number));
+  };
+
+  const findCustomerForSale = (sale) => {
+    const saleCustName = (sale.customer_name || '').toLowerCase();
+    return customers.find(c =>
+      (c.id && c.id === sale.customer_id) ||
+      (c.nif && c.nif === sale.customer_id) ||
+      (c.commercial_name && c.commercial_name.toLowerCase() === saleCustName) ||
+      (c.fiscal_name && c.fiscal_name.toLowerCase() === saleCustName)
+    ) || {
+      commercial_name: sale.customer_name || t('rp_unknown_customer'),
+      fiscal_name: '',
+      nif: '—',
+      email: '',
+      whatsapp: '',
+      address: '',
+      last_year_product: ''
+    };
+  };
+
+  const closedSales = getClosedSales();
+
   const customersByState = {
     pending: [],
     'pre-reserved': [],
-    closed: []
+    closed: closedSales
   };
 
   customers.forEach(c => {
@@ -392,9 +495,6 @@ const CustomersList = ({ onSelectPage }) => {
     }
     if (isCustomerPreReserved(c)) {
       customersByState['pre-reserved'].push(c);
-    }
-    if (isCustomerClosed(c)) {
-      customersByState.closed.push(c);
     }
   });
 
@@ -410,6 +510,22 @@ const CustomersList = ({ onSelectPage }) => {
       (c.email && c.email.toLowerCase().includes(term))
     );
   });
+
+  const filteredClosedSales = closedSales.filter(sale => {
+    const customer = findCustomerForSale(sale);
+    if (!searchTerm) return true;
+    const term = searchTerm.toLowerCase();
+    return (
+      (customer.commercial_name && customer.commercial_name.toLowerCase().includes(term)) ||
+      (customer.fiscal_name && customer.fiscal_name.toLowerCase().includes(term)) ||
+      (customer.nif && customer.nif.toLowerCase().includes(term)) ||
+      (customer.email && customer.email.toLowerCase().includes(term)) ||
+      (`p${sale.page_number}`.includes(term)) ||
+      (sale.ad_type && sale.ad_type.toLowerCase().includes(term))
+    );
+  });
+
+  const displayItems = activeState === 'closed' ? filteredClosedSales : filteredCustomers;
 
   const getActiveStateTitle = () => {
     switch (activeState) {
@@ -546,23 +662,35 @@ const CustomersList = ({ onSelectPage }) => {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {filteredCustomers.map((customer) => (
-                <tr key={customer.id} className="hover:bg-slate-50 transition-colors">
-                  <td className="p-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
-                        {customer.commercial_name ? customer.commercial_name.charAt(0) : customer.fiscal_name.charAt(0)}
-                      </div>
-                      <div>
-                        <div className="font-bold text-gray-800 flex items-center gap-2">
-                          {(() => {
-                            const pagesStr = getCustomerPageNumbersStr(customer);
-                            return pagesStr ? (
-                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-100 shrink-0">
-                                {pagesStr}
-                              </span>
-                            ) : null;
-                          })()}
+              {displayItems.map((item) => {
+                const isClosed = activeState === 'closed';
+                const sale = isClosed ? item : null;
+                const customer = isClosed ? findCustomerForSale(item) : item;
+                const itemKey = isClosed ? sale.id : customer.id;
+                return (
+                  <tr key={itemKey} className="hover:bg-slate-50 transition-colors">
+                    <td className="p-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
+                          {customer.commercial_name ? customer.commercial_name.charAt(0) : customer.fiscal_name.charAt(0)}
+                        </div>
+                        <div>
+                          <div className="font-bold text-gray-800 flex items-center gap-2">
+                            {(() => {
+                              if (isClosed) {
+                                return (
+                                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-100 shrink-0">
+                                    P{sale.page_number}
+                                  </span>
+                                );
+                              }
+                              const pagesStr = getCustomerPageNumbersStr(customer);
+                              return pagesStr ? (
+                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-100 shrink-0">
+                                  {pagesStr}
+                                </span>
+                              ) : null;
+                            })()}
                           <span>{customer.commercial_name || customer.fiscal_name}</span>
                         </div>
                         <div className="text-xs text-gray-500">NIF: {customer.nif}</div>
@@ -571,16 +699,48 @@ const CustomersList = ({ onSelectPage }) => {
                   </td>
                   <td className="p-4">
                     <div className="flex flex-col gap-2 text-sm text-gray-600 max-w-xs">
-                      {customer.email && (
-                        <div className="flex items-center gap-2">
-                          <Mail size={14} className="text-gray-400" /> {customer.email}
-                        </div>
-                      )}
-                      {customer.whatsapp && (
-                        <div className="flex items-center gap-2">
-                          <Phone size={14} className="text-gray-400" /> {customer.whatsapp}
-                        </div>
-                      )}
+                      {customer.email && (() => {
+                        const preReservedAd = getCustomerPreReservedAd(customer);
+                        const hasEmailSent = preReservedAd?.emailReminderSentAt;
+                        const formattedSentDate = hasEmailSent ? new Date(preReservedAd.emailReminderSentAt).toLocaleDateString() : '';
+                        const emailCount = preReservedAd?.emailRemindersCount || 0;
+                        return (
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <div className="flex items-center gap-2">
+                              <Mail size={14} className="text-gray-400" /> 
+                              <span>{customer.email}</span>
+                            </div>
+                            {hasEmailSent && (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100 shrink-0 animate-fade-in" title={`Email reminder sent on ${formattedSentDate}`}>
+                                <Mail size={10} className="text-emerald-500 fill-emerald-50" />
+                                <span>{formattedSentDate}</span>
+                                {emailCount > 0 && <span className="text-[9px] bg-emerald-100 text-emerald-800 px-1 rounded ml-0.5">{emailCount}</span>}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })()}
+                      {customer.whatsapp && (() => {
+                        const preReservedAd = getCustomerPreReservedAd(customer);
+                        const hasWhatsAppSent = preReservedAd?.whatsappReminderSentAt;
+                        const formattedSentDate = hasWhatsAppSent ? new Date(preReservedAd.whatsappReminderSentAt).toLocaleDateString() : '';
+                        const whatsappCount = preReservedAd?.whatsappRemindersCount || 0;
+                        return (
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <div className="flex items-center gap-2">
+                              <Phone size={14} className="text-gray-400" /> 
+                              <span>{customer.whatsapp}</span>
+                            </div>
+                            {hasWhatsAppSent && (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100 shrink-0 animate-fade-in" title={`WhatsApp reminder sent on ${formattedSentDate}`}>
+                                <Phone size={10} className="text-emerald-500 fill-emerald-50" />
+                                <span>{formattedSentDate}</span>
+                                {whatsappCount > 0 && <span className="text-[9px] bg-emerald-100 text-emerald-800 px-1 rounded ml-0.5">{whatsappCount}</span>}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })()}
                       {customer.last_year_product && (
                         <div className="flex items-start gap-2">
                           <FileText size={14} className="text-gray-400 mt-0.5 flex-shrink-0" /> 
@@ -661,13 +821,42 @@ const CustomersList = ({ onSelectPage }) => {
                       )}
                       {activeState === 'pre-reserved' && (
                         <>
-                          <button
-                            onClick={() => handleReminderClick(customer)}
-                            className="bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap inline-flex items-center gap-1 shadow-sm cursor-pointer"
-                          >
-                            <Bell size={14} />
-                            {t('send_reminder') || 'Send Reminder'}
-                          </button>
+                          <div className="flex flex-col items-center">
+                            <button
+                              onClick={() => handleReminderClick(customer)}
+                              className="bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap inline-flex items-center gap-1 shadow-sm cursor-pointer"
+                            >
+                              <Bell size={14} />
+                              {t('send_reminder') || 'Send Reminder'}
+                            </button>
+                            {(() => {
+                              const preReservedAd = getCustomerPreReservedAd(customer);
+                              const hasEmailSent = preReservedAd?.emailReminderSentAt;
+                              const hasWhatsAppSent = preReservedAd?.whatsappReminderSentAt;
+                              const emailCount = preReservedAd?.emailRemindersCount || 0;
+                              const whatsappCount = preReservedAd?.whatsappRemindersCount || 0;
+                              return (
+                                <div className="flex flex-col items-center gap-0.5 mt-1">
+                                  {hasEmailSent && (
+                                    <div className="flex items-center gap-1 text-[10px] font-bold text-emerald-600 animate-fade-in" title={`Email reminder sent on ${new Date(preReservedAd.emailReminderSentAt).toLocaleDateString()}`}>
+                                      <CheckCircle size={12} className="text-emerald-500 fill-emerald-50 shrink-0" />
+                                      <Mail size={12} className="text-emerald-500 shrink-0" />
+                                      <span>{new Date(preReservedAd.emailReminderSentAt).toLocaleDateString()}</span>
+                                      {emailCount > 0 && <span className="text-[9px] bg-emerald-100 text-emerald-800 px-1 rounded ml-0.5">{emailCount}</span>}
+                                    </div>
+                                  )}
+                                  {hasWhatsAppSent && (
+                                    <div className="flex items-center gap-1 text-[10px] font-bold text-emerald-600 animate-fade-in" title={`WhatsApp reminder sent on ${new Date(preReservedAd.whatsappReminderSentAt).toLocaleDateString()}`}>
+                                      <CheckCircle size={12} className="text-emerald-500 fill-emerald-50 shrink-0" />
+                                      <Phone size={12} className="text-emerald-500 shrink-0" />
+                                      <span>{new Date(preReservedAd.whatsappReminderSentAt).toLocaleDateString()}</span>
+                                      {whatsappCount > 0 && <span className="text-[9px] bg-emerald-100 text-emerald-800 px-1 rounded ml-0.5">{whatsappCount}</span>}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })()}
+                          </div>
                           {(() => {
                             const preReservedAd = getCustomerPreReservedAd(customer);
                             if (preReservedAd) {
@@ -697,8 +886,8 @@ const CustomersList = ({ onSelectPage }) => {
                     </div>
                   </td>
                 </tr>
-              ))}
-              {filteredCustomers.length === 0 && (
+              ); })}
+              {displayItems.length === 0 && (
                 <tr>
                   <td colSpan="5" className="p-8 text-center text-gray-500">
                     {t('no_customers')}
@@ -711,31 +900,43 @@ const CustomersList = ({ onSelectPage }) => {
 
         {/* Mobile Card List (hidden on md and larger) */}
         <div className="grid grid-cols-1 gap-4 md:hidden">
-          {filteredCustomers.map((customer) => (
-            <div key={customer.id} className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm relative flex flex-col gap-3">
-              {/* Header: Avatar, Name & NIF */}
-              <div className="flex items-start justify-between gap-2">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center font-bold shrink-0">
-                    {customer.commercial_name ? customer.commercial_name.charAt(0) : customer.fiscal_name.charAt(0)}
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <button 
-                        onClick={() => handleEditCustomer(customer)}
-                        className="p-1 hover:bg-slate-100 rounded text-blue-600 transition-colors inline-flex items-center justify-center cursor-pointer shrink-0"
-                        title={t('edit') || 'Edit Customer'}
-                      >
-                        <Edit2 size={14} />
-                      </button>
-                      {(() => {
-                        const pagesStr = getCustomerPageNumbersStr(customer);
-                        return pagesStr ? (
-                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-100 shrink-0">
-                            {pagesStr}
-                          </span>
-                        ) : null;
-                      })()}
+          {displayItems.map((item) => {
+            const isClosed = activeState === 'closed';
+            const sale = isClosed ? item : null;
+            const customer = isClosed ? findCustomerForSale(item) : item;
+            const itemKey = isClosed ? sale.id : customer.id;
+            return (
+              <div key={itemKey} className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm relative flex flex-col gap-3">
+                {/* Header: Avatar, Name & NIF */}
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center font-bold shrink-0">
+                      {customer.commercial_name ? customer.commercial_name.charAt(0) : customer.fiscal_name.charAt(0)}
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <button 
+                          onClick={() => handleEditCustomer(customer)}
+                          className="p-1 hover:bg-slate-100 rounded text-blue-600 transition-colors inline-flex items-center justify-center cursor-pointer shrink-0"
+                          title={t('edit') || 'Edit Customer'}
+                        >
+                          <Edit2 size={14} />
+                        </button>
+                        {(() => {
+                          if (isClosed) {
+                            return (
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-100 shrink-0">
+                                P{sale.page_number}
+                              </span>
+                            );
+                          }
+                          const pagesStr = getCustomerPageNumbersStr(customer);
+                          return pagesStr ? (
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-100 shrink-0">
+                              {pagesStr}
+                            </span>
+                          ) : null;
+                        })()}
                       <span className="font-bold text-gray-800 leading-tight">{customer.commercial_name || customer.fiscal_name}</span>
                     </div>
                     <div className="text-xs text-gray-500 mt-0.5">NIF: {customer.nif}</div>
@@ -773,18 +974,48 @@ const CustomersList = ({ onSelectPage }) => {
 
               {/* Content Details */}
               <div className="text-xs text-gray-600 space-y-1.5 bg-gray-50/50 p-2.5 rounded-lg border border-gray-50">
-                {customer.email && (
-                  <div className="flex items-center gap-2">
-                    <Mail size={12} className="text-gray-400 shrink-0" />
-                    <span className="truncate">{customer.email}</span>
-                  </div>
-                )}
-                {customer.whatsapp && (
-                  <div className="flex items-center gap-2">
-                    <Phone size={12} className="text-gray-400 shrink-0" />
-                    <span>{customer.whatsapp}</span>
-                  </div>
-                )}
+                {customer.email && (() => {
+                  const preReservedAd = getCustomerPreReservedAd(customer);
+                  const hasEmailSent = preReservedAd?.emailReminderSentAt;
+                  const formattedSentDate = hasEmailSent ? new Date(preReservedAd.emailReminderSentAt).toLocaleDateString() : '';
+                  const emailCount = preReservedAd?.emailRemindersCount || 0;
+                  return (
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <Mail size={12} className="text-gray-400 shrink-0" />
+                        <span className="truncate">{customer.email}</span>
+                      </div>
+                      {hasEmailSent && (
+                        <span className="inline-flex items-center gap-1 text-[9px] font-bold text-emerald-600 bg-emerald-50 px-1 py-0.5 rounded border border-emerald-100 shrink-0 animate-fade-in">
+                          <Mail size={8} className="text-emerald-500 fill-emerald-50" />
+                          <span>{formattedSentDate}</span>
+                          {emailCount > 0 && <span className="text-[8px] bg-emerald-100 text-emerald-800 px-1 rounded ml-0.5">{emailCount}</span>}
+                        </span>
+                      )}
+                    </div>
+                  );
+                })()}
+                {customer.whatsapp && (() => {
+                  const preReservedAd = getCustomerPreReservedAd(customer);
+                  const hasWhatsAppSent = preReservedAd?.whatsappReminderSentAt;
+                  const formattedSentDate = hasWhatsAppSent ? new Date(preReservedAd.whatsappReminderSentAt).toLocaleDateString() : '';
+                  const whatsappCount = preReservedAd?.whatsappRemindersCount || 0;
+                  return (
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <Phone size={12} className="text-gray-400 shrink-0" />
+                        <span>{customer.whatsapp}</span>
+                      </div>
+                      {hasWhatsAppSent && (
+                        <span className="inline-flex items-center gap-1 text-[9px] font-bold text-emerald-600 bg-emerald-50 px-1 py-0.5 rounded border border-emerald-100 shrink-0 animate-fade-in">
+                          <Phone size={8} className="text-emerald-500 fill-emerald-50" />
+                          <span>{formattedSentDate}</span>
+                          {whatsappCount > 0 && <span className="text-[8px] bg-emerald-100 text-emerald-800 px-1 rounded ml-0.5">{whatsappCount}</span>}
+                        </span>
+                      )}
+                    </div>
+                  );
+                })()}
                 {activeState === 'pre-reserved' ? (
                   (() => {
                     const preReservedAd = getCustomerPreReservedAd(customer);
@@ -839,13 +1070,42 @@ const CustomersList = ({ onSelectPage }) => {
               )}
               {activeState === 'pre-reserved' && (
                 <div className="flex gap-2 justify-end border-t border-gray-100 pt-3 mt-1">
-                  <button
-                    onClick={() => handleReminderClick(customer)}
-                    className="flex-1 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold py-2 px-3 rounded-lg transition-colors flex items-center justify-center gap-1 shadow-sm cursor-pointer"
-                  >
-                    <Bell size={14} />
-                    {t('send_reminder') || 'Send Reminder'}
-                  </button>
+                  <div className="flex-1 flex flex-col items-center">
+                    <button
+                      onClick={() => handleReminderClick(customer)}
+                      className="w-full bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold py-2 px-3 rounded-lg transition-colors flex items-center justify-center gap-1 shadow-sm cursor-pointer"
+                    >
+                      <Bell size={14} />
+                      {t('send_reminder') || 'Send Reminder'}
+                    </button>
+                    {(() => {
+                      const preReservedAd = getCustomerPreReservedAd(customer);
+                      const hasEmailSent = preReservedAd?.emailReminderSentAt;
+                      const hasWhatsAppSent = preReservedAd?.whatsappReminderSentAt;
+                      const emailCount = preReservedAd?.emailRemindersCount || 0;
+                      const whatsappCount = preReservedAd?.whatsappRemindersCount || 0;
+                      return (
+                        <div className="flex flex-col items-center gap-0.5 mt-1">
+                          {hasEmailSent && (
+                            <div className="flex items-center gap-1 text-[10px] font-bold text-emerald-600 animate-fade-in" title={`Email reminder sent on ${new Date(preReservedAd.emailReminderSentAt).toLocaleDateString()}`}>
+                              <CheckCircle size={12} className="text-emerald-500 fill-emerald-50 shrink-0" />
+                              <Mail size={12} className="text-emerald-500 shrink-0" />
+                              <span>{new Date(preReservedAd.emailReminderSentAt).toLocaleDateString()}</span>
+                              {emailCount > 0 && <span className="text-[9px] bg-emerald-100 text-emerald-800 px-1 rounded ml-0.5">{emailCount}</span>}
+                            </div>
+                          )}
+                          {hasWhatsAppSent && (
+                            <div className="flex items-center gap-1 text-[10px] font-bold text-emerald-600 animate-fade-in" title={`WhatsApp reminder sent on ${new Date(preReservedAd.whatsappReminderSentAt).toLocaleDateString()}`}>
+                              <CheckCircle size={12} className="text-emerald-500 fill-emerald-50 shrink-0" />
+                              <Phone size={12} className="text-emerald-500 shrink-0" />
+                              <span>{new Date(preReservedAd.whatsappReminderSentAt).toLocaleDateString()}</span>
+                              {whatsappCount > 0 && <span className="text-[9px] bg-emerald-100 text-emerald-800 px-1 rounded ml-0.5">{whatsappCount}</span>}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
+                  </div>
                   {(() => {
                     const preReservedAd = getCustomerPreReservedAd(customer);
                     if (preReservedAd) {
@@ -867,8 +1127,8 @@ const CustomersList = ({ onSelectPage }) => {
                 </div>
               )}
             </div>
-          ))}
-          {filteredCustomers.length === 0 && (
+          ); })}
+          {displayItems.length === 0 && (
             <div className="bg-white rounded-xl border border-gray-100 p-8 text-center text-gray-500">
               {t('no_customers')}
             </div>
@@ -1014,45 +1274,78 @@ const CustomersList = ({ onSelectPage }) => {
 
             <div className="flex flex-col gap-3">
               {/* Send Email Button */}
-              <button
-                onClick={handleSendEmailReminder}
-                disabled={!reminderCustomer.email || emailReminderStatus.sending}
-                className={`w-full py-2.5 px-4 rounded-xl border font-bold text-sm transition-colors flex items-center justify-center gap-2 cursor-pointer ${
-                  emailReminderStatus.success
-                    ? 'bg-green-50 text-green-700 border-green-200'
-                    : 'bg-blue-600 hover:bg-blue-700 text-white border-blue-600 disabled:opacity-50 disabled:bg-gray-100 disabled:text-gray-400 disabled:border-gray-200'
-                }`}
-              >
-                <Mail size={16} />
-                {emailReminderStatus.success
-                  ? (language === 'es' ? '¡Recordatorio por Correo Enviado!' : 'Email Reminder Sent!')
-                  : emailReminderStatus.sending
-                    ? (language === 'es' ? 'Enviando...' : 'Sending...')
-                    : (t('email_reminder') || 'Send Email Reminder')}
-              </button>
+              <div className="flex flex-col gap-1 w-full">
+                <button
+                  onClick={handleSendEmailReminder}
+                  disabled={!reminderCustomer.email || emailReminderStatus.sending}
+                  className={`w-full py-2.5 px-4 rounded-xl border font-bold text-sm transition-colors flex items-center justify-center gap-2 cursor-pointer ${
+                    emailReminderStatus.success
+                      ? 'bg-green-50 text-green-700 border-green-200'
+                      : 'bg-blue-600 hover:bg-blue-700 text-white border-blue-600 disabled:opacity-50 disabled:bg-gray-100 disabled:text-gray-400 disabled:border-gray-200'
+                  }`}
+                >
+                  <Mail size={16} />
+                  {emailReminderStatus.success
+                    ? (language === 'es' ? '¡Recordatorio por Correo Enviado!' : 'Email Reminder Sent!')
+                    : emailReminderStatus.sending
+                      ? (language === 'es' ? 'Enviando...' : 'Sending...')
+                      : (t('email_reminder') || 'Send Email Reminder')}
+                </button>
+                {(() => {
+                  const preReservedAd = getCustomerPreReservedAd(reminderCustomer);
+                  const hasEmailSent = preReservedAd?.emailReminderSentAt;
+                  if (hasEmailSent && !emailReminderStatus.success) {
+                    const dateStr = new Date(preReservedAd.emailReminderSentAt).toLocaleDateString();
+                    return (
+                      <div className="flex items-center gap-1.5 text-xs text-emerald-600 font-semibold px-2 mt-0.5 justify-center animate-fade-in">
+                        <Mail size={12} className="text-emerald-500 fill-emerald-50 shrink-0" />
+                        <span>{language === 'es' ? `Último enviado: ${dateStr}` : `Last sent: ${dateStr}`}</span>
+                      </div>
+                    );
+                  }
+                  return null;
+                })()}
+              </div>
 
               {/* Send WhatsApp Button */}
               {(() => {
                 const preReservedAd = getCustomerPreReservedAd(reminderCustomer);
                 const url = getWhatsAppReminderUrl(reminderCustomer, preReservedAd);
+                const hasWhatsAppSent = preReservedAd?.whatsappReminderSentAt;
+                const dateStr = hasWhatsAppSent ? new Date(preReservedAd.whatsappReminderSentAt).toLocaleDateString() : '';
                 return (
-                  <a
-                    href={url}
-                    target="_blank"
-                    rel="noreferrer"
-                    onClick={() => {
-                      setReminderModalOpen(false);
-                      setReminderCustomer(null);
-                    }}
-                    className={`w-full py-2.5 px-4 rounded-xl font-bold text-sm text-center transition-colors flex items-center justify-center gap-2 border cursor-pointer ${
-                      !reminderCustomer.whatsapp
-                        ? 'bg-gray-100 text-gray-400 border-gray-200 pointer-events-none'
-                        : 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-650'
-                    }`}
-                  >
-                    <Phone size={16} />
-                    {t('whatsapp_reminder') || 'Send WhatsApp Reminder'}
-                  </a>
+                  <div className="flex flex-col gap-1 w-full">
+                    <a
+                      href={url}
+                      target="_blank"
+                      rel="noreferrer"
+                      onClick={async () => {
+                        if (preReservedAd) {
+                          await trackWhatsAppReminderSent(
+                            preReservedAd.id,
+                            preReservedAd.page_number,
+                            preReservedAd._fromOrder === true
+                          );
+                        }
+                        setReminderModalOpen(false);
+                        setReminderCustomer(null);
+                      }}
+                      className={`w-full py-2.5 px-4 rounded-xl font-bold text-sm text-center transition-colors flex items-center justify-center gap-2 border cursor-pointer ${
+                        !reminderCustomer.whatsapp
+                          ? 'bg-gray-100 text-gray-400 border-gray-200 pointer-events-none'
+                          : 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-650'
+                      }`}
+                    >
+                      <Phone size={16} />
+                      {t('whatsapp_reminder') || 'Send WhatsApp Reminder'}
+                    </a>
+                    {hasWhatsAppSent && (
+                      <div className="flex items-center gap-1.5 text-xs text-emerald-600 font-semibold px-2 mt-0.5 justify-center animate-fade-in">
+                        <Phone size={12} className="text-emerald-500 fill-emerald-50 shrink-0" />
+                        <span>{language === 'es' ? `Último enviado: ${dateStr}` : `Last sent: ${dateStr}`}</span>
+                      </div>
+                    )}
+                  </div>
                 );
               })()}
             </div>

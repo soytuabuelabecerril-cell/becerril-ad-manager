@@ -6,16 +6,50 @@ import ClientsList from './components/ClientsList';
 import InvoicesList from './components/InvoicesList';
 import ReservationPanel from './components/ReservationPanel';
 import FinancialDashboard from './components/FinancialDashboard';
+import SettingsPanel from './components/SettingsPanel';
 import { BookOpen, MapPin, Users, Settings, Receipt, Clock, RefreshCcw, Globe, Menu, X, TrendingUp, FileText, LogOut } from 'lucide-react';
 import { useLanguage } from './context/LanguageContext';
 import { useDatabase } from './context/DatabaseContext';
 import { supabase } from './lib/supabase';
 import Login from './components/Login';
+import PublicConfirmPortal from './components/PublicConfirmPortal';
 
 function App() {
+  const urlParams = new URLSearchParams(window.location.search);
+  const confirmReservationId = urlParams.get('confirm_reservation_id');
+  const confirmReservationType = urlParams.get('type') || 'ad';
+
+  if (confirmReservationId) {
+    return <PublicConfirmPortal reservationId={confirmReservationId} type={confirmReservationType} />;
+  }
+
   const { t, language, setLanguage } = useLanguage();
   const { session, loading, pages } = useDatabase();
-  const [selectedPage, setSelectedPage] = useState(null);
+  const [selectedPageRaw, setSelectedPageRaw] = useState(() => {
+    const saved = sessionStorage.getItem('selectedPage');
+    return saved ? JSON.parse(saved) : null;
+  });
+
+  const setSelectedPage = (page) => {
+    setSelectedPageRaw(page);
+    if (page) {
+      sessionStorage.setItem('selectedPage', JSON.stringify(page));
+    } else {
+      sessionStorage.removeItem('selectedPage');
+      sessionStorage.removeItem('orderConfirmModalOpen');
+      sessionStorage.removeItem('orderDetails');
+      sessionStorage.removeItem('invoiceModalOpen');
+      sessionStorage.removeItem('invoiceDetails');
+      sessionStorage.removeItem('reciboModalOpen');
+      sessionStorage.removeItem('reciboDetails');
+      sessionStorage.removeItem('efectivoPreviewOpen');
+    }
+  };
+
+  const selectedPage = selectedPageRaw && pages
+    ? pages.find(p => p.page_number === selectedPageRaw.page_number) || selectedPageRaw
+    : selectedPageRaw;
+
   const [locationData, setLocationData] = useState(null);
   const [currentTab, setCurrentTab] = useState('magazine');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -45,6 +79,8 @@ function App() {
         return t('nav_invoices');
       case 'financial':
         return t('nav_financial');
+      case 'settings':
+        return t('nav_settings');
       default:
         return t('header_dashboard');
     }
@@ -132,7 +168,10 @@ function App() {
           >
             <TrendingUp size={20} /> {t('nav_financial')}
           </button>
-          <button className="w-full flex items-center gap-3 px-3 py-2 hover:bg-slate-800 rounded-lg text-slate-300 mb-2">
+          <button 
+            onClick={() => handleTabChange('settings')}
+            className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${currentTab === 'settings' ? 'bg-blue-600 text-white' : 'hover:bg-slate-800 text-slate-300'} mb-2`}
+          >
             <Settings size={20} /> {t('nav_settings')}
           </button>
           <button 
@@ -175,6 +214,7 @@ function App() {
           {currentTab === 'clients' && <ClientsList />}
           {currentTab === 'invoices' && <InvoicesList onSelectPage={setSelectedPage} />}
           {currentTab === 'financial' && <FinancialDashboard />}
+          {currentTab === 'settings' && <SettingsPanel />}
           
           {currentTab === 'magazine' && (
             <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">

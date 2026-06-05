@@ -1,268 +1,39 @@
-import express from 'express';
-import cors from 'cors';
+// api/cron-reminders.js
+import pkg from 'pg';
+const { Client } = pkg;
 import nodemailer from 'nodemailer';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import pkg from 'pg';
-const { Client } = pkg;
-import { createClient } from '@supabase/supabase-js';
 
-
-// Load environment variables from the root .env file
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.join(__dirname, '..', '.env') });
 
-const app = express();
-const PORT = process.env.PORT || 3001;
+const connectionString = 'postgresql://postgres:pBX5dYZR6XcYvJ1EHvzA@db.dfjxmnsozvmfhojnuikx.supabase.co:5432/postgres';
 
-// Middleware
-app.use(cors());
-app.use(express.json({ limit: '10mb' }));
+export default async function handler(req, res) {
+  // Enable CORS
+  res.setHeader('Access-Control-Allow-Credentials', true);
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
-// Set up Nodemailer transporter for Gmail
-const transporter = nodemailer.createTransport({
-  service: 'gmail',
-  auth: {
-    user: process.env.GMAIL_USER,
-    pass: process.env.GMAIL_APP_PASSWORD,
-  },
-});
-
-app.post('/api/send-email', async (req, res) => {
-  const { to, subject, text, html, attachmentBase64, attachmentName, background } = req.body;
-
-  if (!to || !subject || (!text && !html)) {
-    return res.status(400).json({ error: 'Missing required email fields (to, subject, text/html)' });
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
   }
 
-  const mailOptions = {
-    from: process.env.GMAIL_USER,
-    to,
-    subject,
-    text,
-    html
-  };
-
-  if (attachmentBase64 && attachmentName) {
-    // Data URI format: data:image/png;base64,iVBORw0KGgo...
-    // Nodemailer can handle data URIs directly using the `path` property
-    mailOptions.attachments = [
-      {
-        filename: attachmentName,
-        path: attachmentBase64
-      }
-    ];
-  }
-
-  if (background) {
-    // Respond immediately to the client
-    res.status(200).json({ success: true, message: 'Email sending initiated in background' });
-
-    // Send the email asynchronously in the background
-    transporter.sendMail(mailOptions)
-      .then(info => {
-        console.log('Email sent in background:', info.messageId);
-      })
-      .catch(error => {
-        console.error('Error sending email in background:', error);
-      });
-  } else {
-    try {
-      const info = await transporter.sendMail(mailOptions);
-      console.log('Email sent:', info.messageId);
-      res.status(200).json({ success: true, messageId: info.messageId });
-    } catch (error) {
-      console.error('Error sending email:', error);
-      res.status(500).json({ error: 'Failed to send email', details: error.message });
-    }
-  }
-});
-
-app.post('/api/upload-pdf', async (req, res) => {
-  const { pdfBase64, fileName } = req.body;
-
-  if (!pdfBase64 || !fileName) {
-    return res.status(400).json({ error: 'Missing required fields (pdfBase64, fileName)' });
-  }
-
-  const supabaseUrl = process.env.VITE_SUPABASE_URL;
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-  if (!supabaseUrl || !serviceKey) {
-    return res.status(500).json({ error: 'Server configuration error: Supabase keys not set' });
-  }
-
-  try {
-    const supabase = createClient(supabaseUrl, serviceKey);
-    const base64Data = pdfBase64.replace(/^data:application\/pdf;base64,/, '');
-    const buffer = Buffer.from(base64Data, 'base64');
-
-    const { data, error } = await supabase.storage
-      .from('invoices')
-      .upload(fileName, buffer, {
-        contentType: 'application/pdf',
-        upsert: true
-      });
-
-    if (error) {
-      console.error('Supabase storage upload error:', error);
-      return res.status(500).json({ error: 'Failed to upload to storage', details: error.message });
-    }
-
-    const { data: { publicUrl } } = supabase.storage.from('invoices').getPublicUrl(fileName);
-    res.status(200).json({ success: true, url: publicUrl });
-  } catch (error) {
-    console.error('Error uploading PDF:', error);
-    res.status(500).json({ error: 'Internal server error', details: error.message });
-  }
-});
-
-app.all('/api/run-migration', async (req, res) => {
-  const connectionString = 'postgresql://postgres:pBX5dYZR6XcYvJ1EHvzA@db.dfjxmnsozvmfhojnuikx.supabase.co:5432/postgres';
   const client = new Client({
     connectionString,
     ssl: { rejectUnauthorized: false }
   });
 
-  try {
-    await client.connect();
-    
-    await client.query(`
-      ALTER TABLE public.ad_reservations 
-      ADD COLUMN IF NOT EXISTS reminder_sent_at TIMESTAMP WITH TIME ZONE;
-    `);
-
-    await client.query(`
-      ALTER TABLE public.ad_reservations 
-      ADD COLUMN IF NOT EXISTS email_reminder_sent_at TIMESTAMP WITH TIME ZONE;
-    `);
-
-    await client.query(`
-      ALTER TABLE public.ad_reservations 
-      ADD COLUMN IF NOT EXISTS whatsapp_reminder_sent_at TIMESTAMP WITH TIME ZONE;
-    `);
-
-    await client.query(`
-      ALTER TABLE public.ad_reservations 
-      ADD COLUMN IF NOT EXISTS email_reminders_count INT DEFAULT 0;
-    `);
-
-    await client.query(`
-      ALTER TABLE public.ad_reservations 
-      ADD COLUMN IF NOT EXISTS whatsapp_reminders_count INT DEFAULT 0;
-    `);
-
-    await client.query(`
-      ALTER TABLE public.orders 
-      ADD COLUMN IF NOT EXISTS reminder_sent_at TIMESTAMP WITH TIME ZONE;
-    `);
-
-    await client.query(`
-      ALTER TABLE public.orders 
-      ADD COLUMN IF NOT EXISTS email_reminder_sent_at TIMESTAMP WITH TIME ZONE;
-    `);
-
-    await client.query(`
-      ALTER TABLE public.orders 
-      ADD COLUMN IF NOT EXISTS whatsapp_reminder_sent_at TIMESTAMP WITH TIME ZONE;
-    `);
-
-    await client.query(`
-      ALTER TABLE public.orders 
-      ADD COLUMN IF NOT EXISTS email_reminders_count INT DEFAULT 0;
-    `);
-
-    await client.query(`
-      ALTER TABLE public.orders 
-      ADD COLUMN IF NOT EXISTS whatsapp_reminders_count INT DEFAULT 0;
-    `);
-
-    await client.query(`
-      ALTER TABLE public.ad_reservations 
-      ADD COLUMN IF NOT EXISTS last_auto_reminder_day INT DEFAULT 0;
-    `);
-
-    await client.query(`
-      ALTER TABLE public.ad_reservations 
-      ADD COLUMN IF NOT EXISTS prolonged_count INT DEFAULT 0;
-    `);
-
-    await client.query(`
-      ALTER TABLE public.orders 
-      ADD COLUMN IF NOT EXISTS last_auto_reminder_day INT DEFAULT 0;
-    `);
-
-    await client.query(`
-      ALTER TABLE public.orders 
-      ADD COLUMN IF NOT EXISTS prolonged_count INT DEFAULT 0;
-    `);
-
-    await client.query(`
-      ALTER TABLE public.invoices 
-      ADD COLUMN IF NOT EXISTS email_sent_at TIMESTAMP WITH TIME ZONE;
-    `);
-
-    await client.query(`
-      ALTER TABLE public.recibos 
-      ADD COLUMN IF NOT EXISTS email_sent_at TIMESTAMP WITH TIME ZONE;
-    `);
-
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS public.communication_templates (
-          id VARCHAR(50) PRIMARY KEY,
-          subject VARCHAR(255),
-          body TEXT,
-          updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-      );
-    `);
-
-    await client.query(`
-      ALTER TABLE public.communication_templates ENABLE ROW LEVEL SECURITY;
-    `).catch(() => {});
-
-    await client.query(`
-      DROP POLICY IF EXISTS "Enable all actions for authenticated users on communication_templates" ON public.communication_templates;
-      CREATE POLICY "Enable all actions for authenticated users on communication_templates" 
-      ON public.communication_templates FOR ALL TO authenticated USING (true) WITH CHECK (true);
-    `).catch(() => {});
-
-    await client.query(`
-      INSERT INTO public.communication_templates (id, subject, body) VALUES
-      ('invoice_email', 'Factura Revista de Fiestas Patronales Becerril de la Sierra 2026: Nro. {id}', 'Hola,\n\nAdjuntamos la confirmación de pago y factura correspondiente a su anuncio en la Revista de Fiestas Patronales Becerril de la Sierra 2026:\n\n- Número de Factura: {id}\n- Producto: {productName}\n- Página Asignada: {assignedPage}\n- Método de Pago: Efectivo\n- Precio Base: {price}€\n{designPrice}- Subtotal: {subtotal}€\n- IVA (21%): {vat}€\n- Total Pagado: {total}€\n\nGracias,\nEquipo de Coordinación Publicitaria'),
-
-      ('invoice_whatsapp', '', 'Confirmación de pago y Factura Nro. {id} – {productAbbreviation} – {customerName} – {total}€'),
-
-      ('recibo_email', 'Recibo de Pago Revista de Fiestas Patronales Becerril de la Sierra 2026: Pág. {assignedPage}', 'Hola,\n\nConfirmamos la reserva y el recibo de pago en efectivo para su anuncio en la Revista de Fiestas Patronales Becerril de la Sierra 2026:\n\n- Producto: {productName}\n- Página Asignada: {assignedPage}\n- Precio Base: {price}€\n{designPrice}- Recibo: {total}€\n\nGracias,\nEquipo de Coordinación Publicitaria'),
-
-      ('recibo_whatsapp', '', 'Recibí, pago a cuenta – {productAbbreviation} – {customerName} – {total}€'),
-
-      ('order_reservation_email', 'Confirmación de Reserva Revista de Fiestas Patronales Becerril de la Sierra 2026: Pág. {assignedPage}', 'Hola,\n\nConfirmamos la reserva del espacio publicitario en la Revista de Fiestas Patronales Becerril de la Sierra 2026:\n\n- Producto: {productName}\n- Página Asignada: {assignedPage}\n- Método de Pago: {paymentMethod}\n- Comentarios de Arte/Diseño: {artworkComment}\n\nLa factura correspondiente se generará una vez confirmado el pago.\n\nGracias,\nEquipo de Coordinación Publicitaria'),
-
-      ('order_reservation_whatsapp', '', 'Confirmación de Reserva - Revista de Fiestas Patronales Becerril de la Sierra 2026:\n\n- Cliente: {customerName}\n- Producto: {productName}\n- Pág. Asignada: {assignedPage}\n- Subtotal: {subtotal}€\n- Total (con IVA): {total}€\n\nGracias,\nEquipo de Coordinación Publicitaria'),
-
-      ('order_prereservation_email', 'Pre-Reserva Revista de Fiestas Patronales Becerril de la Sierra 2026: Pág. {assignedPage}', 'Hola,\n\nConfirmamos la pre-reserva (retención de 1 semana) del espacio publicitario en la Revista de Fiestas Patronales Becerril de la Sierra 2026:\n\n- Producto: {productName}\n- Página Asignada: {assignedPage}\n- Comentarios de Arte/Diseño: {artworkComment}\n\nNota: Esta reserva es temporal y vencerá en una semana si no se confirma el pago.\n\nGracias,\nEquipo de Coordinación Publicitaria'),
-
-      ('order_prereservation_whatsapp', '', 'Confirmación de Pre-reserva (temporal 1 semana) - Revista de Fiestas Patronales Becerril de la Sierra 2026:\n\n- Cliente: {customerName}\n- Producto: {productName}\n- Pág. Asignada: {assignedPage}\n- Subtotal: {subtotal}€\n- Total (con IVA): {total}€\n\nGracias,\nEquipo de Coordinación Publicitaria')
-      ON CONFLICT (id) DO NOTHING;
-    `);
-
-    res.status(200).json({ success: true, message: 'Database migrated successfully!' });
-  } catch (err) {
-    console.error('Migration failed:', err);
-    res.status(500).json({ error: 'Migration failed', details: err.message });
-  } finally {
-    try {
-      await client.end();
-    } catch (e) {}
-  }
-});
-
-app.all('/api/cron-reminders', async (req, res) => {
-  const client = new Client({
-    connectionString,
-    ssl: { rejectUnauthorized: false }
+  const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+      user: process.env.GMAIL_USER,
+      pass: process.env.GMAIL_APP_PASSWORD,
+    },
   });
 
   const appUrl = process.env.VITE_APP_URL || req.headers.referer || 'http://localhost:5173';
@@ -379,6 +150,7 @@ app.all('/api/cron-reminders', async (req, res) => {
       `;
     };
 
+    // Helper function to send email
     const sendMail = async (to, subject, text, html) => {
       try {
         await transporter.sendMail({
@@ -395,7 +167,7 @@ app.all('/api/cron-reminders', async (req, res) => {
       }
     };
 
-    // Process ad_reservations
+    // 1. Process ad_reservations
     for (const row of adRes.rows) {
       const createdDate = new Date(row.created_at || now);
       const d1 = new Date(createdDate);
@@ -463,7 +235,7 @@ app.all('/api/cron-reminders', async (req, res) => {
       }
     }
 
-    // Process orders
+    // 2. Process orders
     for (const row of orderRes.rows) {
       const createdDate = new Date(row.created_at || now);
       const d1 = new Date(createdDate);
@@ -529,19 +301,18 @@ app.all('/api/cron-reminders', async (req, res) => {
           await sendMail(email, subject, text, html);
         }
       }
+    }ail(email, subject, text);
+        }
+      }
     }
 
-    res.status(200).json({ success: true, message: 'Cron processed successfully', emailsSent });
+    return res.status(200).json({ success: true, message: 'Cron processed successfully', emailsSent });
   } catch (err) {
     console.error('Cron job execution failed:', err);
-    res.status(500).json({ error: 'Cron processing failed', details: err.message });
+    return res.status(500).json({ error: 'Cron processing failed', details: err.message });
   } finally {
     try {
       await client.end();
     } catch (e) {}
   }
-});
-
-app.listen(PORT, () => {
-  console.log(`Email backend server running on http://localhost:${PORT}`);
-});
+}

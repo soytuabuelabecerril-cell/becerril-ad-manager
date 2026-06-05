@@ -24,3 +24,8 @@ dist-ssr
 *.sw?
 
 .vercel
+
+# Supabase temp directory
+supabase/.temp/
+.temp/
+

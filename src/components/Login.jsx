@@ -64,7 +64,7 @@ const Login = () => {
             <BookOpen className="text-white w-8 h-8" />
           </div>
           <h1 className="text-3xl font-extrabold text-white tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white via-slate-100 to-slate-400">
-            Revista Becerril
+            Revista de Fiestas Patronales Becerril de la Sierra 2026
           </h1>
           <p className="text-slate-400 text-sm mt-1">
             {isEs ? 'Plataforma de Gestión de Anuncios' : 'Ad Management Platform'}
@@ -158,7 +158,7 @@ const Login = () => {
 
         {/* Footer info */}
         <div className="text-center mt-6 text-xs text-slate-500">
-          &copy; {new Date().getFullYear()} Revista Becerril. {isEs ? 'Todos los derechos reservados.' : 'All rights reserved.'}
+          &copy; {new Date().getFullYear()} Revista de Fiestas Patronales Becerril de la Sierra 2026. {isEs ? 'Todos los derechos reservados.' : 'All rights reserved.'}
         </div>
 
       </div>
