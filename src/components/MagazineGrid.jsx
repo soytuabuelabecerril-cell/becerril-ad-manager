@@ -1,8 +1,8 @@
-import React, { useState, useRef } from 'react';
+import { useState, useRef } from 'react';
 import { useDatabase } from '../context/DatabaseContext';
 import { fallbackCustomers } from '../utils/fallbackCustomers';
 import { products } from '../utils/products';
-import { Plus, GripVertical, MousePointer, Check, AlertTriangle, MoveVertical } from 'lucide-react';
+import { Plus, GripVertical, MousePointer, Check, AlertTriangle } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
 
 const MagazineGrid = ({ onPageClick }) => {
@@ -57,12 +57,12 @@ const MagazineGrid = ({ onPageClick }) => {
     return classes;
   };
 
-  const getBackgroundStyle = (page) => {
-    if (!page.ads || page.ads.length === 0) return {};
-    const red = '#ef4444';
-    const white = '#f3f4f6';
+  const getPageSlots = (page) => {
+    if (!page.ads || page.ads.length === 0) {
+      return { top: null, middle: null, bottom: null };
+    }
     const filledSlots = new Set();
-    const slotToAdMap = {};
+    const slotToAdMap = { top: null, middle: null, bottom: null };
     let hasAny1 = false;
 
     page.ads.forEach(ad => {
@@ -85,6 +85,19 @@ const MagazineGrid = ({ onPageClick }) => {
       else if (!filledSlots.has('bottom')) { filledSlots.add('bottom'); slotToAdMap['bottom'] = ad; }
     }
 
+    return {
+      top: slotToAdMap['top'] || null,
+      middle: slotToAdMap['middle'] || null,
+      bottom: slotToAdMap['bottom'] || null
+    };
+  };
+
+  const getBackgroundStyle = (page) => {
+    if (!page.ads || page.ads.length === 0) return {};
+    const { top: adTop, middle: adMid, bottom: adBot } = getPageSlots(page);
+    const red = '#ef4444';
+    const white = '#f3f4f6';
+
     const getAdColor = (ad) => {
       if (!ad) return white;
       if (ad.isPaid) return '#22c55e';
@@ -93,9 +106,9 @@ const MagazineGrid = ({ onPageClick }) => {
       return red;
     };
 
-    const top = filledSlots.has('top') ? getAdColor(slotToAdMap['top']) : white;
-    const mid = filledSlots.has('middle') ? getAdColor(slotToAdMap['middle']) : white;
-    const bot = filledSlots.has('bottom') ? getAdColor(slotToAdMap['bottom']) : white;
+    const top = getAdColor(adTop);
+    const mid = getAdColor(adMid);
+    const bot = getAdColor(adBot);
 
     if (top === mid && mid === bot && top !== white) return { background: top };
     return {
@@ -148,6 +161,7 @@ const MagazineGrid = ({ onPageClick }) => {
         .replace('{b}', targetPageNum);
       showSwapStatus('success', msg);
     } catch (err) {
+      console.error('Failed to reorder pages:', err);
       showSwapStatus('error', t('magazine_swap_error'));
     }
   };
@@ -267,6 +281,24 @@ const MagazineGrid = ({ onPageClick }) => {
 
           const hasExpired = page.ads && page.ads.some(ad => ad.isPreReserved && ad.expires_at && new Date() > new Date(ad.expires_at));
 
+          // Generate blocks for the visual slots
+          const { top: adTop, middle: adMid, bottom: adBot } = getPageSlots(page);
+          const blocks = [];
+
+          if (adTop && adTop === adMid && adMid === adBot) {
+            blocks.push({ height: '100%', ad: adTop });
+          } else if (adTop && adTop === adMid) {
+            blocks.push({ height: '66.667%', ad: adTop });
+            blocks.push({ height: '33.333%', ad: adBot });
+          } else if (adMid && adMid === adBot) {
+            blocks.push({ height: '33.333%', ad: adTop });
+            blocks.push({ height: '66.667%', ad: adMid });
+          } else {
+            blocks.push({ height: '33.333%', ad: adTop });
+            blocks.push({ height: '33.333%', ad: adMid });
+            blocks.push({ height: '33.333%', ad: adBot });
+          }
+
           return (
             <button
               key={page.page_number}
@@ -307,7 +339,15 @@ const MagazineGrid = ({ onPageClick }) => {
                 </div>
               )}
 
-              <span className={`text-lg font-bold z-10 pointer-events-none ${isDragging ? '' : 'mix-blend-multiply'}`}>
+              {/* Page Number: Centered watermark when occupied, normal layout when empty */}
+              <span className={`
+                pointer-events-none select-none transition-all duration-200
+                ${page.ads && page.ads.length > 0 
+                  ? 'absolute text-2xl font-black z-0 opacity-15' 
+                  : 'text-lg font-bold z-10'
+                } 
+                ${isDragging ? '' : 'mix-blend-multiply'}`}
+              >
                 {page.page_number}
               </span>
 
@@ -317,21 +357,34 @@ const MagazineGrid = ({ onPageClick }) => {
                 </div>
               )}
 
+              {/* Specific Slot Overlay for Customer Names */}
               {page.ads && page.ads.length > 0 && (
-                <div className="flex flex-col items-center w-full px-1 z-10 text-[9px] mt-1 text-center pointer-events-none">
-                  {page.ads.map((ad, idx) => {
-                    let cName = ad.customer_name;
-                    if (!cName && ad.customer_id !== 'legacy') {
-                      const c = fallbackCustomers.find(cust => cust.id === ad.customer_id || cust.nif === ad.customer_id);
+                <div className="absolute inset-0 flex flex-col z-10 pointer-events-none w-full h-full">
+                  {blocks.map((block, idx) => {
+                    if (!block.ad) {
+                      return <div key={idx} style={{ height: block.height }} className="w-full" />;
+                    }
+
+                    let cName = block.ad.customer_name;
+                    if (!cName && block.ad.customer_id !== 'legacy') {
+                      const c = fallbackCustomers.find(cust => cust.id === block.ad.customer_id || cust.nif === block.ad.customer_id);
                       cName = c ? (c.commercial_name || c.fiscal_name) : 'Unknown';
                     } else if (!cName) {
                       cName = t('status_reserved');
                     }
 
                     return (
-                      <div key={idx} className="w-full flex flex-col items-center border-t border-black/10 pt-0.5 mt-0.5 first:border-0 first:pt-0 first:mt-0 overflow-hidden mix-blend-multiply">
-                        <span className="font-bold truncate w-full leading-tight">{cName}</span>
-                        <span className="truncate w-full leading-tight opacity-80">{ad.ad_type}</span>
+                      <div 
+                        key={idx} 
+                        style={{ height: block.height }} 
+                        className="w-full flex flex-col justify-center items-center px-1 overflow-hidden border-b border-black/5 last:border-b-0"
+                      >
+                        <span className="font-extrabold truncate w-full text-[8px] sm:text-[9px] leading-tight text-black select-none mix-blend-multiply">
+                          {cName}
+                        </span>
+                        <span className="truncate w-full text-[7px] sm:text-[8px] leading-none opacity-80 text-black/85 select-none mix-blend-multiply mt-0.5">
+                          {block.ad.ad_type}
+                        </span>
                       </div>
                     );
                   })}
