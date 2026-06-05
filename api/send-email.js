@@ -26,43 +26,62 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'Missing required email fields (to, subject, text/html)' });
   }
 
+  const auth = {
+    user: process.env.GMAIL_USER,
+    pass: process.env.GMAIL_APP_PASSWORD,
+  };
+
+  const mailOptions = {
+    from: process.env.GMAIL_USER,
+    to,
+    subject,
+    text,
+    html
+  };
+
+  if (attachmentBase64 && attachmentName) {
+    mailOptions.attachments = [
+      {
+        filename: attachmentName,
+        path: attachmentBase64
+      }
+    ];
+  }
+
   try {
     const transporter = nodemailer.createTransport({
       host: 'smtp.gmail.com',
       port: 587,
       secure: false, // true for port 465, false for other ports
-      auth: {
-        user: process.env.GMAIL_USER,
-        pass: process.env.GMAIL_APP_PASSWORD,
-      },
-      connectionTimeout: 10000, // 10 seconds
-      greetingTimeout: 10000,
-      socketTimeout: 10000,
+      auth,
+      connectionTimeout: 5000, // 5 seconds
+      greetingTimeout: 5000,
+      socketTimeout: 5000,
     });
 
-    const mailOptions = {
-      from: process.env.GMAIL_USER,
-      to,
-      subject,
-      text,
-      html
-    };
-
-    if (attachmentBase64 && attachmentName) {
-      mailOptions.attachments = [
-        {
-          filename: attachmentName,
-          path: attachmentBase64
-        }
-      ];
-    }
-
     const info = await transporter.sendMail(mailOptions);
-    console.log('Email sent:', info.messageId);
+    console.log('Email sent via port 587:', info.messageId);
     return res.status(200).json({ success: true, messageId: info.messageId });
-  } catch (error) {
-    console.error('Error sending email:', error);
-    return res.status(500).json({ error: 'Failed to send email', details: error.message });
+  } catch (error587) {
+    console.warn('Failed to send email on port 587, retrying on port 465...', error587);
+    try {
+      const transporter465 = nodemailer.createTransport({
+        host: 'smtp.gmail.com',
+        port: 465,
+        secure: true,
+        auth,
+        connectionTimeout: 5000,
+        greetingTimeout: 5000,
+        socketTimeout: 5000,
+      });
+
+      const info = await transporter465.sendMail(mailOptions);
+      console.log('Email sent via port 465:', info.messageId);
+      return res.status(200).json({ success: true, messageId: info.messageId });
+    } catch (error465) {
+      console.error('Error sending email on both ports 587 and 465:', error465);
+      return res.status(500).json({ error: 'Failed to send email', details: error465.message });
+    }
   }
 }
 

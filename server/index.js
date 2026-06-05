@@ -21,19 +21,42 @@ const PORT = process.env.PORT || 3001;
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
-// Set up Nodemailer transporter for Gmail
-const transporter = nodemailer.createTransport({
-  host: 'smtp.gmail.com',
-  port: 587,
-  secure: false, // true for port 465, false for other ports
-  auth: {
+// Helper to send mail with port failover fallback (587 -> 465)
+async function sendMailWithFallback(mailOptions) {
+  const auth = {
     user: process.env.GMAIL_USER,
     pass: process.env.GMAIL_APP_PASSWORD,
-  },
-  connectionTimeout: 10000, // 10 seconds
-  greetingTimeout: 10000,
-  socketTimeout: 10000,
-});
+  };
+
+  try {
+    const transporter = nodemailer.createTransport({
+      host: 'smtp.gmail.com',
+      port: 587,
+      secure: false, // true for port 465, false for other ports
+      auth,
+      connectionTimeout: 5000, // 5 seconds
+      greetingTimeout: 5000,
+      socketTimeout: 5000,
+    });
+    const info = await transporter.sendMail(mailOptions);
+    console.log('Email sent via port 587:', info.messageId);
+    return info;
+  } catch (error587) {
+    console.warn('Failed to send email on port 587, retrying on port 465...', error587.message);
+    const transporter465 = nodemailer.createTransport({
+      host: 'smtp.gmail.com',
+      port: 465,
+      secure: true,
+      auth,
+      connectionTimeout: 5000,
+      greetingTimeout: 5000,
+      socketTimeout: 5000,
+    });
+    const info = await transporter465.sendMail(mailOptions);
+    console.log('Email sent via port 465:', info.messageId);
+    return info;
+  }
+}
 
 app.post('/api/send-email', async (req, res) => {
   const { to, subject, text, html, attachmentBase64, attachmentName, background } = req.body;
@@ -62,11 +85,10 @@ app.post('/api/send-email', async (req, res) => {
   }
 
   try {
-    const info = await transporter.sendMail(mailOptions);
-    console.log('Email sent:', info.messageId);
+    const info = await sendMailWithFallback(mailOptions);
     res.status(200).json({ success: true, messageId: info.messageId });
   } catch (error) {
-    console.error('Error sending email:', error);
+    console.error('Error sending email on both ports:', error);
     res.status(500).json({ error: 'Failed to send email', details: error.message });
   }
 });
@@ -372,7 +394,7 @@ app.all('/api/cron-reminders', async (req, res) => {
 
     const sendMail = async (to, subject, text, html) => {
       try {
-        await transporter.sendMail({
+        await sendMailWithFallback({
           from: process.env.GMAIL_USER,
           to,
           subject,

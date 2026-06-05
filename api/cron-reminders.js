@@ -24,18 +24,37 @@ export default async function handler(req, res) {
     return res.status(200).end();
   }
 
-  const transporter = nodemailer.createTransport({
-    host: 'smtp.gmail.com',
-    port: 587,
-    secure: false, // true for port 465, false for other ports
-    auth: {
+  const sendMailWithFallback = async (mailOptions) => {
+    const auth = {
       user: process.env.GMAIL_USER,
       pass: process.env.GMAIL_APP_PASSWORD,
-    },
-    connectionTimeout: 10000, // 10 seconds
-    greetingTimeout: 10000,
-    socketTimeout: 10000,
-  });
+    };
+
+    try {
+      const transporter = nodemailer.createTransport({
+        host: 'smtp.gmail.com',
+        port: 587,
+        secure: false, // true for port 465, false for other ports
+        auth,
+        connectionTimeout: 5000, // 5 seconds
+        greetingTimeout: 5000,
+        socketTimeout: 5000,
+      });
+      return await transporter.sendMail(mailOptions);
+    } catch (error587) {
+      console.warn('Cron: Failed to send email on port 587, retrying on port 465...', error587.message);
+      const transporter465 = nodemailer.createTransport({
+        host: 'smtp.gmail.com',
+        port: 465,
+        secure: true,
+        auth,
+        connectionTimeout: 5000,
+        greetingTimeout: 5000,
+        socketTimeout: 5000,
+      });
+      return await transporter465.sendMail(mailOptions);
+    }
+  };
 
   const appUrl = process.env.VITE_APP_URL || req.headers.referer || 'http://localhost:5173';
 
@@ -159,7 +178,7 @@ export default async function handler(req, res) {
     // Helper function to send email
     const sendMail = async (to, subject, text, html) => {
       try {
-        await transporter.sendMail({
+        await sendMailWithFallback({
           from: process.env.GMAIL_USER,
           to,
           subject,
