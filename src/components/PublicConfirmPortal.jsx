@@ -63,7 +63,7 @@ const PublicConfirmPortal = ({ reservationId, type }) => {
           // Fetch from ad_reservations
           const { data, error: err } = await supabase
             .from('ad_reservations')
-            .select('*, customers(email)')
+            .select('*')
             .eq('id', reservationId)
             .single();
           if (err || !data) throw new Error('No se encontraron detalles de la pre-reserva.');
@@ -72,10 +72,30 @@ const PublicConfirmPortal = ({ reservationId, type }) => {
             throw new Error('Esta pre-reserva ya ha sido confirmada o procesada.');
           }
 
+          // Fetch customer email separately since there is no schema foreign key relationship
+          let customerEmail = '';
+          if (data.customer_id && data.customer_id !== 'legacy') {
+            const { data: custData } = await supabase
+              .from('customers')
+              .select('email')
+              .eq('id', data.customer_id)
+              .maybeSingle();
+            customerEmail = custData?.email || '';
+          }
+
+          if (!customerEmail && data.customer_name) {
+            const { data: custData } = await supabase
+              .from('customers')
+              .select('email')
+              .ilike('commercial_name', data.customer_name)
+              .maybeSingle();
+            customerEmail = custData?.email || '';
+          }
+
           setAdDetails({
             id: data.id,
             customer_name: data.customer_name,
-            customer_email: data.customers?.email || '',
+            customer_email: customerEmail,
             page_number: data.page_number,
             ad_type: data.ad_type,
             price: data.design_work_price || 0, // Fallback price
