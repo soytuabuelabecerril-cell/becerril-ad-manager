@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useDatabase } from '../context/DatabaseContext';
 import { useLanguage } from '../context/LanguageContext';
 import { formatTemplate, getTemplateVariables } from '../utils/notifications';
-import { Mail, MessageCircle, Save, RotateCcw, FileText, Sparkles, Info, Check, BookOpen, PlusCircle, RefreshCw, AlertTriangle, ChevronRight, Loader, Search } from 'lucide-react';
+import { Mail, MessageCircle, Save, RotateCcw, FileText, Sparkles, Info, Check, BookOpen, PlusCircle, RefreshCw, AlertTriangle, ChevronRight, Loader, Search, Copy, Download } from 'lucide-react';
 
 const DEFAULT_TEMPLATES = {
   invoice_email: {
@@ -68,6 +68,7 @@ const SettingsPanel = () => {
   const [activeChannel, setActiveChannel] = useState('email'); // 'email' | 'whatsapp'
   const [logSearchQuery, setLogSearchQuery] = useState('');
   const [expandedLogId, setExpandedLogId] = useState(null);
+  const [csvCopied, setCsvCopied] = useState(false);
   const [selectedTemplateId, setSelectedTemplateId] = useState('invoice_email');
   
   const [editedSubject, setEditedSubject] = useState('');
@@ -688,7 +689,7 @@ const SettingsPanel = () => {
                 : 'Real-time audit history of all system activities, transactions, and sent email notifications.'}
             </p>
           </div>
-          <div className="flex items-center gap-3 flex-shrink-0">
+          <div className="flex items-center gap-2 flex-shrink-0">
             <span className="text-xs text-slate-400 font-medium">
               {(actionLogs || []).length} {language === 'es' ? 'eventos' : 'events'}
             </span>
@@ -698,6 +699,63 @@ const SettingsPanel = () => {
             >
               <RefreshCw size={13} />
               {language === 'es' ? 'Actualizar' : 'Refresh'}
+            </button>
+            <button
+              onClick={() => {
+                const csv = buildLogCsv((actionLogs || []).filter(log => {
+                  if (!logSearchQuery) return true;
+                  const q = logSearchQuery.toLowerCase();
+                  return (
+                    (log.action_type && log.action_type.toLowerCase().includes(q)) ||
+                    (log.target_id && log.target_id.toLowerCase().includes(q)) ||
+                    (log.customer_name && log.customer_name.toLowerCase().includes(q)) ||
+                    (log.customer_email && log.customer_email.toLowerCase().includes(q)) ||
+                    (log.customer_phone && log.customer_phone.toLowerCase().includes(q)) ||
+                    (log.product_name && log.product_name.toLowerCase().includes(q)) ||
+                    (log.payment_method && log.payment_method.toLowerCase().includes(q)) ||
+                    (log.payment_status && log.payment_status.toLowerCase().includes(q))
+                  );
+                }));
+                navigator.clipboard.writeText(csv).then(() => {
+                  setCsvCopied(true);
+                  setTimeout(() => setCsvCopied(false), 2000);
+                });
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg text-xs font-semibold border border-emerald-200 transition-all active:scale-95 cursor-pointer"
+            >
+              {csvCopied ? <Check size={13} /> : <Copy size={13} />}
+              {csvCopied
+                ? (language === 'es' ? '¡Copiado!' : 'Copied!')
+                : (language === 'es' ? 'Copiar CSV' : 'Copy CSV')}
+            </button>
+            <button
+              onClick={() => {
+                const csv = buildLogCsv((actionLogs || []).filter(log => {
+                  if (!logSearchQuery) return true;
+                  const q = logSearchQuery.toLowerCase();
+                  return (
+                    (log.action_type && log.action_type.toLowerCase().includes(q)) ||
+                    (log.target_id && log.target_id.toLowerCase().includes(q)) ||
+                    (log.customer_name && log.customer_name.toLowerCase().includes(q)) ||
+                    (log.customer_email && log.customer_email.toLowerCase().includes(q)) ||
+                    (log.customer_phone && log.customer_phone.toLowerCase().includes(q)) ||
+                    (log.product_name && log.product_name.toLowerCase().includes(q)) ||
+                    (log.payment_method && log.payment_method.toLowerCase().includes(q)) ||
+                    (log.payment_status && log.payment_status.toLowerCase().includes(q))
+                  );
+                }));
+                const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `becerril_logs_${new Date().toISOString().slice(0,10)}.csv`;
+                a.click();
+                URL.revokeObjectURL(url);
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-lg text-xs font-semibold border border-slate-200 transition-all active:scale-95 cursor-pointer"
+            >
+              <Download size={13} />
+              {language === 'es' ? 'Descargar CSV' : 'Download CSV'}
             </button>
           </div>
         </div>
@@ -915,6 +973,49 @@ function formatDateTime(isoString) {
   } catch (e) {
     return isoString;
   }
+}
+
+function buildLogCsv(rows) {
+  const esc = (v) => {
+    if (v === null || v === undefined) return '';
+    const str = String(v);
+    // Wrap in quotes if it contains commas, quotes, or newlines
+    if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+      return '"' + str.replace(/"/g, '""') + '"';
+    }
+    return str;
+  };
+
+  const headers = [
+    'Date/Time', 'Action', 'ID', 'Customer Name', 'Customer Email',
+    'Customer Phone', 'Product', 'Page', 'Price', 'Design Price',
+    'VAT', 'Total', 'Payment Method', 'Is Paid', 'Payment Status'
+  ];
+
+  const lines = [headers.map(esc).join(',')];
+
+  for (const row of rows) {
+    const line = [
+      esc(row.created_at ? new Date(row.created_at).toLocaleString('es-ES') : ''),
+      esc(row.action_type),
+      esc(row.target_id),
+      esc(row.customer_name),
+      esc(row.customer_email),
+      esc(row.customer_phone),
+      esc(row.product_name),
+      esc(row.page_number),
+      esc(row.price),
+      esc(row.design_price),
+      esc(row.vat),
+      esc(row.total),
+      esc(row.payment_method),
+      esc(row.is_paid != null ? (row.is_paid ? 'Yes' : 'No') : ''),
+      esc(row.payment_status),
+    ].join(',');
+    lines.push(line);
+  }
+
+  return lines.join('\r\n');
 }
 
 export default SettingsPanel;
