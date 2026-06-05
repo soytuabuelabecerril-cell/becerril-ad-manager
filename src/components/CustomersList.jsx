@@ -478,7 +478,7 @@ const CustomersList = ({ onSelectPage }) => {
       if (page.ads && page.ads.length > 0) {
         page.ads.forEach((ad, idx) => {
           if (ad.isPreReserved) {
-            const key = `ad-${page.page_number}-${(ad.customer_name || '').toLowerCase()}-${(ad.ad_type || '').toLowerCase()}`;
+            const key = `${page.page_number}-${(ad.customer_name || '').toLowerCase()}-${(ad.ad_type || '').toLowerCase()}`;
             preReservedMap.set(key, {
               id: `ad-${page.page_number}-${ad.id || ad.customer_id || idx}`,
               page_number: page.page_number,
@@ -496,7 +496,7 @@ const CustomersList = ({ onSelectPage }) => {
           }
         });
       } else if (page.status === 'Reserved' && page.payment_status === 'Pending') {
-        const key = `page-${page.page_number}-${(page.customer_name || '').toLowerCase()}-${(page.ad_type || '').toLowerCase()}`;
+        const key = `${page.page_number}-${(page.customer_name || '').toLowerCase()}-${(page.ad_type || '').toLowerCase()}`;
         preReservedMap.set(key, {
           id: `page-${page.page_number}`,
           page_number: page.page_number,
@@ -517,26 +517,28 @@ const CustomersList = ({ onSelectPage }) => {
     // 2. Pre-reserved orders
     orders.forEach(o => {
       if (o.orderType === 'pre-reserved' && o.status !== 'Cancelled' && !o.isPaid) {
-        const key = `order-${o.assignedPage}-${(o.customerName || '').toLowerCase()}-${(o.productName || '').toLowerCase()}`;
+        const key = `${o.assignedPage}-${(o.customerName || '').toLowerCase()}-${(o.productName || '').toLowerCase()}`;
         
         // Derive expiresAt: estimate 7 days if not provided
         const expiresAt = o.expires_at ||
           (o.createdAt ? new Date(new Date(o.createdAt).getTime() + 7 * 24 * 60 * 60 * 1000).toISOString() : null);
 
-        preReservedMap.set(key, {
-          id: `order-${o.id}`,
-          page_number: o.assignedPage,
-          customer_name: o.customerName,
-          customer_id: o.customerId,
-          ad_type: o.productName,
-          expires_at: expiresAt,
-          emailReminderSentAt: o.emailReminderSentAt || null,
-          whatsappReminderSentAt: o.whatsappReminderSentAt || null,
-          emailRemindersCount: o.emailRemindersCount || 0,
-          whatsappRemindersCount: o.whatsappRemindersCount || 0,
-          _fromOrder: true,
-          source: 'order'
-        });
+        if (!preReservedMap.has(key)) {
+          preReservedMap.set(key, {
+            id: `order-${o.id}`,
+            page_number: o.assignedPage,
+            customer_name: o.customerName,
+            customer_id: o.customerId,
+            ad_type: o.productName,
+            expires_at: expiresAt,
+            emailReminderSentAt: o.emailReminderSentAt || null,
+            whatsappReminderSentAt: o.whatsappReminderSentAt || null,
+            emailRemindersCount: o.emailRemindersCount || 0,
+            whatsappRemindersCount: o.whatsappRemindersCount || 0,
+            _fromOrder: true,
+            source: 'order'
+          });
+        }
       }
     });
 
