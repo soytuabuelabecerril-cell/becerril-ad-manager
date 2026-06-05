@@ -26,39 +26,40 @@ function App() {
   const { t, language, setLanguage } = useLanguage();
   const { session, loading, pages } = useDatabase();
   const [selectedPageRaw, setSelectedPageRaw] = useState(() => {
-    const saved = sessionStorage.getItem('selectedPage');
+    const saved = localStorage.getItem('selectedPage');
     return saved ? JSON.parse(saved) : null;
   });
 
   const setSelectedPage = (page) => {
     setSelectedPageRaw(page);
     if (page) {
-      sessionStorage.setItem('selectedPage', JSON.stringify(page));
+      localStorage.setItem('selectedPage', JSON.stringify(page));
     } else {
-      sessionStorage.removeItem('selectedPage');
-      sessionStorage.removeItem('orderConfirmModalOpen');
-      sessionStorage.removeItem('orderDetails');
-      sessionStorage.removeItem('invoiceModalOpen');
-      sessionStorage.removeItem('invoiceDetails');
-      sessionStorage.removeItem('reciboModalOpen');
-      sessionStorage.removeItem('reciboDetails');
-      sessionStorage.removeItem('efectivoPreviewOpen');
+      // Clear page modal state
+      localStorage.removeItem('selectedPage');
+      localStorage.removeItem('orderConfirmModalOpen');
+      localStorage.removeItem('orderDetails');
+      localStorage.removeItem('invoiceModalOpen');
+      localStorage.removeItem('invoiceDetails');
+      localStorage.removeItem('reciboModalOpen');
+      localStorage.removeItem('reciboDetails');
+      localStorage.removeItem('efectivoPreviewOpen');
       
       // Clear all reservation drafts
-      sessionStorage.removeItem('rp_page_number');
-      sessionStorage.removeItem('rp_selectedCustomerId');
-      sessionStorage.removeItem('rp_selectedProductId');
-      sessionStorage.removeItem('rp_isAddingNew');
-      sessionStorage.removeItem('rp_newCustomer');
-      sessionStorage.removeItem('rp_isEditingExisting');
-      sessionStorage.removeItem('rp_editedCustomer');
-      sessionStorage.removeItem('rp_artworkOption');
-      sessionStorage.removeItem('rp_designWorkOption');
-      sessionStorage.removeItem('rp_designWorkPrice');
-      sessionStorage.removeItem('rp_activeViewMode');
-      sessionStorage.removeItem('rp_assignmentPref');
-      sessionStorage.removeItem('rp_paymentMethod');
-      sessionStorage.removeItem('rp_reservationPaymentMethod');
+      localStorage.removeItem('rp_page_number');
+      localStorage.removeItem('rp_selectedCustomerId');
+      localStorage.removeItem('rp_selectedProductId');
+      localStorage.removeItem('rp_isAddingNew');
+      localStorage.removeItem('rp_newCustomer');
+      localStorage.removeItem('rp_isEditingExisting');
+      localStorage.removeItem('rp_editedCustomer');
+      localStorage.removeItem('rp_artworkOption');
+      localStorage.removeItem('rp_designWorkOption');
+      localStorage.removeItem('rp_designWorkPrice');
+      localStorage.removeItem('rp_activeViewMode');
+      localStorage.removeItem('rp_assignmentPref');
+      localStorage.removeItem('rp_paymentMethod');
+      localStorage.removeItem('rp_reservationPaymentMethod');
     }
   };
 
@@ -68,13 +69,13 @@ function App() {
 
   const [locationData, setLocationData] = useState(null);
   const [currentTab, setCurrentTab] = useState(() => {
-    return sessionStorage.getItem('currentTab') || 'magazine';
+    return localStorage.getItem('currentTab') || 'magazine';
   });
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   const handleTabChange = (tab) => {
     setCurrentTab(tab);
-    sessionStorage.setItem('currentTab', tab);
+    localStorage.setItem('currentTab', tab);
     setIsMobileMenuOpen(false);
   };
 

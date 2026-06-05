@@ -5,7 +5,7 @@ import { useLanguage } from '../context/LanguageContext';
 const CustomerModal = ({ isOpen, onClose, customer, onSave }) => {
   const { t } = useLanguage();
   const [formData, setFormData] = useState(() => {
-    const saved = sessionStorage.getItem('cm_formData');
+    const saved = localStorage.getItem('cm_formData');
     return saved ? JSON.parse(saved) : {
       fiscal_name: '',
       commercial_name: '',
@@ -22,12 +22,12 @@ const CustomerModal = ({ isOpen, onClose, customer, onSave }) => {
   useEffect(() => {
     if (!isOpen) {
       // Clear draft when closed
-      sessionStorage.removeItem('cm_formData');
-      sessionStorage.removeItem('cm_customer_id');
+      localStorage.removeItem('cm_formData');
+      localStorage.removeItem('cm_customer_id');
       return;
     }
 
-    const savedCustomerId = sessionStorage.getItem('cm_customer_id');
+    const savedCustomerId = localStorage.getItem('cm_customer_id');
     const currentCustomerId = customer ? String(customer.id) : 'new';
 
     if (savedCustomerId !== currentCustomerId) {
@@ -57,14 +57,14 @@ const CustomerModal = ({ isOpen, onClose, customer, onSave }) => {
           last_year_product: ''
         });
       }
-      sessionStorage.setItem('cm_customer_id', currentCustomerId);
+      localStorage.setItem('cm_customer_id', currentCustomerId);
     }
   }, [customer, isOpen]);
 
   // Save changes to sessionStorage
   useEffect(() => {
     if (isOpen) {
-      sessionStorage.setItem('cm_formData', JSON.stringify(formData));
+      localStorage.setItem('cm_formData', JSON.stringify(formData));
     }
   }, [formData, isOpen]);
 

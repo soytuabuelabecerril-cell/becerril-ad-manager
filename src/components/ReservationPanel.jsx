@@ -133,23 +133,23 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
   const [customers, setCustomers] = useState([]);
   const [usedProducts, setUsedProducts] = useState(new Set());
   
-  const savedPageNum = sessionStorage.getItem('rp_page_number');
+  const savedPageNum = localStorage.getItem('rp_page_number');
   const isSamePage = savedPageNum === String(selectedPage?.page_number);
 
   const [selectedCustomerId, setSelectedCustomerId] = useState(() => {
-    return isSamePage ? (sessionStorage.getItem('rp_selectedCustomerId') || '') : '';
+    return isSamePage ? (localStorage.getItem('rp_selectedCustomerId') || '') : '';
   });
   const [selectedProductId, setSelectedProductId] = useState(() => {
-    return isSamePage ? (sessionStorage.getItem('rp_selectedProductId') || '') : '';
+    return isSamePage ? (localStorage.getItem('rp_selectedProductId') || '') : '';
   });
   const [isSaving, setIsSaving] = useState(false);
   const [renderingInvoice, setRenderingInvoice] = useState(null);
   
   const [isAddingNew, setIsAddingNew] = useState(() => {
-    return isSamePage ? (sessionStorage.getItem('rp_isAddingNew') === 'true') : false;
+    return isSamePage ? (localStorage.getItem('rp_isAddingNew') === 'true') : false;
   });
   const [newCustomer, setNewCustomer] = useState(() => {
-    const saved = isSamePage ? sessionStorage.getItem('rp_newCustomer') : null;
+    const saved = isSamePage ? localStorage.getItem('rp_newCustomer') : null;
     return saved ? JSON.parse(saved) : { 
       fiscal_name: '', 
       commercial_name: '', 
@@ -164,10 +164,10 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
   });
   const [isSavingCustomer, setIsSavingCustomer] = useState(false);
   const [isEditingExisting, setIsEditingExisting] = useState(() => {
-    return isSamePage ? (sessionStorage.getItem('rp_isEditingExisting') === 'true') : false;
+    return isSamePage ? (localStorage.getItem('rp_isEditingExisting') === 'true') : false;
   });
   const [editedCustomer, setEditedCustomer] = useState(() => {
-    const saved = isSamePage ? sessionStorage.getItem('rp_editedCustomer') : null;
+    const saved = isSamePage ? localStorage.getItem('rp_editedCustomer') : null;
     return saved ? JSON.parse(saved) : {
       fiscal_name: '',
       commercial_name: '',
@@ -182,90 +182,85 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
   });
 
   const [assignmentPref, setAssignmentPref] = useState(() => {
-    return isSamePage ? (sessionStorage.getItem('rp_assignmentPref') || 'aleatorio') : 'aleatorio';
+    return isSamePage ? (localStorage.getItem('rp_assignmentPref') || 'aleatorio') : 'aleatorio';
   });
   
-  const [invoiceModalOpen, setInvoiceModalOpenRaw] = useState(() => {
-    return sessionStorage.getItem('invoiceModalOpen') === 'true';
-  });
+  // Never restore confirmation modals from localStorage — they open only via user actions,
+  // which also reset emailStatus. Restoring open=true would skip the status reset
+  // and block the auto-send (emailStatus.status would not be null).
+  const [invoiceModalOpen, setInvoiceModalOpenRaw] = useState(false);
   const setInvoiceModalOpen = (val) => {
     setInvoiceModalOpenRaw(val);
-    sessionStorage.setItem('invoiceModalOpen', val);
+    localStorage.setItem('invoiceModalOpen', val);
   };
 
   const [invoiceDetails, setInvoiceDetailsRaw] = useState(() => {
-    const saved = sessionStorage.getItem('invoiceDetails');
+    const saved = localStorage.getItem('invoiceDetails');
     return saved ? JSON.parse(saved) : null;
   });
   const setInvoiceDetails = (val) => {
     setInvoiceDetailsRaw(val);
-    if (val) sessionStorage.setItem('invoiceDetails', JSON.stringify(val));
-    else sessionStorage.removeItem('invoiceDetails');
+    if (val) localStorage.setItem('invoiceDetails', JSON.stringify(val));
+    else localStorage.removeItem('invoiceDetails');
   };
 
-  const [efectivoPreviewOpen, setEfectivoPreviewOpenRaw] = useState(() => {
-    return sessionStorage.getItem('efectivoPreviewOpen') === 'true';
-  });
+  const [efectivoPreviewOpen, setEfectivoPreviewOpenRaw] = useState(false);
   const setEfectivoPreviewOpen = (val) => {
     setEfectivoPreviewOpenRaw(val);
-    sessionStorage.setItem('efectivoPreviewOpen', val);
+    localStorage.setItem('efectivoPreviewOpen', val);
   };
   
   const [paymentMethod, setPaymentMethod] = useState(() => {
-    return isSamePage ? (sessionStorage.getItem('rp_paymentMethod') || 'Transfer') : 'Transfer';
+    return isSamePage ? (localStorage.getItem('rp_paymentMethod') || 'Transfer') : 'Transfer';
   });
   const [reservationPaymentMethod, setReservationPaymentMethod] = useState(() => {
-    return isSamePage ? (sessionStorage.getItem('rp_reservationPaymentMethod') || 'Transfer') : 'Transfer';
+    return isSamePage ? (localStorage.getItem('rp_reservationPaymentMethod') || 'Transfer') : 'Transfer';
   });
   const [isPaid, setIsPaid] = useState(false);
   const [currentAdRef, setCurrentAdRef] = useState(null);
   
   const [artworkOption, setArtworkOption] = useState(() => {
-    return isSamePage ? (sessionStorage.getItem('rp_artworkOption') || '') : '';
+    return isSamePage ? (localStorage.getItem('rp_artworkOption') || '') : '';
   });
   const [designWorkOption, setDesignWorkOption] = useState(() => {
-    return isSamePage ? (sessionStorage.getItem('rp_designWorkOption') || '') : '';
+    return isSamePage ? (localStorage.getItem('rp_designWorkOption') || '') : '';
   });
   const [designWorkPrice, setDesignWorkPrice] = useState(() => {
-    return isSamePage ? (sessionStorage.getItem('rp_designWorkPrice') || '') : '';
+    return isSamePage ? (localStorage.getItem('rp_designWorkPrice') || '') : '';
   });
 
   // Recibo state
-  const [reciboModalOpen, setReciboModalOpenRaw] = useState(() => {
-    return sessionStorage.getItem('reciboModalOpen') === 'true';
-  });
+  const [reciboModalOpen, setReciboModalOpenRaw] = useState(false);
   const setReciboModalOpen = (val) => {
     setReciboModalOpenRaw(val);
-    sessionStorage.setItem('reciboModalOpen', val);
+    localStorage.setItem('reciboModalOpen', val);
   };
 
   const [reciboDetails, setReciboDetailsRaw] = useState(() => {
-    const saved = sessionStorage.getItem('reciboDetails');
+    const saved = localStorage.getItem('reciboDetails');
     return saved ? JSON.parse(saved) : null;
   });
   const setReciboDetails = (val) => {
     setReciboDetailsRaw(val);
-    if (val) sessionStorage.setItem('reciboDetails', JSON.stringify(val));
-    else sessionStorage.removeItem('reciboDetails');
+    if (val) localStorage.setItem('reciboDetails', JSON.stringify(val));
+    else localStorage.removeItem('reciboDetails');
   };
 
   // Order (pending — not yet invoiced) state
-  const [orderConfirmModalOpen, setOrderConfirmModalOpenRaw] = useState(() => {
-    return sessionStorage.getItem('orderConfirmModalOpen') === 'true';
-  });
+  const [orderConfirmModalOpen, setOrderConfirmModalOpenRaw] = useState(false);
   const setOrderConfirmModalOpen = (val) => {
     setOrderConfirmModalOpenRaw(val);
-    sessionStorage.setItem('orderConfirmModalOpen', val);
+    localStorage.setItem('orderConfirmModalOpen', val);
   };
 
   const [orderDetails, setOrderDetailsRaw] = useState(() => {
-    const saved = sessionStorage.getItem('orderDetails');
+    const saved = localStorage.getItem('orderDetails');
     return saved ? JSON.parse(saved) : null;
   });
   const setOrderDetails = (val) => {
     setOrderDetailsRaw(val);
-    if (val) sessionStorage.setItem('orderDetails', JSON.stringify(val));
-    else sessionStorage.removeItem('orderDetails');
+    if (val) localStorage.setItem('orderDetails', JSON.stringify(val));
+    else localStorage.removeItem('orderDetails');
   };
 
   // Customer dropdown
@@ -281,7 +276,7 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
   const [preBillingIndex, setPreBillingIndex] = useState(null);
 
   const [activeViewMode, setActiveViewMode] = useState(() => {
-    return isSamePage ? (sessionStorage.getItem('rp_activeViewMode') || null) : null;
+    return isSamePage ? (localStorage.getItem('rp_activeViewMode') || null) : null;
   }); // 'select_mode', 'process_clients', 'new_reservation'
   const [selectedAdIndex, setSelectedAdIndex] = useState(null);
   const [closeSalePaymentMethod, setCloseSalePaymentMethod] = useState('Transfer');
@@ -290,85 +285,85 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
   const [collapsedPreview, setCollapsedPreview] = useState(false);
   const [hoveredLayoutSlots, setHoveredLayoutSlots] = useState([]);
 
-  // Save drafts to sessionStorage whenever they change
+  // Save drafts to localStorage whenever they change
   useEffect(() => {
     if (selectedPage) {
-      sessionStorage.setItem('rp_selectedCustomerId', selectedCustomerId);
+      localStorage.setItem('rp_selectedCustomerId', selectedCustomerId);
     }
   }, [selectedCustomerId, selectedPage]);
 
   useEffect(() => {
     if (selectedPage) {
-      sessionStorage.setItem('rp_selectedProductId', selectedProductId);
+      localStorage.setItem('rp_selectedProductId', selectedProductId);
     }
   }, [selectedProductId, selectedPage]);
 
   useEffect(() => {
     if (selectedPage) {
-      sessionStorage.setItem('rp_isAddingNew', isAddingNew);
+      localStorage.setItem('rp_isAddingNew', isAddingNew);
     }
   }, [isAddingNew, selectedPage]);
 
   useEffect(() => {
     if (selectedPage) {
-      sessionStorage.setItem('rp_newCustomer', JSON.stringify(newCustomer));
+      localStorage.setItem('rp_newCustomer', JSON.stringify(newCustomer));
     }
   }, [newCustomer, selectedPage]);
 
   useEffect(() => {
     if (selectedPage) {
-      sessionStorage.setItem('rp_isEditingExisting', isEditingExisting);
+      localStorage.setItem('rp_isEditingExisting', isEditingExisting);
     }
   }, [isEditingExisting, selectedPage]);
 
   useEffect(() => {
     if (selectedPage) {
-      sessionStorage.setItem('rp_editedCustomer', JSON.stringify(editedCustomer));
+      localStorage.setItem('rp_editedCustomer', JSON.stringify(editedCustomer));
     }
   }, [editedCustomer, selectedPage]);
 
   useEffect(() => {
     if (selectedPage) {
-      sessionStorage.setItem('rp_assignmentPref', assignmentPref);
+      localStorage.setItem('rp_assignmentPref', assignmentPref);
     }
   }, [assignmentPref, selectedPage]);
 
   useEffect(() => {
     if (selectedPage) {
-      sessionStorage.setItem('rp_paymentMethod', paymentMethod);
+      localStorage.setItem('rp_paymentMethod', paymentMethod);
     }
   }, [paymentMethod, selectedPage]);
 
   useEffect(() => {
     if (selectedPage) {
-      sessionStorage.setItem('rp_reservationPaymentMethod', reservationPaymentMethod);
+      localStorage.setItem('rp_reservationPaymentMethod', reservationPaymentMethod);
     }
   }, [reservationPaymentMethod, selectedPage]);
 
   useEffect(() => {
     if (selectedPage) {
-      sessionStorage.setItem('rp_artworkOption', artworkOption);
+      localStorage.setItem('rp_artworkOption', artworkOption);
     }
   }, [artworkOption, selectedPage]);
 
   useEffect(() => {
     if (selectedPage) {
-      sessionStorage.setItem('rp_designWorkOption', designWorkOption);
+      localStorage.setItem('rp_designWorkOption', designWorkOption);
     }
   }, [designWorkOption, selectedPage]);
 
   useEffect(() => {
     if (selectedPage) {
-      sessionStorage.setItem('rp_designWorkPrice', designWorkPrice);
+      localStorage.setItem('rp_designWorkPrice', designWorkPrice);
     }
   }, [designWorkPrice, selectedPage]);
 
   useEffect(() => {
     if (selectedPage) {
       if (activeViewMode) {
-        sessionStorage.setItem('rp_activeViewMode', activeViewMode);
+        localStorage.setItem('rp_activeViewMode', activeViewMode);
       } else {
-        sessionStorage.removeItem('rp_activeViewMode');
+        localStorage.removeItem('rp_activeViewMode');
       }
     }
   }, [activeViewMode, selectedPage]);
@@ -768,7 +763,7 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
 
   useEffect(() => {
     if (selectedPage) {
-      const savedPageNum = sessionStorage.getItem('rp_page_number');
+      const savedPageNum = localStorage.getItem('rp_page_number');
       if (savedPageNum !== String(selectedPage.page_number)) {
         // Different page selected, reset all inputs
         setSelectedProductId('');
@@ -779,20 +774,20 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
         setCloseSalePaymentMethod('Transfer');
         
         // Update stored page number and clear draft storage
-        sessionStorage.setItem('rp_page_number', String(selectedPage.page_number));
-        sessionStorage.removeItem('rp_selectedCustomerId');
-        sessionStorage.removeItem('rp_selectedProductId');
-        sessionStorage.removeItem('rp_isAddingNew');
-        sessionStorage.removeItem('rp_newCustomer');
-        sessionStorage.removeItem('rp_isEditingExisting');
-        sessionStorage.removeItem('rp_editedCustomer');
-        sessionStorage.removeItem('rp_artworkOption');
-        sessionStorage.removeItem('rp_designWorkOption');
-        sessionStorage.removeItem('rp_designWorkPrice');
-        sessionStorage.removeItem('rp_activeViewMode');
-        sessionStorage.removeItem('rp_assignmentPref');
-        sessionStorage.removeItem('rp_paymentMethod');
-        sessionStorage.removeItem('rp_reservationPaymentMethod');
+        localStorage.setItem('rp_page_number', String(selectedPage.page_number));
+        localStorage.removeItem('rp_selectedCustomerId');
+        localStorage.removeItem('rp_selectedProductId');
+        localStorage.removeItem('rp_isAddingNew');
+        localStorage.removeItem('rp_newCustomer');
+        localStorage.removeItem('rp_isEditingExisting');
+        localStorage.removeItem('rp_editedCustomer');
+        localStorage.removeItem('rp_artworkOption');
+        localStorage.removeItem('rp_designWorkOption');
+        localStorage.removeItem('rp_designWorkPrice');
+        localStorage.removeItem('rp_activeViewMode');
+        localStorage.removeItem('rp_assignmentPref');
+        localStorage.removeItem('rp_paymentMethod');
+        localStorage.removeItem('rp_reservationPaymentMethod');
       }
     }
   }, [selectedPage]);
@@ -945,9 +940,9 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
 
   useEffect(() => {
     if (selectedPage) {
-      // If activeViewMode is already restored from sessionStorage for this page, don't overwrite it
-      const savedMode = sessionStorage.getItem('rp_activeViewMode');
-      const savedPage = sessionStorage.getItem('rp_page_number');
+      // If activeViewMode is already restored from localStorage for this page, don't overwrite it
+      const savedMode = localStorage.getItem('rp_activeViewMode');
+      const savedPage = localStorage.getItem('rp_page_number');
       if (savedMode && savedPage === String(selectedPage.page_number)) {
         setActiveViewMode(savedMode);
         return;
@@ -2040,19 +2035,6 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0' }}>
             <span style={{ fontSize: '18px', fontWeight: '700', color: '#111827' }}>{t('inv_total')}</span>
             <span style={{ fontSize: '18px', fontWeight: '700', color: '#2563eb' }}>{inv.total.toFixed(2)}€</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Payment status */}
-      <div style={{ marginTop: '32px', paddingTop: '32px', borderTop: '1px solid #e5e7eb' }}>
-        <h4 style={{ fontWeight: '700', color: '#1f2937', marginBottom: '8px' }}>{t('inv_payment_status')}</h4>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', backgroundColor: '#f9fafb', padding: '14px', borderRadius: '8px' }}>
-          <div>
-            <span style={{ fontSize: '12px', color: '#6b7280', display: 'block' }}>{t('inv_status')}</span>
-            <span style={{ fontWeight: '700', color: inv.isPaid ? '#16a34a' : '#dc2626' }}>
-              {inv.isPaid ? t('inv_paid') : t('inv_pending')}
-            </span>
           </div>
         </div>
       </div>

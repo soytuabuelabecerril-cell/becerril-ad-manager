@@ -22,31 +22,31 @@ const CustomersList = ({ onSelectPage }) => {
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpenRaw] = useState(() => {
-    return sessionStorage.getItem('cs_isModalOpen') === 'true';
+    return localStorage.getItem('cs_isModalOpen') === 'true';
   });
   const setIsModalOpen = (val) => {
     setIsModalOpenRaw(val);
-    sessionStorage.setItem('cs_isModalOpen', val);
+    localStorage.setItem('cs_isModalOpen', val);
   };
 
   const [selectedCustomer, setSelectedCustomerRaw] = useState(() => {
-    const saved = sessionStorage.getItem('cs_selectedCustomer');
+    const saved = localStorage.getItem('cs_selectedCustomer');
     return saved ? JSON.parse(saved) : null;
   });
   const setSelectedCustomer = (val) => {
     setSelectedCustomerRaw(val);
-    if (val) sessionStorage.setItem('cs_selectedCustomer', JSON.stringify(val));
-    else sessionStorage.removeItem('cs_selectedCustomer');
+    if (val) localStorage.setItem('cs_selectedCustomer', JSON.stringify(val));
+    else localStorage.removeItem('cs_selectedCustomer');
   };
 
   const [searchTerm, setSearchTerm] = useState('');
 
   const [activeState, setActiveStateRaw] = useState(() => {
-    return sessionStorage.getItem('cs_activeState') || 'pending';
+    return localStorage.getItem('cs_activeState') || 'pending';
   });
   const setActiveState = (val) => {
     setActiveStateRaw(val);
-    sessionStorage.setItem('cs_activeState', val);
+    localStorage.setItem('cs_activeState', val);
   };
 
   const [liberateModalOpen, setLiberateModalOpen] = useState(false);
