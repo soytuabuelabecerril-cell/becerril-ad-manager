@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useDatabase } from '../context/DatabaseContext';
 import { useLanguage } from '../context/LanguageContext';
 import { formatTemplate, getTemplateVariables } from '../utils/notifications';
-import { Mail, MessageCircle, Save, RotateCcw, FileText, Sparkles, Info, Check, BookOpen, PlusCircle, RefreshCw, AlertTriangle, ChevronRight, Loader } from 'lucide-react';
+import { Mail, MessageCircle, Save, RotateCcw, FileText, Sparkles, Info, Check, BookOpen, PlusCircle, RefreshCw, AlertTriangle, ChevronRight, Loader, Search } from 'lucide-react';
 
 const DEFAULT_TEMPLATES = {
   invoice_email: {
@@ -60,95 +60,14 @@ const DUMMY_TRANSACTION = {
   artworkComment: 'Usar el mismo diseño del año pasado con el nuevo logo en alta definición.'
 };
 
-const appsScriptCode = `function doPost(e) {
-  try {
-    const data = JSON.parse(e.postData.contents);
-    const ss = SpreadsheetApp.openById("1BhC7XuASyIXW4PrCU1HOWOJ9rvWpaoCCfqVIr2XVAK0");
-    
-    // 1. Write Reservations Ledger Sheet
-    let sheetLedger = ss.getSheetByName("Libro de Reservas");
-    if (!sheetLedger) {
-      sheetLedger = ss.insertSheet("Libro de Reservas");
-    } else {
-      sheetLedger.clear();
-    }
-    
-    const ledgerHeaders = [
-      'Página', 
-      'Tipo de Reserva', 
-      'Cliente', 
-      'ID Factura / Recibo', 
-      'Importe Recibido (€)', 
-      'Importe Pendiente (€)', 
-      'Método de Pago', 
-      'Estado'
-    ];
-    sheetLedger.appendRow(ledgerHeaders);
-    
-    if (data.ledger && data.ledger.length > 0) {
-      const ledgerRows = data.ledger.map(row => [
-        row['Página'],
-        row['Tipo de Reserva'],
-        row['Cliente'],
-        row['ID Factura / Recibo'],
-        row['Importe Recibido (€)'],
-        row['Importe Pendiente (€)'],
-        row['Método de Pago'],
-        row['Estado']
-      ]);
-      sheetLedger.getRange(2, 1, ledgerRows.length, ledgerHeaders.length).setValues(ledgerRows);
-      sheetLedger.autoResizeColumns(1, ledgerHeaders.length);
-    }
-    
-    // 2. Write Cash Transactions without VAT Sheet
-    let sheetCash = ss.getSheetByName("Efectivo sin IVA");
-    if (!sheetCash) {
-      sheetCash = ss.insertSheet("Efectivo sin IVA");
-    } else {
-      sheetCash.clear();
-    }
-    
-    const cashHeaders = [
-      'ID Recibo', 
-      'Fecha', 
-      'Cliente', 
-      'Producto', 
-      'Página Asignada', 
-      'Importe Cobrado (Sin IVA) (€)', 
-      'Método de Pago', 
-      'Estado'
-    ];
-    sheetCash.appendRow(cashHeaders);
-    
-    if (data.cash && data.cash.length > 0) {
-      const cashRows = data.cash.map(row => [
-        row['ID Recibo'],
-        row['Fecha'],
-        row['Cliente'],
-        row['Producto'],
-        row['Página Asignada'],
-        row['Importe Cobrado (Sin IVA) (€)'],
-        row['Método de Pago'],
-        row['Estado']
-      ]);
-      sheetCash.getRange(2, 1, cashRows.length, cashHeaders.length).setValues(cashRows);
-      sheetCash.autoResizeColumns(1, cashHeaders.length);
-    }
-    
-    return ContentService.createTextOutput(JSON.stringify({ success: true }))
-      .setMimeType(ContentService.MimeType.JSON);
-      
-  } catch (error) {
-    return ContentService.createTextOutput(JSON.stringify({ success: false, error: error.toString() }))
-      .setMimeType(ContentService.MimeType.JSON);
-  }
-}`;
 
 const SettingsPanel = () => {
   const { t, language } = useLanguage();
-  const { templates, saveCommunicationTemplate } = useDatabase();
+  const { templates, saveCommunicationTemplate, actionLogs, fetchActionLogs } = useDatabase();
 
   const [activeChannel, setActiveChannel] = useState('email'); // 'email' | 'whatsapp'
+  const [logSearchQuery, setLogSearchQuery] = useState('');
+  const [expandedLogId, setExpandedLogId] = useState(null);
   const [selectedTemplateId, setSelectedTemplateId] = useState('invoice_email');
   
   const [editedSubject, setEditedSubject] = useState('');
@@ -157,8 +76,7 @@ const SettingsPanel = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [showSaveAlert, setShowSaveAlert] = useState(false);
   
-  const [sheetsUrl, setSheetsUrl] = useState(() => localStorage.getItem('google_sheets_sync_url') || '');
-  const [sheetsSaveAlert, setSheetsSaveAlert] = useState(false);
+
   
   const [activeField, setActiveField] = useState('body'); // 'subject' | 'body'
 
@@ -214,11 +132,7 @@ const SettingsPanel = () => {
     }
   };
 
-  const handleSaveSheetsUrl = () => {
-    localStorage.setItem('google_sheets_sync_url', sheetsUrl);
-    setSheetsSaveAlert(true);
-    setTimeout(() => setSheetsSaveAlert(false), 3000);
-  };
+
   const subjectRef = useRef(null);
   const bodyRef = useRef(null);
 
@@ -550,80 +464,7 @@ const SettingsPanel = () => {
         </div>
       </div>
 
-      {/* Google Sheets Sync Configuration */}
-      <div className="mt-8 pt-6 border-t border-slate-100">
-        <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
-          <FileText className="text-emerald-600" size={20} />
-          {t('config_google_sheets_title')}
-        </h3>
-        <p className="text-sm text-gray-500 mt-1">{t('config_google_sheets_desc')}</p>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-4">
-          {/* Form Config */}
-          <div className="lg:col-span-1 flex flex-col gap-3">
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">
-                {t('config_google_sheets_url')}
-              </label>
-              <input
-                type="text"
-                value={sheetsUrl}
-                onChange={(e) => setSheetsUrl(e.target.value)}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-shadow"
-                placeholder="https://script.google.com/macros/s/.../exec"
-              />
-            </div>
-
-            <button
-              onClick={handleSaveSheetsUrl}
-              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-semibold rounded-lg text-sm transition-all cursor-pointer shadow-sm self-start flex items-center gap-1.5"
-            >
-              <Save size={14} />
-              {t('config_google_sheets_save')}
-            </button>
-
-            {sheetsSaveAlert && (
-              <p className="text-xs font-medium text-emerald-600 mt-1">
-                {t('config_google_sheets_saved')}
-              </p>
-            )}
-          </div>
-
-          {/* Instructions Code Block */}
-          <div className="lg:col-span-2 bg-slate-50 border border-slate-100 rounded-xl p-4 flex flex-col gap-3">
-            <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">
-              Instrucciones de Configuración (Google Apps Script)
-            </h4>
-            <ol className="text-xs text-slate-600 list-decimal list-inside space-y-1.5 leading-relaxed">
-              <li>Abre el documento de Google Sheets (haz clic en "Abrir Google Sheet" desde el panel o visita <a href="https://docs.google.com/spreadsheets/d/1BhC7XuASyIXW4PrCU1HOWOJ9rvWpaoCCfqVIr2XVAK0/edit" target="_blank" rel="noreferrer" className="text-blue-600 font-bold underline">este enlace</a>).</li>
-              <li>Ve al menú superior <b>Extensiones</b> → <b>Apps Script</b>.</li>
-              <li>Borra todo el contenido existente y pega el código proporcionado a continuación.</li>
-              <li>Haz clic en el botón <b>Implementar</b> (esquina superior derecha) → <b>Nueva implementación</b>.</li>
-              <li>Selecciona el tipo: <b>Aplicación web</b>.</li>
-              <li>Configura: "Ejecutar como: <b>Yo</b>" y "Quién tiene acceso: <b>Cualquiera</b>" (importante).</li>
-              <li>Haz clic en <b>Implementar</b>, otorga los permisos requeridos de Google, copia la <b>URL de la aplicación web</b> y pégala en el campo de la izquierda.</li>
-            </ol>
-
-            <div className="relative mt-2">
-              <textarea
-                readOnly
-                value={appsScriptCode}
-                rows={10}
-                className="w-full bg-slate-900 text-slate-200 text-[11px] font-mono rounded-lg p-3 outline-none resize-none leading-relaxed border border-slate-800"
-              />
-              <button
-                onClick={() => {
-                  navigator.clipboard.writeText(appsScriptCode);
-                  alert("Código copiado al portapapeles");
-                }}
-                className="absolute top-2.5 right-2.5 px-2.5 py-1 bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-200 rounded text-[10px] font-semibold border border-slate-700 transition-all cursor-pointer"
-              >
-                Copiar Código
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
 
       {/* ============================================================ */}
       {/* PAGE SIZE / EXPANSION SECTION */}
@@ -829,8 +670,251 @@ const SettingsPanel = () => {
           </div>
         </div>
       )}
+
+      {/* ============================================================ */}
+      {/* SYSTEM ACTIVITY LOGS (LOG FILES) SECTION */}
+      {/* ============================================================ */}
+      <div className="mt-8 pt-6 border-t border-slate-100">
+        {/* Header + Refresh Button */}
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+              <FileText className="text-indigo-600" size={20} />
+              {language === 'es' ? 'Archivos de Registro (Logs)' : 'System Log Files'}
+            </h3>
+            <p className="text-sm text-gray-500 mt-1">
+              {language === 'es' 
+                ? 'Historial de auditoría en tiempo real con todas las actividades, transacciones y correos electrónicos enviados.' 
+                : 'Real-time audit history of all system activities, transactions, and sent email notifications.'}
+            </p>
+          </div>
+          <div className="flex items-center gap-3 flex-shrink-0">
+            <span className="text-xs text-slate-400 font-medium">
+              {(actionLogs || []).length} {language === 'es' ? 'eventos' : 'events'}
+            </span>
+            <button
+              onClick={() => fetchActionLogs && fetchActionLogs()}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg text-xs font-semibold border border-indigo-200 transition-all active:scale-95 cursor-pointer"
+            >
+              <RefreshCw size={13} />
+              {language === 'es' ? 'Actualizar' : 'Refresh'}
+            </button>
+          </div>
+        </div>
+
+        <div className="bg-white border border-slate-200 rounded-xl p-4 flex flex-col gap-4">
+          {/* Search Bar */}
+          <div className="relative w-full">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+            <input
+              type="text"
+              placeholder={language === 'es' ? 'Buscar en logs (acción, cliente, email, producto...)...' : 'Search logs...'}
+              value={logSearchQuery}
+              onChange={(e) => setLogSearchQuery(e.target.value)}
+              className="pl-9 pr-4 py-2 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 w-full text-sm bg-white"
+            />
+          </div>
+
+          {/* Table Container */}
+          <div className="overflow-x-auto border border-slate-100 rounded-xl max-h-[400px] overflow-y-auto">
+            {(() => {
+              const filtered = (actionLogs || []).filter(log => {
+                if (!logSearchQuery) return true;
+                const q = logSearchQuery.toLowerCase();
+                return (
+                  (log.action_type && log.action_type.toLowerCase().includes(q)) ||
+                  (log.target_id && log.target_id.toLowerCase().includes(q)) ||
+                  (log.customer_name && log.customer_name.toLowerCase().includes(q)) ||
+                  (log.customer_email && log.customer_email.toLowerCase().includes(q)) ||
+                  (log.customer_phone && log.customer_phone.toLowerCase().includes(q)) ||
+                  (log.product_name && log.product_name.toLowerCase().includes(q)) ||
+                  (log.payment_method && log.payment_method.toLowerCase().includes(q)) ||
+                  (log.payment_status && log.payment_status.toLowerCase().includes(q))
+                );
+              });
+
+              if (filtered.length === 0) {
+                return (
+                  <div className="p-8 text-center text-slate-400 text-sm bg-slate-50/50">
+                    {language === 'es' ? 'No se encontraron registros de eventos.' : 'No event logs found.'}
+                  </div>
+                );
+              }
+
+              return (
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-slate-100 text-slate-500 tracking-wider uppercase sticky top-0 z-10 font-bold">
+                      <th className="p-3">{language === 'es' ? 'Fecha/Hora' : 'Date/Time'}</th>
+                      <th className="p-3">{language === 'es' ? 'Acción' : 'Action'}</th>
+                      <th className="p-3">ID</th>
+                      <th className="p-3">{language === 'es' ? 'Cliente' : 'Customer'}</th>
+                      <th className="p-3">{language === 'es' ? 'Producto/Pág' : 'Product/Pg'}</th>
+                      <th className="p-3">Total</th>
+                      <th className="p-3 text-center">{language === 'es' ? 'Detalle' : 'Detail'}</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 bg-white">
+                    {filtered.map((row, idx) => {
+                      const logRowId = row.id || `${row.created_at}-${idx}`;
+                      const isExpanded = expandedLogId === logRowId;
+                      return (
+                        <React.Fragment key={logRowId}>
+                          <tr className="hover:bg-slate-50 transition-colors">
+                            <td className="p-3 text-slate-500 whitespace-nowrap">{formatDateTime(row.created_at)}</td>
+                            <td className="p-3">
+                              <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold border ${getActionBadgeColor(row.action_type)}`}>
+                                {translateActionType(row.action_type, language)}
+                              </span>
+                            </td>
+                            <td className="p-3 font-mono font-semibold text-slate-700">{row.target_id || '—'}</td>
+                            <td className="p-3">
+                              <div className="font-bold text-slate-800">{row.customer_name || '—'}</div>
+                              {(row.customer_email || row.customer_phone) && (
+                                <div className="text-[10px] text-slate-400 mt-0.5 flex flex-col gap-0.5">
+                                  {row.customer_email && <span>{row.customer_email}</span>}
+                                  {row.customer_phone && <span>{row.customer_phone}</span>}
+                                </div>
+                              )}
+                            </td>
+                            <td className="p-3">
+                              <div className="text-slate-700">{row.product_name || '—'}</div>
+                              {row.page_number !== null && row.page_number !== undefined && (
+                                <div className="text-[10px] text-slate-500 font-semibold mt-0.5">
+                                  {language === 'es' ? 'Pág. ' : 'Pg. '}{row.page_number}
+                                </div>
+                              )}
+                            </td>
+                            <td className="p-3 font-semibold text-slate-900 tabular-nums">
+                              {row.total !== undefined && row.total !== 0 ? `${row.total.toFixed(2)}€` : '—'}
+                              {row.payment_method && (
+                                <div className="text-[9px] text-slate-400 font-normal mt-0.5">
+                                  {row.payment_method} · {row.payment_status || (row.is_paid ? 'Pagado' : 'Pendiente')}
+                                </div>
+                              )}
+                            </td>
+                            <td className="p-3 text-center">
+                              <button
+                                onClick={() => setExpandedLogId(isExpanded ? null : logRowId)}
+                                className="px-2 py-1 bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-600 font-semibold rounded text-[10px] cursor-pointer transition-all border border-slate-200"
+                              >
+                                {isExpanded ? (language === 'es' ? 'Ocultar' : 'Hide') : (language === 'es' ? 'Ver' : 'Show')}
+                              </button>
+                            </td>
+                          </tr>
+                          {isExpanded && (
+                            <tr>
+                              <td colSpan="7" className="p-3 bg-slate-50/50">
+                                <div className="flex flex-col gap-1">
+                                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                                    {language === 'es' ? 'Metadatos Completos del Evento (Respaldo de Seguridad):' : 'Complete Event Metadata (Safety Fallback):'}
+                                  </div>
+                                  <pre className="text-left bg-slate-900 text-slate-100 p-4 rounded-xl text-[10px] font-mono overflow-auto max-h-60 shadow-inner">
+                                    {(() => {
+                                      let parsed = row.details;
+                                      if (typeof parsed === 'string') {
+                                        try { parsed = JSON.parse(parsed); } catch (e) {}
+                                      }
+                                      const hasDetails = parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0;
+                                      return JSON.stringify(hasDetails ? parsed : row, null, 2);
+                                    })()}
+                                  </pre>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              );
+            })()}
+          </div>
+        </div>
+      </div>
     </div>
   );
 };
+
+// --- Translation Helpers for logs in configuration ---
+function translateActionType(type, lang) {
+  const isEs = lang === 'es';
+  switch (type) {
+    case 'create_invoice':
+      return isEs ? 'Crear Factura' : 'Create Invoice';
+    case 'create_invoice_with_reservation':
+      return isEs ? 'Reserva con Factura' : 'Reserve with Invoice';
+    case 'pay_invoice':
+      return isEs ? 'Pagar Factura' : 'Pay Invoice';
+    case 'unpay_invoice':
+      return isEs ? 'Desmarcar Pago Factura' : 'Unpay Invoice';
+    case 'send_invoice_email':
+      return isEs ? 'Enviar Email Factura' : 'Send Invoice Email';
+    case 'send_recibo_email':
+      return isEs ? 'Enviar Email Recibo' : 'Send Receipt Email';
+    case 'send_reservation_email':
+      return isEs ? 'Enviar Email Reserva' : 'Send Reservation Email';
+    case 'send_prereservation_email':
+      return isEs ? 'Enviar Email Pre-reserva' : 'Send Pre-reservation Email';
+    case 'cancel_invoice':
+      return isEs ? 'Cancelar Factura' : 'Cancel Invoice';
+    case 'create_refund_invoice':
+      return isEs ? 'Crear Factura de Abono' : 'Create Refund Invoice';
+    case 'delete_invoice':
+      return isEs ? 'Papelera Factura' : 'Delete Invoice';
+    case 'hard_delete_invoice':
+      return isEs ? 'Eliminar Factura Permanentemente' : 'Hard Delete Invoice';
+    case 'reserve_invoice_number':
+      return isEs ? 'Reservar Número de Factura' : 'Reserve Invoice Number';
+    case 'create_order':
+      return isEs ? 'Crear Pedido de Transferencia' : 'Create Order';
+    case 'pre_reserve_ad':
+      return isEs ? 'Crear Pre-reserva' : 'Pre-reserve Space';
+    case 'delete_order':
+      return isEs ? 'Eliminar Pedido' : 'Delete Order';
+    case 'update_order':
+      return isEs ? 'Actualizar Pedido' : 'Update Order';
+    case 'create_recibo':
+      return isEs ? 'Crear Recibo' : 'Create Receipt';
+    case 'delete_recibo':
+      return isEs ? 'Eliminar Recibo' : 'Delete Receipt';
+    default:
+      return type;
+  }
+}
+
+function getActionBadgeColor(actionType) {
+  if (actionType.includes('create') || actionType.includes('reserve')) {
+    return 'bg-blue-50 text-blue-700 border-blue-100';
+  }
+  if (actionType.includes('pay') || actionType.includes('confirm')) {
+    return 'bg-emerald-50 text-emerald-700 border-emerald-100';
+  }
+  if (actionType.includes('cancel') || actionType.includes('delete') || actionType.includes('liberate')) {
+    return 'bg-rose-50 text-rose-700 border-rose-100';
+  }
+  if (actionType.includes('send') || actionType.includes('email')) {
+    return 'bg-indigo-50 text-indigo-700 border-indigo-100';
+  }
+  return 'bg-slate-50 text-slate-700 border-slate-100';
+}
+
+function formatDateTime(isoString) {
+  if (!isoString) return '—';
+  try {
+    const date = new Date(isoString);
+    return date.toLocaleString('es-ES', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    });
+  } catch (e) {
+    return isoString;
+  }
+}
 
 export default SettingsPanel;

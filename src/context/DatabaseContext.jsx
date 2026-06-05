@@ -273,48 +273,89 @@ export const DatabaseProvider = ({ children }) => {
       created_at: new Date().toISOString()
     };
 
-    // 1. Save locally in localStorage as a hard fallback
+    // 1. Save locally in localStorage immediately — this is the primary display source
     try {
       const localLogs = JSON.parse(localStorage.getItem('becerril_action_logs') || '[]');
       localLogs.unshift(logData);
-      const trimmed = localLogs.slice(0, 1000);
+      const trimmed = localLogs.slice(0, 2000);
       localStorage.setItem('becerril_action_logs', JSON.stringify(trimmed));
       setActionLogs(trimmed);
     } catch (e) {
       console.error("Failed to write log to localStorage:", e);
     }
 
-    // 2. Try to save to Supabase action_logs table
+    // 2. Try to save to Supabase — attempt full schema first, fall back to minimal (known working columns)
     try {
       const { error } = await supabase
         .from('action_logs')
         .insert([logData]);
       if (error) {
-        console.warn("Failed to insert action log in Supabase:", error.message);
+        console.warn("Full insert failed (schema may be missing columns), trying minimal insert:", error.message);
+        // Fallback: use only the columns confirmed to exist in the current schema:
+        // action_type, target_id, customer_name, product_name, page_number,
+        // price, design_price, vat, total, payment_method, details (TEXT), created_at
+        const minimalData = {
+          action_type: logData.action_type,
+          target_id: logData.target_id,
+          customer_name: logData.customer_name,
+          product_name: logData.product_name,
+          page_number: logData.page_number,
+          price: logData.price,
+          design_price: logData.design_price,
+          vat: logData.vat,
+          total: logData.total,
+          payment_method: logData.payment_method,
+          // details is TEXT in current schema, so we stringify. Include all important info.
+          details: JSON.stringify({
+            customer_email: logData.customer_email,
+            customer_phone: logData.customer_phone,
+            payment_status: logData.payment_status,
+            is_paid: logData.is_paid,
+            ...logData.details
+          }),
+          created_at: logData.created_at,
+        };
+        const { error: minErr } = await supabase.from('action_logs').insert([minimalData]);
+        if (minErr) {
+          console.warn("Minimal insert also failed:", minErr.message);
+        }
       }
     } catch (err) {
-      console.error("Unexpected error saving action log:", err);
+      console.error("Unexpected error saving action log to Supabase:", err);
     }
   };
 
   const fetchActionLogs = async () => {
+    // Always start with localStorage logs (guaranteed to have recent activity)
+    let localLogs = [];
+    try {
+      localLogs = JSON.parse(localStorage.getItem('becerril_action_logs') || '[]');
+    } catch (e) {
+      console.error("Local storage action logs load failed:", e);
+    }
+
     try {
       const { data, error } = await supabase
         .from('action_logs')
         .select('*')
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .limit(2000);
       if (error) throw error;
-      if (data) {
-        setActionLogs(data);
+      if (data && data.length > 0) {
+        // Merge Supabase logs with local logs (deduplicate by created_at + action_type)
+        const supabaseKeys = new Set(data.map(r => `${r.created_at}|${r.action_type}|${r.target_id}`));
+        const localOnlyLogs = localLogs.filter(l => !supabaseKeys.has(`${l.created_at}|${l.action_type}|${l.target_id}`));
+        const merged = [...data, ...localOnlyLogs].sort(
+          (a, b) => new Date(b.created_at) - new Date(a.created_at)
+        ).slice(0, 2000);
+        setActionLogs(merged);
+      } else {
+        // Supabase has no logs (schema issue or empty) — show local logs
+        setActionLogs(localLogs);
       }
     } catch (err) {
-      console.warn("Could not load action logs from Supabase, loading from localStorage fallback:", err.message);
-      try {
-        const localLogs = JSON.parse(localStorage.getItem('becerril_action_logs') || '[]');
-        setActionLogs(localLogs);
-      } catch (e) {
-        console.error("Local storage action logs load failed:", e);
-      }
+      console.warn("Could not load action logs from Supabase, using localStorage:", err.message);
+      setActionLogs(localLogs);
     }
   };
 
@@ -2720,6 +2761,7 @@ export const DatabaseProvider = ({ children }) => {
       publicCancelReservation,
       actionLogs,
       logAction,
+      fetchActionLogs,
       expandPages,
       restoreOriginalPages,
       reorderPage,
