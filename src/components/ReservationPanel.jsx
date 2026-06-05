@@ -261,11 +261,6 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
     }
   }, [dropdownOpen]);
 
-  useEffect(() => {
-    if (orderConfirmModalOpen || reciboModalOpen || invoiceModalOpen) {
-      setEmailStatus({ sending: false, status: null, error: '' });
-    }
-  }, [orderConfirmModalOpen, reciboModalOpen, invoiceModalOpen]);
 
   const getEmailHtml = (title, content) => {
     return `
@@ -928,6 +923,7 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
         customerId: finalCustomerId
       });
       setOrderDetails(newOrder);
+      setEmailStatus({ sending: false, status: null, error: '' });
       setOrderConfirmModalOpen(true);
 
     } catch (err) {
@@ -1057,6 +1053,7 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
       });
 
       setReciboDetails(newRecibo);
+      setEmailStatus({ sending: false, status: null, error: '' });
       setReciboModalOpen(true);
     } catch (err) {
       console.error(err);
@@ -1259,6 +1256,7 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
       // Close preview, open the success modal with real invoice data
       setEfectivoPreviewOpen(false);
       setInvoiceDetails(newInvoice);
+      setEmailStatus({ sending: false, status: null, error: '' });
       setInvoiceModalOpen(true);
     } catch (err) {
       console.error(err);
@@ -1361,8 +1359,9 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
       const invoice = await confirmOrderPayment(orderToUse, method, true);
       
       if (invoice) {
-        alert(language === 'es' ? 'Venta confirmada y factura generada con éxito.' : 'Sale confirmed and invoice generated successfully.');
-        if (onReservationComplete) onReservationComplete();
+        setInvoiceDetails(invoice);
+        setEmailStatus({ sending: false, status: null, error: '' });
+        setInvoiceModalOpen(true);
       }
     } catch (error) {
       console.error("Error confirming sale:", error);
@@ -1484,6 +1483,7 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
       await resolvePreReservation(selectedPage.page_number, customerName, adType, 'confirm');
       
       const invoice = await confirmOrderPayment(orderToUse, 'Transfer', true);
+      setEmailStatus({ sending: false, status: null, error: '' });
       if (invoice) {
         setInvoiceDetails(invoice);
         setInvoiceModalOpen(true);
@@ -1574,6 +1574,7 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
       
       const invoice = await confirmOrderPayment(orderToUse, paymentMethod, true);
       setPreBillingModalOpen(false);
+      setEmailStatus({ sending: false, status: null, error: '' });
       if (invoice) {
         setInvoiceDetails(invoice);
         setInvoiceModalOpen(true);
@@ -1784,6 +1785,140 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
     </div>
   );
 
+  const getPageSlots = (page) => {
+    if (!page || !page.ads) return { top: null, middle: null, bottom: null };
+
+    const filledSlots = new Set();
+    const slotToAdMap = {};
+    let hasAny1 = false;
+
+    page.ads.forEach(ad => {
+      const prod = products.find(p => p.name === ad.ad_type);
+      if (prod) {
+        prod.requiredSlots.forEach(slot => {
+          if (slot === 'any_1') {
+            hasAny1 = true;
+            slotToAdMap['any_1'] = ad;
+          } else {
+            filledSlots.add(slot);
+            slotToAdMap[slot] = ad;
+          }
+        });
+      } else {
+        filledSlots.add('top');
+        filledSlots.add('middle');
+        filledSlots.add('bottom');
+        slotToAdMap['top'] = ad;
+        slotToAdMap['middle'] = ad;
+        slotToAdMap['bottom'] = ad;
+      }
+    });
+
+    if (hasAny1) {
+      const ad = slotToAdMap['any_1'];
+      if (!filledSlots.has('top')) {
+        filledSlots.add('top');
+        slotToAdMap['top'] = ad;
+      } else if (!filledSlots.has('middle')) {
+        filledSlots.add('middle');
+        slotToAdMap['middle'] = ad;
+      } else if (!filledSlots.has('bottom')) {
+        filledSlots.add('bottom');
+        slotToAdMap['bottom'] = ad;
+      }
+    }
+
+    return {
+      top: filledSlots.has('top') ? slotToAdMap['top'] : null,
+      middle: filledSlots.has('middle') ? slotToAdMap['middle'] : null,
+      bottom: filledSlots.has('bottom') ? slotToAdMap['bottom'] : null,
+    };
+  };
+
+  const renderVisualPagePreview = () => {
+    if (selectedPage.page_number === 'Unassigned') return null;
+
+    const slots = getPageSlots(selectedPage);
+    
+    const getAdBgColor = (ad) => {
+      if (!ad) return 'bg-gray-50/50 border-gray-200 text-gray-400 border-dashed';
+      if (ad.isPaid) return 'bg-green-500 border-green-600 text-white';
+      if (ad.isPreReserved) return 'bg-orange-500 border-orange-600 text-white';
+      if (ad.isNew) return 'bg-blue-500 border-blue-600 text-white';
+      return 'bg-red-500 border-red-600 text-white';
+    };
+
+    const getAdCustomerName = (ad) => {
+      if (!ad) return '';
+      let cName = ad.customer_name;
+      if (!cName && ad.customer_id !== 'legacy') {
+        const c = customers.find(cust => cust.id === ad.customer_id || cust.nif === ad.customer_id);
+        cName = c ? (c.commercial_name || c.fiscal_name) : null;
+        if (!cName) {
+          const fc = fallbackCustomers.find(cust => cust.id === ad.customer_id || cust.nif === ad.customer_id);
+          cName = fc ? (fc.commercial_name || fc.fiscal_name) : (t('rp_unknown_customer') || 'Cliente Desconocido');
+        }
+      } else if (!cName) {
+        cName = t('rp_legacy_customer') || 'Legacy Customer';
+      }
+      return cName;
+    };
+
+    const renderSlotBlock = (ad, heightClass, label) => {
+      const cName = getAdCustomerName(ad);
+      const colorClass = getAdBgColor(ad);
+      return (
+        <div className={`flex flex-col items-center justify-center p-3 border-2 rounded-xl transition-all ${heightClass} ${colorClass} shadow-inner text-center overflow-hidden`}>
+          {ad ? (
+            <>
+              <span className="font-bold text-sm truncate max-w-full drop-shadow-sm">{cName}</span>
+              <span className="text-xs opacity-90 truncate max-w-full mt-0.5">{ad.ad_type}</span>
+            </>
+          ) : (
+            <span className="text-xs font-medium uppercase tracking-wider">{label} ({t('po_available') || 'Disponible'})</span>
+          )}
+        </div>
+      );
+    };
+
+    const topAd = slots.top;
+    const middleAd = slots.middle;
+    const bottomAd = slots.bottom;
+
+    const isFullPage = topAd && topAd === middleAd && middleAd === bottomAd;
+    const isTopTwoThirds = topAd && topAd === middleAd && topAd !== bottomAd;
+    const isBottomTwoThirds = middleAd && middleAd === bottomAd && topAd !== middleAd;
+
+    return (
+      <div className="mb-6 p-4 bg-slate-50 border border-slate-200 rounded-2xl">
+        <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
+          {language === 'es' ? 'Distribución Visual de la Página' : 'Visual Page Distribution'}
+        </h4>
+        <div className="aspect-[3/4] max-w-[280px] mx-auto bg-white border-4 border-slate-800 rounded-2xl p-2.5 flex flex-col gap-2 shadow-md relative overflow-hidden">
+          {isFullPage ? (
+            renderSlotBlock(topAd, 'flex-1', 'Página Completa')
+          ) : isTopTwoThirds ? (
+            <>
+              {renderSlotBlock(topAd, 'flex-[2]', '2/3 Página (Superior)')}
+              {renderSlotBlock(bottomAd, 'flex-1', '1/3 Página (Inferior)')}
+            </>
+          ) : isBottomTwoThirds ? (
+            <>
+              {renderSlotBlock(topAd, 'flex-1', '1/3 Página (Superior)')}
+              {renderSlotBlock(middleAd, 'flex-[2]', '2/3 Página (Inferior)')}
+            </>
+          ) : (
+            <>
+              {renderSlotBlock(topAd, 'flex-1', '1/3 Superior')}
+              {renderSlotBlock(middleAd, 'flex-1', '1/3 Medio')}
+              {renderSlotBlock(bottomAd, 'flex-1', '1/3 Inferior')}
+            </>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="bg-white p-4 sm:p-6 rounded-xl border border-gray-100 shadow-sm relative">
       <div className="flex justify-between items-center mb-4">
@@ -1808,6 +1943,8 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
           )}
         </div>
       </div>
+
+      {selectedPage.page_number !== 'Unassigned' && renderVisualPagePreview()}
       
       {/* Choice Selector Mode */}
       {activeViewMode === 'select_mode' && (
@@ -2779,7 +2916,7 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
           <div className="space-y-2">
             {selectedPage.ads.map((ad, idx) => {
               const c = customers.find(cust => cust.id === ad.customer_id || cust.nif === ad.customer_id);
-              const cName = c ? (c.commercial_name || c.fiscal_name) : (t('rp_legacy_customer') || 'Legacy Customer');
+              const cName = c ? (c.commercial_name || c.fiscal_name) : (ad.customer_name || t('rp_legacy_customer') || 'Legacy Customer');
               return (
                 <div key={idx} className="bg-red-50 text-red-800 text-xs px-3 py-2 rounded border border-red-100 flex justify-between items-center group">
                   <div className="flex flex-col">

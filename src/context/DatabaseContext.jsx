@@ -67,7 +67,9 @@ const fromDbInvoice = (row) => ({
   assignedPage: row.assigned_page,
   artworkComment: row.artwork_comment,
   originalInvoiceId: row.original_invoice_id,
-  emailSentAt: row.email_sent_at
+  emailSentAt: row.email_sent_at,
+  customerEmail: row.customer_email || null,
+  customerPhone: row.customer_phone || null
 });
 
 const toDbInvoice = (inv) => ({
@@ -84,7 +86,9 @@ const toDbInvoice = (inv) => ({
   assigned_page: inv.assignedPage,
   artwork_comment: inv.artworkComment,
   original_invoice_id: inv.originalInvoiceId,
-  email_sent_at: inv.emailSentAt
+  email_sent_at: inv.emailSentAt,
+  customer_email: inv.customerEmail || null,
+  customer_phone: inv.customerPhone || null
 });
 
 const fromDbRecibo = (row) => ({

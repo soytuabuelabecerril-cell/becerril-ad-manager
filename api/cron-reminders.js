@@ -1,6 +1,5 @@
 // api/cron-reminders.js
-import pkg from 'pg';
-const { Client } = pkg;
+import { createClient } from '@supabase/supabase-js';
 import nodemailer from 'nodemailer';
 import dotenv from 'dotenv';
 import path from 'path';
@@ -10,7 +9,9 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.join(__dirname, '..', '.env') });
 
-const connectionString = 'postgresql://postgres:pBX5dYZR6XcYvJ1EHvzA@db.dfjxmnsozvmfhojnuikx.supabase.co:5432/postgres';
+const supabaseUrl = process.env.VITE_SUPABASE_URL || 'https://dfjxmnsozvmfhojnuikx.supabase.co';
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const supabase = createClient(supabaseUrl, supabaseKey);
 
 export default async function handler(req, res) {
   // Enable CORS
@@ -22,11 +23,6 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
   }
-
-  const client = new Client({
-    connectionString,
-    ssl: { rejectUnauthorized: false }
-  });
 
   const transporter = nodemailer.createTransport({
     host: 'smtp.gmail.com',
@@ -44,21 +40,26 @@ export default async function handler(req, res) {
   const appUrl = process.env.VITE_APP_URL || req.headers.referer || 'http://localhost:5173';
 
   try {
-    await client.connect();
-    
-    // Fetch all active pre-reservations from ad_reservations
-    const adRes = await client.query(`
-      SELECT ar.*, c.email as customer_email, c.commercial_name, c.fiscal_name
-      FROM public.ad_reservations ar
-      LEFT JOIN public.customers c ON ar.customer_id = c.id OR ar.customer_id = c.nif
-      WHERE ar.is_pre_reserved = true
-    `);
+    // Fetch active ad_reservations
+    const { data: adReservations, error: adErr } = await supabase
+      .from('ad_reservations')
+      .select('*')
+      .eq('is_pre_reserved', true);
+    if (adErr) throw adErr;
 
-    // Fetch all active pre-reservations from orders table
-    const orderRes = await client.query(`
-      SELECT * FROM public.orders
-      WHERE order_type = 'pre-reserved' AND is_paid = false
-    `);
+    // Fetch active orders
+    const { data: ordersData, error: orderErr } = await supabase
+      .from('orders')
+      .select('*')
+      .eq('order_type', 'pre-reserved')
+      .eq('is_paid', false);
+    if (orderErr) throw orderErr;
+
+    // Fetch all customers for in-memory join
+    const { data: customersData, error: custErr } = await supabase
+      .from('customers')
+      .select('*');
+    if (custErr) throw custErr;
 
     const now = new Date();
     const emailsSent = [];
@@ -173,15 +174,17 @@ export default async function handler(req, res) {
     };
 
     // 1. Process ad_reservations
-    for (const row of adRes.rows) {
+    for (const row of adReservations) {
       const createdDate = new Date(row.created_at || now);
       const d1 = new Date(createdDate);
       const d2 = new Date(now);
       d1.setHours(0, 0, 0, 0);
       d2.setHours(0, 0, 0, 0);
       const diffDays = Math.round((d2 - d1) / (1000 * 60 * 60 * 24));
-      const email = row.customer_email;
-      const name = row.customer_name || row.commercial_name || row.fiscal_name || 'Cliente';
+      
+      const customer = customersData.find(c => c.id === row.customer_id || c.nif === row.customer_id);
+      const email = customer?.email;
+      const name = row.customer_name || customer?.commercial_name || customer?.fiscal_name || 'Cliente';
       const lastDay = row.last_auto_reminder_day || 0;
 
       if (!email) continue;
@@ -198,7 +201,13 @@ export default async function handler(req, res) {
         );
         const text = `Hola ${name},\n\nLe recordamos que su espacio publicitario en la Revista de Fiestas Patronales Becerril de la Sierra 2026 (Pág. ${row.page_number}) está pre-reservado y pendiente de pago.\n\nTiene ${remainingDays} días restantes.\n\nGracias,\nEquipo de Coordinación Publicitaria`;
         await sendMail(email, subject, text, html);
-        await client.query(`UPDATE public.ad_reservations SET last_auto_reminder_day = $1 WHERE id = $2`, [diffDays, row.id]);
+        
+        const { error: updErr } = await supabase
+          .from('ad_reservations')
+          .update({ last_auto_reminder_day: diffDays })
+          .eq('id', row.id);
+        if (updErr) console.error("Error updating ad_reservations reminder day:", updErr.message);
+
       } else if (diffDays === 6 && lastDay < 6) {
         const subject = `¡Último aviso! Su reserva de la Pág. ${row.page_number} vencerá mañana - Revista de Fiestas Patronales Becerril de la Sierra 2026`;
         const html = getHtmlTemplate(
@@ -209,7 +218,13 @@ export default async function handler(req, res) {
         );
         const text = `Hola ${name},\n\nEste es un recordatorio importante de que su pre-reserva de la página ${row.page_number} vencerá y se cancelará mañana (le queda 1 día restante).\n\nGracias,\nEquipo de Coordinación Publicitaria`;
         await sendMail(email, subject, text, html);
-        await client.query(`UPDATE public.ad_reservations SET last_auto_reminder_day = 6 WHERE id = $1`, [row.id]);
+        
+        const { error: updErr } = await supabase
+          .from('ad_reservations')
+          .update({ last_auto_reminder_day: 6 })
+          .eq('id', row.id);
+        if (updErr) console.error("Error updating ad_reservations reminder day:", updErr.message);
+
       } else if (diffDays >= 7) {
         if (now.getHours() < 12 && lastDay < 7) {
           const subject = `Acción requerida: Reserva Pág. ${row.page_number} se cancelará hoy a las 12:00 PM`;
@@ -224,9 +239,20 @@ export default async function handler(req, res) {
           );
           const text = `Hola ${name},\n\nTiene hasta las 12:00 PM de hoy para confirmar su reserva de la página ${row.page_number}. Después de esta hora, se cancelará automáticamente.\n\nGestione su reserva en:\n${confirmLink}`;
           await sendMail(email, subject, text, html);
-          await client.query(`UPDATE public.ad_reservations SET last_auto_reminder_day = 7 WHERE id = $1`, [row.id]);
+          
+          const { error: updErr } = await supabase
+            .from('ad_reservations')
+            .update({ last_auto_reminder_day: 7 })
+            .eq('id', row.id);
+          if (updErr) console.error("Error updating ad_reservations reminder day:", updErr.message);
+
         } else if (now.getHours() >= 12) {
-          await client.query(`DELETE FROM public.ad_reservations WHERE id = $1`, [row.id]);
+          const { error: delErr } = await supabase
+            .from('ad_reservations')
+            .delete()
+            .eq('id', row.id);
+          if (delErr) console.error("Error deleting expired ad_reservation:", delErr.message);
+
           const subject = `Pre-reserva Cancelada: Pág. ${row.page_number} - Revista de Fiestas Patronales Becerril de la Sierra 2026`;
           const html = getHtmlTemplate(
             `Pre-reserva Cancelada Automáticamente`,
@@ -241,7 +267,7 @@ export default async function handler(req, res) {
     }
 
     // 2. Process orders
-    for (const row of orderRes.rows) {
+    for (const row of ordersData) {
       const createdDate = new Date(row.created_at || now);
       const d1 = new Date(createdDate);
       const d2 = new Date(now);
@@ -266,7 +292,13 @@ export default async function handler(req, res) {
         );
         const text = `Hola ${name},\n\nLe recordamos que su espacio publicitario en la Revista de Fiestas Patronales Becerril de la Sierra 2026 (Pág. ${row.assigned_page}) está pre-reservado y pendiente de pago.\n\nTiene ${remainingDays} días restantes.\n\nGracias,\nEquipo de Coordinación Publicitaria`;
         await sendMail(email, subject, text, html);
-        await client.query(`UPDATE public.orders SET last_auto_reminder_day = $1 WHERE id = $2`, [diffDays, row.id]);
+        
+        const { error: updErr } = await supabase
+          .from('orders')
+          .update({ last_auto_reminder_day: diffDays })
+          .eq('id', row.id);
+        if (updErr) console.error("Error updating orders reminder day:", updErr.message);
+
       } else if (diffDays === 6 && lastDay < 6) {
         const subject = `¡Último aviso! Su reserva de la Pág. ${row.assigned_page} vencerá mañana - Revista de Fiestas Patronales Becerril de la Sierra 2026`;
         const html = getHtmlTemplate(
@@ -277,7 +309,13 @@ export default async function handler(req, res) {
         );
         const text = `Hola ${name},\n\nEste es un recordatorio importante de que su pre-reserva de la página ${row.assigned_page} vencerá y se cancelará mañana (le queda 1 día restante).\n\nGracias,\nEquipo de Coordinación Publicitaria`;
         await sendMail(email, subject, text, html);
-        await client.query(`UPDATE public.orders SET last_auto_reminder_day = 6 WHERE id = $1`, [row.id]);
+        
+        const { error: updErr } = await supabase
+          .from('orders')
+          .update({ last_auto_reminder_day: 6 })
+          .eq('id', row.id);
+        if (updErr) console.error("Error updating orders reminder day:", updErr.message);
+
       } else if (diffDays >= 7) {
         if (now.getHours() < 12 && lastDay < 7) {
           const subject = `Acción requerida: Reserva Pág. ${row.assigned_page} se cancelará hoy a las 12:00 PM`;
@@ -292,9 +330,20 @@ export default async function handler(req, res) {
           );
           const text = `Hola ${name},\n\nTiene hasta las 12:00 PM de hoy para confirmar su reserva de la página ${row.assigned_page}. Después de esta hora, se cancelará automáticamente.\n\nGestione su reserva en:\n${confirmLink}`;
           await sendMail(email, subject, text, html);
-          await client.query(`UPDATE public.orders SET last_auto_reminder_day = 7 WHERE id = $1`, [row.id]);
+          
+          const { error: updErr } = await supabase
+            .from('orders')
+            .update({ last_auto_reminder_day: 7 })
+            .eq('id', row.id);
+          if (updErr) console.error("Error updating orders reminder day:", updErr.message);
+
         } else if (now.getHours() >= 12) {
-          await client.query(`DELETE FROM public.orders WHERE id = $1`, [row.id]);
+          const { error: delErr } = await supabase
+            .from('orders')
+            .delete()
+            .eq('id', row.id);
+          if (delErr) console.error("Error deleting expired order:", delErr.message);
+
           const subject = `Pre-reserva Cancelada: Pág. ${row.assigned_page} - Revista de Fiestas Patronales Becerril de la Sierra 2026`;
           const html = getHtmlTemplate(
             `Pre-reserva Cancelada Automáticamente`,
@@ -312,9 +361,5 @@ export default async function handler(req, res) {
   } catch (err) {
     console.error('Cron job execution failed:', err);
     return res.status(500).json({ error: 'Cron processing failed', details: err.message });
-  } finally {
-    try {
-      await client.end();
-    } catch (e) {}
   }
 }
