@@ -1,21 +1,43 @@
-import React from 'react';
+import React, { useState, useRef } from 'react';
 import { useDatabase } from '../context/DatabaseContext';
 import { fallbackCustomers } from '../utils/fallbackCustomers';
 import { products } from '../utils/products';
-import { Plus } from 'lucide-react';
+import { Plus, GripVertical, MousePointer, Check, AlertTriangle, MoveVertical } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
 
 const MagazineGrid = ({ onPageClick }) => {
   const { t } = useLanguage();
-  const { pages, loading } = useDatabase();
+  const { pages, loading, reorderPage } = useDatabase();
+
+  // --- Drag & Drop State ---
+  const [isDragMode, setIsDragMode] = useState(false);
+  const [draggedPageNum, setDraggedPageNum] = useState(null);
+  const [dropTargetNum, setDropTargetNum] = useState(null);
+  const [swapStatus, setSwapStatus] = useState(null); // { type: 'success'|'error', message: string }
+  const swapStatusTimer = useRef(null);
+
+  // A page is "locked" if it's an editorial page (legacy customer_id) and has no real reservation
+  // OR if it's one of the two back covers (last 2 page numbers)
+  const sortedPageNums = pages
+    ? pages.map(p => p.page_number).filter(n => typeof n === 'number').sort((a, b) => a - b)
+    : [];
+  const backCoverNums = new Set(
+    sortedPageNums.length >= 2
+      ? [sortedPageNums[sortedPageNums.length - 2], sortedPageNums[sortedPageNums.length - 1]]
+      : []
+  );
+
+  const isPageLocked = (page) => {
+    // Only the two back-cover pages (portada interior & contraportada) remain fixed.
+    // All other pages — including editorial red spots and customer-reserved pages — can be reordered.
+    return backCoverNums.has(page.page_number);
+  };
 
   const getStatusColor = (page) => {
     let classes = '';
-
-    // Handle borders and text color
     if (page.ads && page.ads.length > 0) {
       classes += ' border-red-700 text-white';
-    } else if (page.page_number === 91 || page.page_number === 92) {
+    } else if (backCoverNums.has(page.page_number)) {
       classes += ' border-orange-500 text-white';
     } else {
       switch (page.status) {
@@ -24,48 +46,38 @@ const MagazineGrid = ({ onPageClick }) => {
         default: classes += ' hover:bg-gray-200 border-gray-300 text-gray-800'; break;
       }
     }
-    
-    // Fallback backgrounds if gradient is not applied
+
     if (!page.ads || page.ads.length === 0) {
-      if (page.page_number === 91 || page.page_number === 92) classes += ' bg-orange-400 hover:bg-orange-500';
+      if (backCoverNums.has(page.page_number)) classes += ' bg-orange-400 hover:bg-orange-500';
       else if (page.status === 'Locked') classes += ' bg-red-100';
       else if (page.status === 'Reserved') classes += ' bg-red-500 hover:bg-red-600';
       else classes += ' bg-gray-100';
     }
-    
+
     return classes;
   };
 
   const getBackgroundStyle = (page) => {
     if (!page.ads || page.ads.length === 0) return {};
-    
     const red = '#ef4444';
-    const white = '#f3f4f6'; 
-    
+    const white = '#f3f4f6';
     const filledSlots = new Set();
     const slotToAdMap = {};
     let hasAny1 = false;
-    
+
     page.ads.forEach(ad => {
       const prod = products.find(p => p.name === ad.ad_type);
       if (prod) {
         prod.requiredSlots.forEach(slot => {
-          if (slot === 'any_1') {
-            hasAny1 = true;
-            slotToAdMap['any_1'] = ad;
-          } else {
-            filledSlots.add(slot);
-            slotToAdMap[slot] = ad;
-          }
+          if (slot === 'any_1') { hasAny1 = true; slotToAdMap['any_1'] = ad; }
+          else { filledSlots.add(slot); slotToAdMap[slot] = ad; }
         });
       } else {
-        // legacy/unknown products fill all
         filledSlots.add('top'); filledSlots.add('middle'); filledSlots.add('bottom');
         slotToAdMap['top'] = ad; slotToAdMap['middle'] = ad; slotToAdMap['bottom'] = ad;
       }
     });
-    
-    // Resolve any_1 to an available slot
+
     if (hasAny1) {
       const ad = slotToAdMap['any_1'];
       if (!filledSlots.has('top')) { filledSlots.add('top'); slotToAdMap['top'] = ad; }
@@ -75,47 +87,155 @@ const MagazineGrid = ({ onPageClick }) => {
 
     const getAdColor = (ad) => {
       if (!ad) return white;
-      if (ad.isPaid) return '#22c55e'; // Green for paid
-      if (ad.isPreReserved) return '#f97316'; // Orange for pre-reserved
-      if (ad.isNew) return '#3b82f6'; // Blue for newly reserved page
-      return red; // Red for normal reservation
+      if (ad.isPaid) return '#22c55e';
+      if (ad.isPreReserved) return '#f97316';
+      if (ad.isNew) return '#3b82f6';
+      return red;
     };
 
-    const t = filledSlots.has('top') ? getAdColor(slotToAdMap['top']) : white;
-    const m = filledSlots.has('middle') ? getAdColor(slotToAdMap['middle']) : white;
-    const b = filledSlots.has('bottom') ? getAdColor(slotToAdMap['bottom']) : white;
-    
-    // Check if entire background is identical
-    if (t === m && m === b && t !== white) return { background: t };
-    
+    const top = filledSlots.has('top') ? getAdColor(slotToAdMap['top']) : white;
+    const mid = filledSlots.has('middle') ? getAdColor(slotToAdMap['middle']) : white;
+    const bot = filledSlots.has('bottom') ? getAdColor(slotToAdMap['bottom']) : white;
+
+    if (top === mid && mid === bot && top !== white) return { background: top };
     return {
-      background: `linear-gradient(to bottom, 
-        ${t} 0%, ${t} 33.33%, 
-        ${m} 33.33%, ${m} 66.66%, 
-        ${b} 66.66%, ${b} 100%)`
+      background: `linear-gradient(to bottom, ${top} 0%, ${top} 33.33%, ${mid} 33.33%, ${mid} 66.66%, ${bot} 66.66%, ${bot} 100%)`
     };
+  };
+
+  // --- Drag & Drop Handlers ---
+  const handleDragStart = (e, pageNum) => {
+    setDraggedPageNum(pageNum);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', String(pageNum));
+  };
+
+  const handleDragOver = (e, pageNum) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (pageNum !== draggedPageNum) {
+      setDropTargetNum(pageNum);
+    }
+  };
+
+  const handleDragLeave = (e) => {
+    // Only clear drop target if we're leaving the cell (not entering a child element)
+    if (!e.currentTarget.contains(e.relatedTarget)) {
+      setDropTargetNum(null);
+    }
+  };
+
+  const handleDrop = async (e, targetPageNum) => {
+    e.preventDefault();
+    setDropTargetNum(null);
+
+    const sourcePageNum = draggedPageNum;
+    setDraggedPageNum(null);
+
+    if (!sourcePageNum || sourcePageNum === targetPageNum) return;
+
+    // Validate target is not locked
+    const targetPage = pages.find(p => p.page_number === targetPageNum);
+    if (!targetPage || isPageLocked(targetPage)) {
+      showSwapStatus('error', t('magazine_swap_locked'));
+      return;
+    }
+
+    try {
+      await reorderPage(sourcePageNum, targetPageNum);
+      const msg = t('magazine_swap_success')
+        .replace('{a}', sourcePageNum)
+        .replace('{b}', targetPageNum);
+      showSwapStatus('success', msg);
+    } catch (err) {
+      showSwapStatus('error', t('magazine_swap_error'));
+    }
+  };
+
+  const handleDragEnd = () => {
+    setDraggedPageNum(null);
+    setDropTargetNum(null);
+  };
+
+  const showSwapStatus = (type, message) => {
+    if (swapStatusTimer.current) clearTimeout(swapStatusTimer.current);
+    setSwapStatus({ type, message });
+    swapStatusTimer.current = setTimeout(() => setSwapStatus(null), 4000);
   };
 
   if (loading) {
     return <div className="p-4 bg-white rounded-xl shadow-sm border border-gray-100 h-64 flex items-center justify-center">{t('loading_pages')}</div>;
   }
 
+  const totalPages = pages ? pages.filter(p => typeof p.page_number === 'number').length : 0;
+
   return (
     <div className="p-2.5 sm:p-4 bg-white rounded-xl shadow-sm border border-gray-100">
-      <div className="flex items-center gap-4 mb-4">
-        <h2 className="text-xl font-bold text-gray-800">{t('magazine_layout')}</h2>
-        <button 
-          onClick={() => onPageClick({ page_number: 'Unassigned', status: 'Available', ads: [] })}
-          className="flex items-center gap-2 bg-blue-50 text-blue-700 hover:bg-blue-100 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-4">
+        <div className="flex-1 flex items-center gap-3">
+          <h2 className="text-xl font-bold text-gray-800">
+            {t('magazine_layout').replace('92', String(totalPages))}
+          </h2>
+          <button
+            onClick={() => onPageClick({ page_number: 'Unassigned', status: 'Available', ads: [] })}
+            className="flex items-center gap-2 bg-blue-50 text-blue-700 hover:bg-blue-100 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
+          >
+            <Plus size={16} />
+            {t('new_unassigned')}
+          </button>
+        </div>
+
+        {/* Edit Mode Toggle */}
+        <button
+          onClick={() => {
+            setIsDragMode(prev => !prev);
+            setDraggedPageNum(null);
+            setDropTargetNum(null);
+          }}
+          className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-semibold border transition-all cursor-pointer ${
+            isDragMode
+              ? 'bg-violet-600 text-white border-violet-700 shadow-md shadow-violet-200'
+              : 'bg-white text-gray-600 border-gray-200 hover:bg-violet-50 hover:text-violet-700 hover:border-violet-200'
+          }`}
         >
-          <Plus size={16} />
-          {t('new_unassigned')}
+          {isDragMode ? <GripVertical size={16} /> : <MousePointer size={16} />}
+          {isDragMode ? t('magazine_edit_mode') : t('magazine_normal_mode')}
         </button>
       </div>
+
+      {/* Drag mode hint bar */}
+      {isDragMode && (
+        <div className="mb-3 px-3 py-2 bg-violet-50 border border-violet-200 rounded-lg text-xs text-violet-700 flex items-center gap-2">
+          <GripVertical size={13} className="shrink-0" />
+          {t('magazine_drag_hint')}
+          <span className="ml-auto text-violet-400 text-[10px] font-medium">
+            🔒 {t('magazine_swap_locked')}
+          </span>
+        </div>
+      )}
+
+      {/* Swap Status Banner */}
+      {swapStatus && (
+        <div className={`mb-3 px-3 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-all ${
+          swapStatus.type === 'success'
+            ? 'bg-green-50 border border-green-200 text-green-700'
+            : 'bg-red-50 border border-red-200 text-red-700'
+        }`}>
+          {swapStatus.type === 'success' ? <Check size={15} className="shrink-0" /> : <AlertTriangle size={15} className="shrink-0" />}
+          {swapStatus.message}
+        </div>
+      )}
+
+      {/* Page Grid */}
       <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10 gap-2">
         {pages.map((page) => {
-          
-          // Pre-compute the tooltip content (customer names and products)
+          const locked = isPageLocked(page);
+          const isDragging = isDragMode && draggedPageNum === page.page_number;
+          const isDropTarget = isDragMode && dropTargetNum === page.page_number && draggedPageNum !== page.page_number;
+          const canDrag = isDragMode && !locked;
+
+          // Tooltip content
           let tooltipContent = null;
           if (page.ads && page.ads.length > 0) {
             tooltipContent = (
@@ -133,7 +253,7 @@ const MagazineGrid = ({ onPageClick }) => {
                       const cName = c ? (c.commercial_name || c.fiscal_name) : ad.customer_name;
                       return (
                         <li key={idx} className="truncate">
-                          {cName} ({ad.ad_type}) 
+                          {cName} ({ad.ad_type})
                           {ad.isPreReserved ? ` ${t('pre_reserved')}` : ''}
                           {ad.isPaid ? ` ${t('paid')}` : ''}
                         </li>
@@ -145,51 +265,83 @@ const MagazineGrid = ({ onPageClick }) => {
             );
           }
 
-          // Check for expired pre-reservations
           const hasExpired = page.ads && page.ads.some(ad => ad.isPreReserved && ad.expires_at && new Date() > new Date(ad.expires_at));
 
           return (
-          <button
-            key={page.page_number}
-            disabled={page.status === 'Locked'}
-            onClick={() => onPageClick(page)}
-            className={`
-              group relative aspect-[3/4] rounded-md border-2 flex flex-col items-center justify-center
-              transition-all duration-200 ease-in-out font-medium p-1 text-center
-              ${getStatusColor(page)}
-            `}
-            style={getBackgroundStyle(page)}
-          >
-            <span className="text-lg font-bold z-10 mix-blend-multiply pointer-events-none">{page.page_number}</span>
-            {hasExpired && (
-              <div className="absolute -top-2 -right-2 bg-yellow-100 rounded-full shadow-lg border border-yellow-300 z-50">
-                <span className="text-xl leading-none block p-0.5">⚠️</span>
-              </div>
-            )}
-            {page.ads && page.ads.length > 0 && (
-              <div className="flex flex-col items-center w-full px-1 z-10 text-[9px] mt-1 text-center pointer-events-none">
-                {page.ads.map((ad, idx) => {
-                  let cName = ad.customer_name;
-                  if (!cName && ad.customer_id !== 'legacy') {
-                    const c = fallbackCustomers.find(cust => cust.id === ad.customer_id || cust.nif === ad.customer_id);
-                    cName = c ? (c.commercial_name || c.fiscal_name) : 'Unknown';
-                  } else if (!cName) {
-                    cName = t('status_reserved'); 
-                  }
+            <button
+              key={page.page_number}
+              disabled={page.status === 'Locked' || (isDragMode && !canDrag && !locked)}
+              draggable={canDrag}
+              onClick={() => {
+                if (!isDragMode) {
+                  onPageClick(page);
+                }
+              }}
+              onDragStart={canDrag ? (e) => handleDragStart(e, page.page_number) : undefined}
+              onDragOver={isDragMode && !locked ? (e) => handleDragOver(e, page.page_number) : undefined}
+              onDragLeave={isDragMode ? handleDragLeave : undefined}
+              onDrop={isDragMode && !locked ? (e) => handleDrop(e, page.page_number) : undefined}
+              onDragEnd={isDragMode ? handleDragEnd : undefined}
+              className={`
+                group relative aspect-[3/4] rounded-md border-2 flex flex-col items-center justify-center
+                transition-all duration-200 ease-in-out font-medium p-1 text-center
+                ${getStatusColor(page)}
+                ${isDragging ? 'brightness-75 saturate-50 scale-95 ring-2 ring-dashed ring-violet-400' : ''}
+                ${isDropTarget ? 'ring-4 ring-blue-500 ring-offset-1 scale-105 brightness-110 z-10' : ''}
+                ${canDrag && !isDragging ? 'cursor-grab active:cursor-grabbing hover:ring-2 hover:ring-violet-300' : ''}
+                ${locked && isDragMode ? 'opacity-60 cursor-not-allowed' : ''}
+              `}
+              style={getBackgroundStyle(page)}
+            >
+              {/* Drag mode lock indicator */}
+              {locked && isDragMode && (
+                <span className="absolute top-0.5 right-0.5 text-[8px] leading-none opacity-60">🔒</span>
+              )}
 
-                  return (
-                    <div key={idx} className="w-full flex flex-col items-center border-t border-black/10 pt-0.5 mt-0.5 first:border-0 first:pt-0 first:mt-0 overflow-hidden mix-blend-multiply">
-                      <span className="font-bold truncate w-full leading-tight">{cName}</span>
-                      <span className="truncate w-full leading-tight opacity-80">{ad.ad_type}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+              {/* Drop target indicator: show insertion arrow */}
+              {isDropTarget && (
+                <div className="absolute inset-0 rounded-md border-2 border-blue-500 bg-blue-500/10 flex items-center justify-center pointer-events-none">
+                  <span className="text-blue-600 text-lg font-black">
+                    {draggedPageNum && draggedPageNum < page.page_number ? '↓' : '↑'}
+                  </span>
+                </div>
+              )}
 
-            {tooltipContent}
-          </button>
-        )})}
+              <span className={`text-lg font-bold z-10 pointer-events-none ${isDragging ? '' : 'mix-blend-multiply'}`}>
+                {page.page_number}
+              </span>
+
+              {hasExpired && (
+                <div className="absolute -top-2 -right-2 bg-yellow-100 rounded-full shadow-lg border border-yellow-300 z-50">
+                  <span className="text-xl leading-none block p-0.5">⚠️</span>
+                </div>
+              )}
+
+              {page.ads && page.ads.length > 0 && (
+                <div className="flex flex-col items-center w-full px-1 z-10 text-[9px] mt-1 text-center pointer-events-none">
+                  {page.ads.map((ad, idx) => {
+                    let cName = ad.customer_name;
+                    if (!cName && ad.customer_id !== 'legacy') {
+                      const c = fallbackCustomers.find(cust => cust.id === ad.customer_id || cust.nif === ad.customer_id);
+                      cName = c ? (c.commercial_name || c.fiscal_name) : 'Unknown';
+                    } else if (!cName) {
+                      cName = t('status_reserved');
+                    }
+
+                    return (
+                      <div key={idx} className="w-full flex flex-col items-center border-t border-black/10 pt-0.5 mt-0.5 first:border-0 first:pt-0 first:mt-0 overflow-hidden mix-blend-multiply">
+                        <span className="font-bold truncate w-full leading-tight">{cName}</span>
+                        <span className="truncate w-full leading-tight opacity-80">{ad.ad_type}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {tooltipContent}
+            </button>
+          );
+        })}
       </div>
     </div>
   );

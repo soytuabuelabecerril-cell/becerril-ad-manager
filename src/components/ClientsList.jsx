@@ -3,10 +3,12 @@ import { supabase } from '../lib/supabase';
 import { Mail, Phone, MapPin, Search, Edit2, Plus, Users, ShieldAlert } from 'lucide-react';
 import { fallbackCustomers } from '../utils/fallbackCustomers';
 import { useLanguage } from '../context/LanguageContext';
+import { useDatabase } from '../context/DatabaseContext';
 import CustomerModal from './CustomerModal';
 
 const ClientsList = () => {
   const { t, language } = useLanguage();
+  const { logAction } = useDatabase();
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -67,16 +69,22 @@ const ClientsList = () => {
           .eq('id', selectedCustomer.id);
           
         if (error) throw error;
+        logAction('update_customer', selectedCustomer.id, cleanData.commercial_name || cleanData.fiscal_name, null, null, 0, 0, 0, 0, null, false, cleanData);
       } else if (selectedCustomer && selectedCustomer.id && selectedCustomer.id.startsWith('ext-')) {
         // Mock update for fallback data
         console.log("Mock updated local fallback customer:", customerData);
       } else {
         // Create new
-        const { error } = await supabase
+        const { data, error } = await supabase
           .from('customers')
-          .insert([cleanData]);
+          .insert([cleanData])
+          .select();
           
         if (error) throw error;
+        const newCust = data?.[0];
+        if (newCust) {
+          logAction('create_customer', newCust.id, newCust.commercial_name || newCust.fiscal_name, null, null, 0, 0, 0, 0, null, false, newCust);
+        }
       }
       setIsModalOpen(false);
       fetchCustomers();

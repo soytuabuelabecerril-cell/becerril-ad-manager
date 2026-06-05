@@ -15,7 +15,8 @@ const CustomersList = ({ onSelectPage }) => {
     orders,
     confirmOrderPayment,
     sendPaymentReminder,
-    trackWhatsAppReminderSent
+    trackWhatsAppReminderSent,
+    logAction
   } = useDatabase();
 
   const [customers, setCustomers] = useState([]);
@@ -96,6 +97,7 @@ const CustomersList = ({ onSelectPage }) => {
         
         // Update local state
         setCustomers(customers.map(c => c.id === selectedCustomer.id ? { ...c, ...customerData } : c));
+        logAction('update_customer', selectedCustomer.id, cleanData.commercial_name || cleanData.fiscal_name, null, null, 0, 0, 0, 0, null, false, cleanData);
       } else {
         if (selectedCustomer && selectedCustomer.id && selectedCustomer.id.startsWith('ext-')) {
            // Mock update for fallback data
@@ -111,9 +113,12 @@ const CustomersList = ({ onSelectPage }) => {
           
           if (data && data.length > 0) {
             setCustomers([data[0], ...customers]);
+            logAction('create_customer', data[0].id, data[0].commercial_name || data[0].fiscal_name, null, null, 0, 0, 0, 0, null, false, data[0]);
           } else {
             // If data is not returned, add to local state anyway
-            setCustomers([{ id: Date.now().toString(), ...customerData }, ...customers]);
+            const tempId = Date.now().toString();
+            setCustomers([{ id: tempId, ...customerData }, ...customers]);
+            logAction('create_customer', tempId, customerData.commercial_name || customerData.fiscal_name, null, null, 0, 0, 0, 0, null, false, customerData);
           }
         }
       }

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useDatabase } from '../context/DatabaseContext';
 import { useLanguage } from '../context/LanguageContext';
 import { formatTemplate, getTemplateVariables } from '../utils/notifications';
-import { Mail, MessageCircle, Save, RotateCcw, FileText, Sparkles, Info, Check } from 'lucide-react';
+import { Mail, MessageCircle, Save, RotateCcw, FileText, Sparkles, Info, Check, BookOpen, PlusCircle, RefreshCw, AlertTriangle, ChevronRight, Loader } from 'lucide-react';
 
 const DEFAULT_TEMPLATES = {
   invoice_email: {
@@ -161,6 +161,58 @@ const SettingsPanel = () => {
   const [sheetsSaveAlert, setSheetsSaveAlert] = useState(false);
   
   const [activeField, setActiveField] = useState('body'); // 'subject' | 'body'
+
+  // --- Page Size State ---
+  const { expandPages, restoreOriginalPages, pages } = useDatabase();
+  const currentPageCount = pages ? pages.filter(p => typeof p.page_number === 'number').length : 92;
+  const isOriginalSize = currentPageCount === 92;
+
+  const PAGE_EXPANSION_OPTIONS = [4, 8, 12, 16, 20];
+  const [selectedExpansion, setSelectedExpansion] = useState(null);
+  const [expandConfirmOpen, setExpandConfirmOpen] = useState(false);
+  const [restoreConfirmOpen, setRestoreConfirmOpen] = useState(false);
+  const [pageSizeLoading, setPageSizeLoading] = useState(false);
+  const [pageSizeAlert, setPageSizeAlert] = useState(null); // { type: 'success'|'error', message: string }
+
+  const handleExpandConfirm = async () => {
+    if (!selectedExpansion) return;
+    setPageSizeLoading(true);
+    setExpandConfirmOpen(false);
+    try {
+      const result = await expandPages(selectedExpansion);
+      const newTotal = result?.newTotal || (currentPageCount + selectedExpansion);
+      setPageSizeAlert({
+        type: 'success',
+        message: t('settings_expand_success').replace('{total}', newTotal)
+      });
+    } catch (e) {
+      console.error('Expand pages error:', e);
+      setPageSizeAlert({ type: 'error', message: t('magazine_swap_error') });
+    } finally {
+      setPageSizeLoading(false);
+      setSelectedExpansion(null);
+      setTimeout(() => setPageSizeAlert(null), 5000);
+    }
+  };
+
+  const handleRestoreConfirm = async () => {
+    setPageSizeLoading(true);
+    setRestoreConfirmOpen(false);
+    try {
+      const result = await restoreOriginalPages();
+      if (result?.alreadyOriginal) {
+        setPageSizeAlert({ type: 'success', message: t('settings_already_original') });
+      } else {
+        setPageSizeAlert({ type: 'success', message: t('settings_restore_success') });
+      }
+    } catch (e) {
+      console.error('Restore pages error:', e);
+      setPageSizeAlert({ type: 'error', message: t('magazine_swap_error') });
+    } finally {
+      setPageSizeLoading(false);
+      setTimeout(() => setPageSizeAlert(null), 5000);
+    }
+  };
 
   const handleSaveSheetsUrl = () => {
     localStorage.setItem('google_sheets_sync_url', sheetsUrl);
@@ -572,6 +624,211 @@ const SettingsPanel = () => {
           </div>
         </div>
       </div>
+
+      {/* ============================================================ */}
+      {/* PAGE SIZE / EXPANSION SECTION */}
+      {/* ============================================================ */}
+      <div className="mt-8 pt-6 border-t border-slate-100">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3 justify-between mb-4">
+          <div>
+            <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+              <BookOpen className="text-violet-600" size={20} />
+              {t('settings_page_size_title')}
+            </h3>
+            <p className="text-sm text-gray-500 mt-1">{t('settings_page_size_desc')}</p>
+          </div>
+          {/* Current size badge */}
+          <div className="flex-shrink-0 flex items-center gap-2 bg-gradient-to-br from-violet-50 to-indigo-50 border border-violet-200 rounded-xl px-4 py-2.5">
+            <span className="text-2xl font-black text-violet-700">{currentPageCount}</span>
+            <div className="flex flex-col">
+              <span className="text-[10px] font-bold text-violet-500 uppercase tracking-wider">{t('settings_page_size_current')}</span>
+              <span className="text-xs text-violet-600">{t('settings_page_size_pages')}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Alert Banner */}
+        {pageSizeAlert && (
+          <div className={`mb-4 p-3 rounded-lg text-sm font-medium flex items-center gap-2 ${
+            pageSizeAlert.type === 'success'
+              ? 'bg-green-50 border border-green-200 text-green-700'
+              : 'bg-red-50 border border-red-200 text-red-700'
+          }`}>
+            {pageSizeAlert.type === 'success' ? <Check size={16} className="shrink-0" /> : <AlertTriangle size={16} className="shrink-0" />}
+            {pageSizeAlert.message}
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+          {/* Left: Restore Original */}
+          <div className="flex flex-col gap-3">
+            <div className={`p-4 rounded-xl border-2 flex flex-col gap-3 transition-all ${
+              isOriginalSize
+                ? 'border-emerald-300 bg-emerald-50/60'
+                : 'border-amber-300 bg-amber-50/60'
+            }`}>
+              <div className="flex items-start gap-3">
+                <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${
+                  isOriginalSize ? 'bg-emerald-100' : 'bg-amber-100'
+                }`}>
+                  {isOriginalSize
+                    ? <Check size={20} className="text-emerald-600" />
+                    : <RefreshCw size={20} className="text-amber-600" />}
+                </div>
+                <div>
+                  <h4 className={`font-bold text-sm ${
+                    isOriginalSize ? 'text-emerald-800' : 'text-amber-800'
+                  }`}>
+                    {t('settings_original_state')}
+                  </h4>
+                  <p className={`text-xs mt-0.5 ${
+                    isOriginalSize ? 'text-emerald-600' : 'text-amber-700'
+                  }`}>
+                    {t('settings_original_state_desc')}
+                  </p>
+                </div>
+              </div>
+              {!isOriginalSize && (
+                <div>
+                  <p className="text-xs text-amber-700 bg-amber-100 border border-amber-200 rounded-lg p-2 mb-2 flex items-start gap-1.5">
+                    <AlertTriangle size={12} className="shrink-0 mt-0.5" />
+                    {t('settings_expand_warning')}
+                  </p>
+                  <button
+                    disabled={pageSizeLoading}
+                    onClick={() => setRestoreConfirmOpen(true)}
+                    className="w-full py-2 px-3 bg-amber-600 hover:bg-amber-700 disabled:opacity-60 text-white font-semibold rounded-lg text-sm flex items-center justify-center gap-2 transition-all cursor-pointer shadow-sm"
+                  >
+                    {pageSizeLoading ? <Loader size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+                    {t('settings_restore_btn')}
+                  </button>
+                </div>
+              )}
+              {isOriginalSize && (
+                <p className="text-xs text-emerald-600 font-medium flex items-center gap-1.5">
+                  <Check size={12} />
+                  {t('settings_already_original')}
+                </p>
+              )}
+            </div>
+          </div>
+
+          {/* Right: Expansion Options */}
+          <div className="flex flex-col gap-3">
+            <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1.5">
+              <PlusCircle size={14} className="text-violet-500" />
+              {t('settings_expand_add')}
+            </h4>
+            <div className="grid grid-cols-5 gap-2">
+              {PAGE_EXPANSION_OPTIONS.map(opt => {
+                const isSelected = selectedExpansion === opt;
+                const wouldTotal = currentPageCount + opt;
+                const alreadyExpanded = !isOriginalSize;
+                return (
+                  <button
+                    key={opt}
+                    disabled={alreadyExpanded || pageSizeLoading}
+                    onClick={() => {
+                      setSelectedExpansion(opt);
+                      setExpandConfirmOpen(true);
+                    }}
+                    title={alreadyExpanded ? t('settings_already_expanded').replace('{total}', currentPageCount) : `+${opt} → ${wouldTotal} páginas`}
+                    className={`flex flex-col items-center justify-center rounded-xl border-2 py-3 px-1 text-center transition-all cursor-pointer ${
+                      alreadyExpanded || pageSizeLoading
+                        ? 'border-gray-100 bg-gray-50 text-gray-300 cursor-not-allowed'
+                        : isSelected
+                          ? 'border-violet-500 bg-violet-50 text-violet-700 shadow-md shadow-violet-100'
+                          : 'border-slate-200 bg-white hover:border-violet-300 hover:bg-violet-50/50 text-slate-700 hover:shadow-sm'
+                    }`}
+                  >
+                    <span className="text-xl font-black leading-none">+{opt}</span>
+                    <span className="text-[9px] font-medium mt-1 opacity-70">{wouldTotal} pgs</span>
+                  </button>
+                );
+              })}
+            </div>
+            {!isOriginalSize && (
+              <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 flex items-center gap-1.5">
+                <AlertTriangle size={12} className="shrink-0" />
+                {t('settings_already_expanded').replace('{total}', currentPageCount)}
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Expansion Confirm Modal */}
+      {expandConfirmOpen && selectedExpansion && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 flex flex-col gap-5 animate-in zoom-in-95 duration-200">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-full bg-violet-100 flex items-center justify-center">
+                <PlusCircle size={24} className="text-violet-600" />
+              </div>
+              <div>
+                <h3 className="font-bold text-gray-900 text-lg">{t('settings_page_size_title')}</h3>
+                <p className="text-sm text-gray-500">
+                  {currentPageCount} → {currentPageCount + selectedExpansion} {t('settings_page_size_pages')}
+                </p>
+              </div>
+            </div>
+            <p className="text-sm text-gray-700 bg-slate-50 border border-slate-100 rounded-xl p-4">
+              {t('settings_expand_confirm').replace('{total}', currentPageCount + selectedExpansion)}
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => { setExpandConfirmOpen(false); setSelectedExpansion(null); }}
+                className="px-4 py-2 text-gray-600 border border-gray-200 rounded-lg text-sm font-medium hover:bg-gray-50 transition-all cursor-pointer"
+              >
+                {t('cancel')}
+              </button>
+              <button
+                onClick={handleExpandConfirm}
+                className="px-5 py-2 bg-violet-600 hover:bg-violet-700 text-white font-semibold rounded-lg text-sm flex items-center gap-2 transition-all cursor-pointer shadow-sm"
+              >
+                <ChevronRight size={16} />
+                {t('confirm')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Restore Confirm Modal */}
+      {restoreConfirmOpen && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 flex flex-col gap-5 animate-in zoom-in-95 duration-200">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center">
+                <AlertTriangle size={24} className="text-amber-600" />
+              </div>
+              <div>
+                <h3 className="font-bold text-gray-900 text-lg">{t('settings_restore_btn')}</h3>
+                <p className="text-sm text-gray-500">{currentPageCount} → 92 {t('settings_page_size_pages')}</p>
+              </div>
+            </div>
+            <p className="text-sm text-gray-700 bg-amber-50 border border-amber-200 rounded-xl p-4">
+              {t('settings_restore_confirm')}
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => setRestoreConfirmOpen(false)}
+                className="px-4 py-2 text-gray-600 border border-gray-200 rounded-lg text-sm font-medium hover:bg-gray-50 transition-all cursor-pointer"
+              >
+                {t('cancel')}
+              </button>
+              <button
+                onClick={handleRestoreConfirm}
+                className="px-5 py-2 bg-amber-600 hover:bg-amber-700 text-white font-semibold rounded-lg text-sm flex items-center gap-2 transition-all cursor-pointer shadow-sm"
+              >
+                <RefreshCw size={16} />
+                {t('confirm')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

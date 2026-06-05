@@ -464,6 +464,8 @@ export const DatabaseProvider = ({ children }) => {
       return next;
     });
 
+    logAction('save_communication_template', id, null, null, null, 0, 0, 0, 0, null, false, { subject, body });
+
     if (!session) return;
     try {
       const { error } = await supabase
@@ -567,6 +569,7 @@ export const DatabaseProvider = ({ children }) => {
   const saveInvoiceSettings = async (newSettings) => {
     const updated = { ...settings, ...newSettings, isSequentialEnabled: true };
     setSettings(updated);
+    logAction('save_invoice_settings', '1', null, null, null, 0, 0, 0, 0, null, false, newSettings);
     if (!session) return;
     try {
       const { error } = await supabase
@@ -1427,6 +1430,8 @@ export const DatabaseProvider = ({ children }) => {
       // Update order locally on success
       setOrders(prev => prev.map(o => o.id === orderId ? { ...o, isPaid: true, status: 'Paid' } : o));
 
+      logAction('confirm_order_payment', orderId, order.customerName, order.productName, order.assignedPage, basePrice, designPrice, vatAmount, total, paymentMethod, true, { orderId, invoiceId: invoice.id });
+
       return invoice;
     } catch (err) {
       console.error("Error confirming order payment:", err);
@@ -1508,6 +1513,8 @@ export const DatabaseProvider = ({ children }) => {
 
       // 3. Update order locally
       setOrders(prev => prev.map(o => o.id === orderId ? { ...o, isPaid: true, status: 'Paid' } : o));
+
+      logAction('confirm_order_payment', orderId, order.customerName, order.productName, order.assignedPage, basePrice, designPrice, vatAmount, total, paymentMethod, true, { orderId, invoiceId: invoice.id, isFallback: true });
 
       return invoice;
     }
@@ -1613,6 +1620,8 @@ export const DatabaseProvider = ({ children }) => {
       }
     }
 
+    logAction('send_email_payment_reminder', targetId, customerName, productName, pageNum, 0, 0, 0, 0, null, false, { isOrder, expiresAt, customerEmail, customerPhone, emailSuccess });
+
     return { emailSuccess };
   };
 
@@ -1684,6 +1693,7 @@ export const DatabaseProvider = ({ children }) => {
         }));
       }
     }
+    logAction('send_whatsapp_payment_reminder', targetId, null, null, pageNum, 0, 0, 0, 0, null, false, { isOrder });
   };
 
   const addInvoiceWithReservation = async (invoiceData, adDetails) => {
@@ -2009,6 +2019,7 @@ export const DatabaseProvider = ({ children }) => {
         return updatedPages;
       });
     }
+    logAction('delete_ad_reservation', null, customerName, adType, pageNum, 0, 0, 0, 0, null, false, { pageNum, customerName, adType });
   };
 
   const getEmailHtml = (title, content) => {
@@ -2126,6 +2137,7 @@ export const DatabaseProvider = ({ children }) => {
           body: JSON.stringify({ to: customerEmail, subject, text, html, background: true })
         });
       }
+      logAction('public_confirm_purchase', targetId, customerName, null, pageNum, 0, 0, 0, 0, 'Transfer', false, { isOrder, customerEmail });
       return true;
     } catch (err) {
       console.error("Error confirming purchase publicly:", err);
@@ -2176,6 +2188,7 @@ export const DatabaseProvider = ({ children }) => {
           body: JSON.stringify({ to: customerEmail, subject, text, html, background: true })
         });
       }
+      logAction('public_prolong_reservation', targetId, customerName, null, pageNum, 0, 0, 0, 0, null, false, { isOrder, newExpiresAt, customerEmail });
       return true;
     } catch (err) {
       console.error("Error prolonging pre-reservation publicly:", err);
@@ -2208,6 +2221,7 @@ export const DatabaseProvider = ({ children }) => {
           body: JSON.stringify({ to: customerEmail, subject, text, html, background: true })
         });
       }
+      logAction('public_cancel_reservation', targetId, customerName, adType, pageNum, 0, 0, 0, 0, null, false, { isOrder, customerEmail });
       return true;
     } catch (err) {
       console.error("Error cancelling pre-reservation publicly:", err);
@@ -2301,6 +2315,368 @@ export const DatabaseProvider = ({ children }) => {
         updateLocalState();
       }
     }
+    logAction('resolve_pre_reservation', null, customerName, adType, pageNum, 0, 0, 0, 0, null, false, { action, prolongDateStr });
+  };
+
+  // ============================================================
+  // PAGE SIZE MANAGEMENT
+  // ============================================================
+
+  // Persisted "original" snapshot (92-page layout). Saved once on first load.
+  const ORIGINAL_PAGE_COUNT = 92;
+
+  const saveOriginalSnapshot = (pagesArray) => {
+    try {
+      const existing = localStorage.getItem('becerril_original_snapshot');
+      if (!existing) {
+        // Only save snapshot pages up to 92 (the editorial ones)
+        const snapshot = pagesArray
+          .filter(p => typeof p.page_number === 'number' && p.page_number <= ORIGINAL_PAGE_COUNT)
+          .map(p => ({ page_number: p.page_number, status: p.status, ad_type: p.ad_type || null }));
+        localStorage.setItem('becerril_original_snapshot', JSON.stringify(snapshot));
+      }
+    } catch (e) {
+      console.error('Error saving original snapshot:', e);
+    }
+  };
+
+  // Save snapshot whenever pages first load (runs once)
+  useEffect(() => {
+    if (pages && pages.length > 0) {
+      saveOriginalSnapshot(pages);
+    }
+  }, [pages.length > 0]);
+
+  /**
+   * Expand the magazine by `additionalCount` pages (multiples of 4).
+   * New pages are inserted before the back-covers (which get renumbered to the end).
+   */
+  const expandPages = async (additionalCount) => {
+    const currentTotal = pages.length;
+
+    // Identify back-cover pages (91 and 92 in original; or the last 2 in expanded layout)
+    // We find the 2 pages at the very end that are marked as cover candidates
+    const currentPageNums = pages.map(p => p.page_number).filter(n => typeof n === 'number').sort((a, b) => a - b);
+    const backCoverA = currentPageNums[currentPageNums.length - 2]; // e.g. 91
+    const backCoverB = currentPageNums[currentPageNums.length - 1]; // e.g. 92
+    const insertPoint = backCoverA; // insert new pages starting here
+    const newTotal = currentTotal + additionalCount;
+
+    // Build new page objects
+    const newPageNumbers = [];
+    for (let i = insertPoint; i < insertPoint + additionalCount; i++) {
+      newPageNumbers.push(i);
+    }
+    const newBackCoverA = insertPoint + additionalCount;     // e.g. 91+4 = 95
+    const newBackCoverB = insertPoint + additionalCount + 1; // e.g. 96
+
+    // 1. Renumber back covers in Supabase
+    try {
+      // Update back-cover A
+      await supabase.from('magazine_pages')
+        .update({ page_number: newBackCoverA })
+        .eq('page_number', backCoverA);
+      // Update back-cover B
+      await supabase.from('magazine_pages')
+        .update({ page_number: newBackCoverB })
+        .eq('page_number', backCoverB);
+
+      // Insert new Available pages
+      const insertRows = newPageNumbers.map(num => ({
+        page_number: num,
+        status: 'Available',
+        ad_type: null
+      }));
+      await supabase.from('magazine_pages').insert(insertRows);
+    } catch (err) {
+      console.error('Error expanding pages in Supabase:', err);
+    }
+
+    // 2. Update local state
+    setPages(prev => {
+      const updated = prev.map(p => {
+        if (p.page_number === backCoverA) return { ...p, page_number: newBackCoverA };
+        if (p.page_number === backCoverB) return { ...p, page_number: newBackCoverB };
+        return p;
+      });
+      const newPages = newPageNumbers.map(num => ({
+        page_number: num,
+        status: 'Available',
+        ad_type: null,
+        ads: []
+      }));
+      // Insert new pages at the correct position
+      const insertIdx = updated.findIndex(p => p.page_number === newBackCoverA);
+      const result = [
+        ...updated.slice(0, insertIdx),
+        ...newPages,
+        ...updated.slice(insertIdx)
+      ].sort((a, b) => a.page_number - b.page_number);
+
+      // Persist to localStorage
+      try {
+        localStorage.setItem('becerril_magazine_pages', JSON.stringify(result));
+        localStorage.setItem('becerril_page_count', String(newTotal));
+      } catch (e) { /* ignore */ }
+
+      return result;
+    });
+
+    logAction('expand_pages', null, null, null, null, 0, 0, 0, 0, null, false, {
+      additionalCount,
+      newTotal,
+      newBackCoverA,
+      newBackCoverB
+    });
+
+    return { newTotal, newBackCoverA, newBackCoverB };
+  };
+
+  /**
+   * Helper: send a page-change notification email to a customer.
+   */
+  const sendPageChangeEmail = async ({ to, productName, oldPage, newPage, deleted = false }) => {
+    if (!to) return;
+    const apiUrl = import.meta.env.VITE_API_URL || '/api/send-email';
+    const subject = `Actualización de su reserva – Revista de Fiestas Patronales Becerril de la Sierra 2026`;
+    let text;
+    if (deleted) {
+      text =
+        `Hola,\n\n` +
+        `Le informamos de que la Revista de Fiestas Patronales Becerril de la Sierra 2026 ha experimentado cambios en su estructura de páginas.\n\n` +
+        `Como resultado, el espacio publicitario que tenía reservado en la página ${oldPage} (${productName || 'Anuncio'}) ha sido liberado y ya no está disponible en esa ubicación.\n\n` +
+        `Por favor, póngase en contacto con nosotros para que podamos reasignarle un espacio alternativo.\n\n` +
+        `Gracias por su comprensión,\n` +
+        `Equipo de Coordinación Publicitaria`;
+    } else {
+      text =
+        `Hola,\n\n` +
+        `Le informamos de que la Revista de Fiestas Patronales Becerril de la Sierra 2026 ha experimentado cambios en su estructura de páginas.\n\n` +
+        `Los detalles actualizados de su reserva son:\n` +
+        `- Producto: ${productName || 'Anuncio'}\n` +
+        `- Su página asignada actual es ahora: ${newPage}\n\n` +
+        `Si tiene alguna pregunta, no dude en contactarnos.\n\n` +
+        `Gracias,\n` +
+        `Equipo de Coordinación Publicitaria`;
+    }
+    try {
+      await fetch(apiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ to, subject, text, background: true })
+      });
+    } catch (err) {
+      console.error('Error sending page change email:', err);
+    }
+  };
+
+  /**
+   * Restore the magazine to the original 92-page layout.
+   * Pages beyond #90 (excluding 91/92) are removed, and back-covers are re-mapped to 91/92.
+   * Sends email notifications to affected customers.
+   */
+  const restoreOriginalPages = async () => {
+    const currentPageNums = pages.map(p => p.page_number).filter(n => typeof n === 'number').sort((a, b) => a - b);
+    const backCoverA = currentPageNums[currentPageNums.length - 2];
+    const backCoverB = currentPageNums[currentPageNums.length - 1];
+    const extraPages = currentPageNums.filter(n => n > 90 && n !== backCoverA && n !== backCoverB);
+
+    if (extraPages.length === 0 && backCoverA === 91 && backCoverB === 92) {
+      return { alreadyOriginal: true };
+    }
+
+    // 0. Collect affected customers BEFORE deletion for email notifications
+    const affectedForEmail = [];
+    for (const pageNum of extraPages) {
+      const pageOrders = orders.filter(o => o.assignedPage === String(pageNum) && o.customerEmail);
+      pageOrders.forEach(o => affectedForEmail.push({
+        to: o.customerEmail,
+        productName: o.productName,
+        oldPage: pageNum,
+        deleted: true
+      }));
+    }
+
+    // 1. Delete extra ad reservations for pages being removed
+    if (extraPages.length > 0) {
+      try {
+        await supabase.from('ad_reservations').delete().in('page_number', extraPages);
+        await supabase.from('magazine_pages').delete().in('page_number', extraPages);
+      } catch (err) {
+        console.error('Error deleting extra pages from Supabase:', err);
+      }
+    }
+
+    // 2. Renumber back covers back to 91 and 92
+    if (backCoverA !== 91 || backCoverB !== 92) {
+      try {
+        await supabase.from('magazine_pages').update({ page_number: 91 }).eq('page_number', backCoverA);
+        await supabase.from('magazine_pages').update({ page_number: 92 }).eq('page_number', backCoverB);
+        await supabase.from('ad_reservations').update({ page_number: 91 }).eq('page_number', backCoverA);
+        await supabase.from('ad_reservations').update({ page_number: 92 }).eq('page_number', backCoverB);
+        await supabase.from('orders').update({ assigned_page: '91' }).eq('assigned_page', String(backCoverA));
+        await supabase.from('orders').update({ assigned_page: '92' }).eq('assigned_page', String(backCoverB));
+        await supabase.from('invoices').update({ assigned_page: '91' }).eq('assigned_page', String(backCoverA));
+        await supabase.from('invoices').update({ assigned_page: '92' }).eq('assigned_page', String(backCoverB));
+      } catch (err) {
+        console.error('Error renumbering back covers in Supabase:', err);
+      }
+    }
+
+    // 3. Update local state
+    setPages(prev => {
+      const trimmed = prev
+        .filter(p => !extraPages.includes(p.page_number))
+        .map(p => {
+          if (p.page_number === backCoverA) return { ...p, page_number: 91 };
+          if (p.page_number === backCoverB) return { ...p, page_number: 92 };
+          return p;
+        })
+        .sort((a, b) => a.page_number - b.page_number);
+
+      try {
+        localStorage.setItem('becerril_magazine_pages', JSON.stringify(trimmed));
+        localStorage.setItem('becerril_page_count', '92');
+      } catch (e) { /* ignore */ }
+
+      return trimmed;
+    });
+
+    // 4. Update local orders and invoices
+    if (backCoverA !== 91) {
+      setOrders(prev => prev.map(o => {
+        if (o.assignedPage === String(backCoverA)) return { ...o, assignedPage: '91' };
+        if (o.assignedPage === String(backCoverB)) return { ...o, assignedPage: '92' };
+        return o;
+      }));
+      setInvoices(prev => prev.map(inv => {
+        if (inv.assignedPage === String(backCoverA)) return { ...inv, assignedPage: '91' };
+        if (inv.assignedPage === String(backCoverB)) return { ...inv, assignedPage: '92' };
+        return inv;
+      }));
+    }
+
+    logAction('restore_original_pages', null, null, null, null, 0, 0, 0, 0, null, false, {
+      removedPages: extraPages,
+      backCoverA,
+      backCoverB
+    });
+
+    // 5. Send email notifications (fire-and-forget)
+    affectedForEmail.forEach(info => sendPageChangeEmail(info));
+
+    return { restored: true, removedCount: extraPages.length };
+  };
+
+  /**
+   * Reorder: move fromPageNum to toPageNum position, shifting all pages between.
+   * - Moving forward (from < to): pages from+1..to each shift back by 1, from→to
+   * - Moving backward (from > to): pages to..from-1 each shift forward by 1, from→to
+   * Cascades to: ad_reservations, orders, invoices, recibos.
+   * Sends email notification to any customer whose page number changed.
+   */
+  const reorderPage = async (fromPageNum, toPageNum) => {
+    if (fromPageNum === toPageNum) return;
+
+    const sortedNums = pages
+      .map(p => p.page_number)
+      .filter(n => typeof n === 'number')
+      .sort((a, b) => a - b);
+
+    // Build mapping: oldPageNum → newPageNum
+    const mapping = new Map();
+    if (fromPageNum < toPageNum) {
+      mapping.set(fromPageNum, toPageNum);
+      for (let p = fromPageNum + 1; p <= toPageNum; p++) {
+        if (sortedNums.includes(p)) mapping.set(p, p - 1);
+      }
+    } else {
+      mapping.set(fromPageNum, toPageNum);
+      for (let p = toPageNum; p < fromPageNum; p++) {
+        if (sortedNums.includes(p)) mapping.set(p, p + 1);
+      }
+    }
+
+    const OFFSET = 100000;
+    const affectedOldNums = Array.from(mapping.keys());
+
+    // Collect customers who will have their page number changed for email notifications
+    const emailQueue = [];
+    for (const [oldNum, newNum] of mapping.entries()) {
+      if (oldNum === newNum) continue;
+      const affected = orders.filter(o => o.assignedPage === String(oldNum) && o.customerEmail);
+      affected.forEach(o => emailQueue.push({
+        to: o.customerEmail,
+        productName: o.productName,
+        oldPage: oldNum,
+        newPage: newNum,
+        deleted: false
+      }));
+    }
+
+    try {
+      // Step 1: Offset all affected magazine_pages to avoid unique PK conflicts
+      for (const oldNum of affectedOldNums) {
+        await supabase.from('magazine_pages').update({ page_number: oldNum + OFFSET }).eq('page_number', oldNum);
+      }
+      // Also offset ad_reservations and string-based tables
+      for (const oldNum of affectedOldNums) {
+        await supabase.from('ad_reservations').update({ page_number: oldNum + OFFSET }).eq('page_number', oldNum);
+        await supabase.from('orders').update({ assigned_page: String(oldNum + OFFSET) }).eq('assigned_page', String(oldNum));
+        await supabase.from('invoices').update({ assigned_page: String(oldNum + OFFSET) }).eq('assigned_page', String(oldNum));
+        await supabase.from('recibos').update({ assigned_page: String(oldNum + OFFSET) }).eq('assigned_page', String(oldNum));
+      }
+
+      // Step 2: Set each to its final new value
+      for (const [oldNum, newNum] of mapping.entries()) {
+        await supabase.from('magazine_pages').update({ page_number: newNum }).eq('page_number', oldNum + OFFSET);
+        await supabase.from('ad_reservations').update({ page_number: newNum }).eq('page_number', oldNum + OFFSET);
+        await supabase.from('orders').update({ assigned_page: String(newNum) }).eq('assigned_page', String(oldNum + OFFSET));
+        await supabase.from('invoices').update({ assigned_page: String(newNum) }).eq('assigned_page', String(oldNum + OFFSET));
+        await supabase.from('recibos').update({ assigned_page: String(newNum) }).eq('assigned_page', String(oldNum + OFFSET));
+      }
+    } catch (err) {
+      console.error('Error reordering pages in Supabase:', err);
+      throw err;
+    }
+
+    // Update local state
+    setPages(prev => {
+      const result = prev.map(p => {
+        const newNum = mapping.get(p.page_number);
+        if (newNum !== undefined) return { ...p, page_number: newNum };
+        return p;
+      }).sort((a, b) => a.page_number - b.page_number);
+      try { localStorage.setItem('becerril_magazine_pages', JSON.stringify(result)); } catch (e) {}
+      return result;
+    });
+
+    setOrders(prev => prev.map(o => {
+      const oldNum = parseInt(o.assignedPage);
+      const newNum = mapping.get(oldNum);
+      return newNum !== undefined ? { ...o, assignedPage: String(newNum) } : o;
+    }));
+
+    setInvoices(prev => prev.map(inv => {
+      const oldNum = parseInt(inv.assignedPage);
+      const newNum = mapping.get(oldNum);
+      return newNum !== undefined ? { ...inv, assignedPage: String(newNum) } : inv;
+    }));
+
+    setRecibos(prev => prev.map(r => {
+      const oldNum = parseInt(r.assignedPage);
+      const newNum = mapping.get(oldNum);
+      return newNum !== undefined ? { ...r, assignedPage: String(newNum) } : r;
+    }));
+
+    logAction('reorder_pages', null, null, null, null, 0, 0, 0, 0, null, false, {
+      fromPageNum,
+      toPageNum,
+      pagesAffected: affectedOldNums.length
+    });
+
+    // Send email notifications (fire-and-forget)
+    emailQueue.forEach(info => sendPageChangeEmail(info));
   };
 
   return (
@@ -2340,6 +2716,9 @@ export const DatabaseProvider = ({ children }) => {
       publicCancelReservation,
       actionLogs,
       logAction,
+      expandPages,
+      restoreOriginalPages,
+      reorderPage,
       reload: loadAllData
     }}>
       {children}

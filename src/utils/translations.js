@@ -305,7 +305,7 @@ export const translations = {
     fd_by_customer: 'Breakdown by Customer',
     fd_pending_tag: 'pending',
     fd_no_data: 'No financial data yet. Generate an invoice to get started.',
-    fd_download_xls: 'View Logs (CSV)',
+    fd_download_xls: 'Log',
     fd_log_modal_title: 'Financial Action Logs (CSV)',
     fd_log_modal_subtitle: 'Copy the CSV content or view the records for audit reconstruction.',
     fd_log_tab_ledger: 'Reservations Ledger',
@@ -341,6 +341,31 @@ export const translations = {
     whatsapp_reminder: 'Send WhatsApp Reminder',
     reminder_auto_success: 'Automatic payment reminders sent to pending customers.',
     edit_status: 'Edit Status',
+
+    // Page Size / Expansion
+    settings_page_size_title: 'Magazine Size',
+    settings_page_size_desc: 'Expand or restore the number of pages in the magazine. New pages are added before the back covers (pages 91/92).',
+    settings_page_size_current: 'Current size',
+    settings_page_size_pages: 'pages',
+    settings_original_state: 'Original state (92 pages)',
+    settings_original_state_desc: 'Restore the magazine to its original 92-page layout. Pages added beyond 90 will be removed.',
+    settings_restore_btn: 'Restore Original (92 pages)',
+    settings_restore_confirm: 'Restore to 92 pages? Any reservations on extra pages will be permanently deleted. This cannot be undone.',
+    settings_restore_success: 'Magazine restored to 92 pages successfully.',
+    settings_expand_add: 'Add pages',
+    settings_expand_confirm: 'Expand magazine to {total} pages? New pages will be added before the back covers (91/92), which will be renumbered to the end.',
+    settings_expand_success: 'Magazine expanded to {total} pages successfully.',
+    settings_expand_warning: 'Reservations on pages that are removed when restoring will be permanently deleted.',
+    settings_already_original: 'Already at original size (92 pages).',
+    settings_already_expanded: 'Already expanded to {total} pages. Restore first to change size.',
+
+    // Magazine Grid Edit Mode (Drag & Drop)
+    magazine_edit_mode: 'Edit Mode (Drag & Drop)',
+    magazine_normal_mode: 'Normal Mode',
+    magazine_drag_hint: 'Drag a page to reorder it — pages between the source and target will shift accordingly.',
+    magazine_swap_locked: 'Editorial pages cannot be moved.',
+    magazine_swap_success: 'Page {a} moved to position {b}.',
+    magazine_swap_error: 'Error reordering pages. Please try again.',
   },
   es: {
     // App Navigation & Header
@@ -649,7 +674,7 @@ export const translations = {
     fd_by_customer: 'Desglose por Cliente',
     fd_pending_tag: 'pendiente',
     fd_no_data: 'Sin datos financieros. Genera una factura para comenzar.',
-    fd_download_xls: 'Ver Registros (CSV)',
+    fd_download_xls: 'Log',
     fd_log_modal_title: 'Registro de Transacciones (CSV)',
     fd_log_modal_subtitle: 'Copie el contenido en formato CSV o visualice los registros para auditoría.',
     fd_log_tab_ledger: 'Libro de Reservas',
@@ -685,5 +710,30 @@ export const translations = {
     whatsapp_reminder: 'Enviar por WhatsApp',
     reminder_auto_success: 'Recordatorios de pago automáticos enviados a los clientes pendientes.',
     edit_status: 'Editar Estado',
+
+    // Tamaño de Revista / Expansión
+    settings_page_size_title: 'Tamaño de la Revista',
+    settings_page_size_desc: 'Expande o restaura el número de páginas de la revista. Las nuevas páginas se añaden antes de las contraportadas (páginas 91/92).',
+    settings_page_size_current: 'Tamaño actual',
+    settings_page_size_pages: 'páginas',
+    settings_original_state: 'Estado original revista (92 páginas)',
+    settings_original_state_desc: 'Restaura la revista a su diseño original de 92 páginas. Las páginas añadidas más allá de la 90 serán eliminadas.',
+    settings_restore_btn: 'Restaurar Original (92 páginas)',
+    settings_restore_confirm: '¿Restaurar a 92 páginas? Las reservas en páginas extra se eliminarán permanentemente. Esta acción no se puede deshacer.',
+    settings_restore_success: 'Revista restaurada a 92 páginas con éxito.',
+    settings_expand_add: 'Añadir páginas',
+    settings_expand_confirm: '¿Expandir la revista a {total} páginas? Las nuevas páginas se añadirán antes de las contraportadas (91/92), que se renumerarán al final.',
+    settings_expand_success: 'Revista expandida a {total} páginas con éxito.',
+    settings_expand_warning: 'Las reservas en páginas que se eliminen al restaurar se borrarán permanentemente.',
+    settings_already_original: 'Ya tiene el tamaño original (92 páginas).',
+    settings_already_expanded: 'Ya expandida a {total} páginas. Restaura primero para cambiar el tamaño.',
+
+    // Cuadrícula Modo Edición (Arrastrar y Soltar)
+    magazine_edit_mode: 'Modo Edición (Arrastrar y Soltar)',
+    magazine_normal_mode: 'Modo Normal',
+    magazine_drag_hint: 'Arrastra una página para reordenarla — las páginas entre el origen y el destino se desplazan automáticamente.',
+    magazine_swap_locked: 'Las páginas editoriales no se pueden mover.',
+    magazine_swap_success: 'Página {a} movida a la posición {b}.',
+    magazine_swap_error: 'Error al reordenar páginas. Por favor, inténtalo de nuevo.',
   }
 };

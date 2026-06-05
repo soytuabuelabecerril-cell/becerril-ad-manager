@@ -127,7 +127,8 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
     updateOrder,
     confirmOrderPayment,
     deleteAdReservationDirect,
-    resolvePreReservation
+    resolvePreReservation,
+    logAction
   } = useDatabase();
   const [customers, setCustomers] = useState([]);
   const [usedProducts, setUsedProducts] = useState(new Set());
@@ -249,6 +250,10 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
   const [preBillingModalOpen, setPreBillingModalOpen] = useState(false);
   const [preBillingAd, setPreBillingAd] = useState(null);
   const [preBillingIndex, setPreBillingIndex] = useState(null);
+
+  const [activeViewMode, setActiveViewMode] = useState(null); // 'select_mode', 'process_clients', 'new_reservation'
+  const [selectedAdIndex, setSelectedAdIndex] = useState(null);
+  const [closeSalePaymentMethod, setCloseSalePaymentMethod] = useState('Transfer');
 
   useEffect(() => {
     if (!dropdownOpen) {
@@ -584,6 +589,8 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
       setSelectedCustomerId('');
       setIsAddingNew(false);
       setSentEmailAddress('');
+      setSelectedAdIndex(null);
+      setCloseSalePaymentMethod('Transfer');
     }
   }, [selectedPage]);
 
@@ -664,6 +671,56 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
     return product.requiredSlots.every(slot => availableSlots.has(slot));
   };
 
+  useEffect(() => {
+    if (selectedPage) {
+      const hasSomeAds = selectedPage.ads && selectedPage.ads.length > 0;
+      
+      const available = products.filter(p => {
+        if (usedProducts.has(p.id)) return false;
+        if (!productFitsInPage(p, selectedPage)) return false;
+
+        // Exclusivity filtering for cover pages (91 and 92) and their products
+        if (selectedPage.page_number === 91) {
+          if (p.id !== 12) return false;
+        } else if (selectedPage.page_number === 92) {
+          if (p.id !== 10) return false;
+        } else {
+          if (p.id === 10 || p.id === 11 || p.id === 12) return false;
+        }
+
+        // Parity and specific page filtering
+        if (typeof selectedPage.page_number === 'number') {
+          const isEven = selectedPage.page_number % 2 === 0;
+          const isOdd = !isEven;
+          const pNameLower = p.name.toLowerCase();
+          
+          // Hide 'libre adjudicación' (free assignment) products if a specific page is already selected
+          if (pNameLower.includes('libre adjudicación')) return false;
+
+          // If product is exclusively for odd pages
+          if (pNameLower.includes('impar') && isEven) return false;
+          
+          // If product is exclusively for even pages
+          if (pNameLower.includes(' par') && !pNameLower.includes('impar') && isOdd) return false;
+        } else if (selectedPage.page_number === 'Unassigned') {
+          const pNameLower = p.name.toLowerCase();
+          if (assignmentPref === 'par' && pNameLower.includes('impar')) return false;
+          if (assignmentPref === 'impar' && pNameLower.includes(' par') && !pNameLower.includes('impar')) return false;
+        }
+
+        return true;
+      });
+
+      if (hasSomeAds && available.length > 0) {
+        setActiveViewMode('select_mode');
+      } else if (hasSomeAds) {
+        setActiveViewMode('process_clients');
+      } else {
+        setActiveViewMode('new_reservation');
+      }
+    }
+  }, [selectedPage, usedProducts, assignmentPref]);
+
   const handleUpdateExistingCustomer = async () => {
     if (!editedCustomer.commercial_name) {
       alert(t('rp_alert_cust_name_req'));
@@ -694,6 +751,7 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
         
         // Update local state
         setCustomers(prev => prev.map(c => (c.id === selectedCustomerId ? { ...c, ...cleanData } : c)));
+        logAction('update_customer', selectedCustomerId, cleanData.commercial_name || cleanData.fiscal_name, null, null, 0, 0, 0, 0, null, false, cleanData);
       } else {
         // Mock fallback customer
         setCustomers(prev => prev.map(c => (c.id === selectedCustomerId ? { ...c, ...cleanData } : c)));
@@ -798,6 +856,7 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
           finalCustomerName = data[0].commercial_name || data[0].fiscal_name;
           customerEmail = data[0].email || '';
           setCustomers(prev => [...prev, data[0]]);
+          logAction('create_customer', data[0].id, finalCustomerName, null, null, 0, 0, 0, 0, null, false, data[0]);
         } else {
           alert(t('rp_alert_cust_create_error'));
           setIsSaving(false);
@@ -1263,6 +1322,56 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
     }
   };
 
+  const handleConfirmSale = async (ad, method) => {
+    setIsSaving(true);
+    try {
+      const pendingOrder = orders.find(o => 
+        o.assignedPage === selectedPage.page_number && 
+        o.customerName?.toLowerCase() === ad.customer_name?.toLowerCase() &&
+        o.productName === ad.ad_type &&
+        o.status === 'Pending'
+      );
+      
+      let orderToUse = pendingOrder;
+      if (!orderToUse) {
+        const prod = products.find(p => p.name === ad.ad_type);
+        const basePrice = prod ? parseFloat(prod.price) : 0;
+        const designPrice = parseFloat(ad.designWorkPrice) || 0;
+        
+        const customerObj = customers.find(c => c.id === ad.customer_id || c.nif === ad.customer_id || (c.commercial_name && c.commercial_name.toLowerCase() === ad.customer_name?.toLowerCase()));
+        const customerEmail = customerObj ? customerObj.email : null;
+        const customerPhone = customerObj ? customerObj.whatsapp : null;
+
+        orderToUse = await addOrder({
+          customerName: ad.customer_name,
+          productName: ad.ad_type,
+          price: basePrice,
+          designPrice: designPrice,
+          assignedPage: selectedPage.page_number,
+          date: new Date().toLocaleDateString(),
+          artworkComment: ad.artworkComment || '',
+          orderType: 'transfer',
+          customerId: ad.customer_id,
+          customerEmail: customerEmail,
+          customerPhone: customerPhone,
+          status: 'Pending'
+        }, true);
+      }
+      
+      const invoice = await confirmOrderPayment(orderToUse, method, true);
+      
+      if (invoice) {
+        alert(language === 'es' ? 'Venta confirmada y factura generada con éxito.' : 'Sale confirmed and invoice generated successfully.');
+        if (onReservationComplete) onReservationComplete();
+      }
+    } catch (error) {
+      console.error("Error confirming sale:", error);
+      alert((language === 'es' ? 'Error al confirmar la venta: ' : 'Error confirming sale: ') + error.message);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   // Find all pre-reserved ads
   const preReservedAds = selectedPage?.ads?.filter(ad => ad.isPreReserved) || [];
   const hasExpired = preReservedAds.some(ad => ad.expires_at && new Date() > new Date(ad.expires_at));
@@ -1700,7 +1809,440 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
         </div>
       </div>
       
-      {preReservedAds.length > 0 && (
+      {/* Choice Selector Mode */}
+      {activeViewMode === 'select_mode' && (
+        <div className="space-y-6 py-4">
+          <div className="p-4 bg-blue-50 border border-blue-200 rounded-xl text-blue-900 text-sm">
+            <p className="font-semibold">
+              {language === 'es' 
+                ? 'Esta página está parcialmente ocupada, pero aún queda espacio publicitario disponible.' 
+                : 'This page is partially occupied, but there is still advertising space available.'}
+            </p>
+            <p className="text-xs mt-1 text-blue-700">
+              {language === 'es'
+                ? 'Seleccione una de las siguientes opciones para continuar:'
+                : 'Select one of the following options to continue:'}
+            </p>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Option A */}
+            <button
+              onClick={() => setActiveViewMode('process_clients')}
+              className="flex flex-col items-center justify-center p-6 bg-white hover:bg-slate-50 border border-slate-200 hover:border-blue-500 rounded-xl transition-all shadow-sm group text-center cursor-pointer font-sans"
+            >
+              <div className="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 mb-4 group-hover:scale-110 transition-transform">
+                <span className="font-bold text-lg font-mono">A</span>
+              </div>
+              <h4 className="font-bold text-gray-800 mb-2">
+                {language === 'es' ? 'Procesar estado de clientes' : 'Process customer status'}
+              </h4>
+              <p className="text-xs text-gray-500 max-w-[200px]">
+                {language === 'es' 
+                  ? 'Gestionar el estado, pagos y facturación de los clientes que ya tienen espacio reservado en esta página.'
+                  : 'Manage status, payments, and billing for customers who already have space reserved on this page.'}
+              </p>
+            </button>
+            
+            {/* Option B */}
+            <button
+              onClick={() => setActiveViewMode('new_reservation')}
+              className="flex flex-col items-center justify-center p-6 bg-white hover:bg-slate-50 border border-slate-200 hover:border-orange-500 rounded-xl transition-all shadow-sm group text-center cursor-pointer font-sans"
+            >
+              <div className="w-12 h-12 rounded-full bg-orange-100 flex items-center justify-center text-orange-600 mb-4 group-hover:scale-110 transition-transform">
+                <span className="font-bold text-lg font-mono">B</span>
+              </div>
+              <h4 className="font-bold text-gray-800 mb-2">
+                {language === 'es' ? 'Venta espacio restante' : 'Sell remaining space'}
+              </h4>
+              <p className="text-xs text-gray-500 max-w-[200px]">
+                {language === 'es'
+                  ? 'Crear una nueva reserva para ocupar el espacio publicitario que queda disponible en esta página.'
+                  : 'Create a new reservation to occupy the remaining advertising space available on this page.'}
+              </p>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Option A: Process Clients Mode */}
+      {activeViewMode === 'process_clients' && (
+        <div className="space-y-6">
+          {/* Back button to choose options if both options are available */}
+          {selectedPage.ads && selectedPage.ads.length > 0 && availableProducts.length > 0 && (
+            <button
+              onClick={() => setActiveViewMode('select_mode')}
+              className="text-xs text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-1.5 mb-2 cursor-pointer"
+            >
+              &larr; {language === 'es' ? 'Volver a opciones' : 'Back to options'}
+            </button>
+          )}
+
+          <div>
+            <h4 className="text-sm font-bold text-gray-700 mb-3">
+              {language === 'es' 
+                ? 'Seleccione el cliente para procesar su estado o finalizar venta:' 
+                : 'Select the customer to process status or finalize sale:'}
+            </h4>
+            
+            <div className="space-y-3">
+              {selectedPage.ads.map((ad, idx) => {
+                const c = customers.find(cust => cust.id === ad.customer_id || cust.nif === ad.customer_id);
+                const cName = c ? (c.commercial_name || c.fiscal_name) : (ad.customer_name || t('rp_legacy_customer') || 'Legacy Customer');
+                const isSelected = selectedAdIndex === idx;
+                
+                // Determine status badge colors
+                let statusLabel = '';
+                let statusClass = '';
+                if (ad.isPreReserved) {
+                  const isExpired = ad.expires_at && new Date() > new Date(ad.expires_at);
+                  statusLabel = isExpired 
+                    ? (language === 'es' ? 'Pre-reserva Expirada' : 'Pre-reservation Expired') 
+                    : (language === 'es' ? 'Pre-reserva Activa' : 'Pre-reservation Active');
+                  statusClass = isExpired ? 'bg-red-100 text-red-800' : 'bg-orange-100 text-orange-800';
+                } else if (ad.isPaid) {
+                  statusLabel = language === 'es' ? 'Pagado' : 'Paid';
+                  statusClass = 'bg-green-100 text-green-800';
+                } else {
+                  statusLabel = language === 'es' ? 'Reservado (Pte. Pago)' : 'Reserved (Pending Payment)';
+                  statusClass = 'bg-blue-100 text-blue-800';
+                }
+
+                return (
+                  <div 
+                    key={idx}
+                    onClick={() => setSelectedAdIndex(isSelected ? null : idx)}
+                    className={`p-4 border rounded-xl transition-all cursor-pointer flex items-center gap-4 ${
+                      isSelected 
+                        ? 'border-blue-500 bg-blue-50/50 shadow-sm' 
+                        : 'border-gray-200 bg-white hover:bg-gray-50'
+                    }`}
+                  >
+                    <input 
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => {}} // onClick handles toggle
+                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded cursor-pointer shrink-0"
+                    />
+                    
+                    <div className="flex-1 min-w-0">
+                      <div className="font-bold text-gray-900 truncate">{cName}</div>
+                      <div className="text-xs text-gray-500 flex items-center gap-2 mt-0.5">
+                        <span>{ad.ad_type}</span>
+                        {ad.expires_at && (
+                          <span className="opacity-80 font-mono text-gray-400">
+                            (Exp: {new Date(ad.expires_at).toLocaleDateString()})
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    
+                    <span className={`text-xs font-semibold px-2 py-1 rounded shrink-0 ${statusClass}`}>
+                      {statusLabel}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Process details panel for the selected ad */}
+          {selectedAdIndex !== null && selectedPage.ads[selectedAdIndex] && (
+            (() => {
+              const ad = selectedPage.ads[selectedAdIndex];
+              const c = customers.find(cust => cust.id === ad.customer_id || cust.nif === ad.customer_id);
+              const customerName = c ? (c.commercial_name || c.fiscal_name) : (ad.customer_name || 'Legacy');
+              
+              // detailed actions for this selected reservation
+              return (
+                <div className="p-5 border border-blue-200 bg-blue-50/30 rounded-xl space-y-4 animate-in slide-in-from-top-4 duration-200">
+                  <div className="flex justify-between items-start pb-3 border-b border-gray-200">
+                    <div>
+                      <h4 className="font-bold text-gray-900 text-base">{customerName}</h4>
+                      <p className="text-xs text-gray-500">{ad.ad_type} - {language === 'es' ? `Página ${selectedPage.page_number}` : `Page ${selectedPage.page_number}`}</p>
+                    </div>
+                    {ad.isPaid && (
+                      <span className="bg-green-100 text-green-800 text-xs font-bold px-2 py-1 rounded-md">
+                        {language === 'es' ? 'Venta Finalizada' : 'Sale Finalized'}
+                      </span>
+                    )}
+                  </div>
+                  
+                  {/* Actions for Pre-Reservations */}
+                  {ad.isPreReserved && (
+                    <div className="space-y-3">
+                      <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 p-3 rounded-lg">
+                        {language === 'es' 
+                          ? 'Esta es una pre-reserva temporal. Para finalizar la venta y registrar el cobro, haga clic en Confirmar y Facturar.' 
+                          : 'This is a temporary pre-reservation. To finalize the sale and record payment, click Confirm & Invoice.'}
+                      </p>
+                      
+                      {resolvingAdIndex === selectedAdIndex ? (
+                        <div className="flex gap-2 items-center bg-white p-3 rounded-lg border border-gray-200">
+                          <input 
+                            type="date" 
+                            className="border border-gray-300 rounded px-2 py-1.5 text-sm flex-1" 
+                            value={prolongDate} 
+                            onChange={e => setProlongDate(e.target.value)} 
+                          />
+                          <button 
+                            onClick={() => handleResolveAction(ad, selectedAdIndex, 'prolong')} 
+                            className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 text-xs font-bold rounded transition-colors cursor-pointer"
+                          >
+                            {t('save')}
+                          </button>
+                          <button 
+                            onClick={() => setResolvingAdIndex(null)} 
+                            className="text-gray-500 hover:text-gray-700 text-xs px-2 cursor-pointer"
+                          >
+                            {t('cancel')}
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col sm:flex-row gap-2">
+                          <button 
+                            onClick={() => handleResolveAction(ad, selectedAdIndex, 'cancel')} 
+                            className="flex-1 py-2 px-3 text-xs font-semibold text-red-700 bg-red-50 hover:bg-red-100 rounded-lg border border-red-200 transition-colors cursor-pointer"
+                          >
+                            {language === 'es' ? 'Liberar/Cancelar Pre-reserva' : 'Liberate/Cancel Pre-reservation'}
+                          </button>
+                          <button 
+                            onClick={() => setResolvingAdIndex(selectedAdIndex)} 
+                            className="flex-1 py-2 px-3 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg border border-blue-200 transition-colors cursor-pointer"
+                          >
+                            {language === 'es' ? 'Prolongar Fecha' : 'Prolong Date'}
+                          </button>
+                          <button 
+                            onClick={() => handleOpenPreBilling(ad, selectedAdIndex)} 
+                            className="flex-1 py-2 px-3 text-xs font-bold text-white bg-green-600 hover:bg-green-700 rounded-lg shadow-sm transition-colors flex items-center justify-center gap-1 cursor-pointer"
+                          >
+                            <span>⚡</span> {language === 'es' ? 'Confirmar y Facturar' : 'Confirm & Invoice'}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Actions for Regular Reserved but Unpaid */}
+                  {!ad.isPreReserved && !ad.isPaid && (
+                    <div className="space-y-3">
+                      <p className="text-xs text-blue-800 bg-blue-50 border border-blue-100 p-3 rounded-lg">
+                        {language === 'es' 
+                          ? 'Esta reserva está confirmada pero pendiente de pago. Seleccione el método para confirmar el cobro.' 
+                          : 'This reservation is confirmed but pending payment. Select method to confirm collection.'}
+                      </p>
+                      
+                      {(() => {
+                        const matchingInvoice = invoices.find(inv => 
+                          inv.assignedPage === selectedPage.page_number && 
+                          inv.customerName === customerName &&
+                          inv.productName === ad.ad_type &&
+                          inv.status !== 'Cancelled'
+                        );
+                        
+                        const handleConfirmCloseSale = async () => {
+                          if (matchingInvoice) {
+                            setIsSaving(true);
+                            try {
+                              await updateInvoicePayment(matchingInvoice.id, closeSalePaymentMethod, true);
+                              alert(language === 'es' ? 'Pago registrado y venta finalizada con éxito.' : 'Payment registered and sale finalized successfully.');
+                              if (onReservationComplete) onReservationComplete();
+                            } catch (err) {
+                              console.error(err);
+                              alert(language === 'es' ? 'Error al actualizar el pago' : 'Error updating payment');
+                            } finally {
+                              setIsSaving(false);
+                            }
+                          } else {
+                            await handleConfirmSale(ad, closeSalePaymentMethod);
+                          }
+                        };
+
+                        return (
+                          <div className="space-y-3">
+                            {matchingInvoice ? (
+                              <div className="bg-white p-3 rounded-lg border border-gray-200 text-xs space-y-1">
+                                <div className="flex justify-between">
+                                  <span className="text-gray-550">{language === 'es' ? 'Factura:' : 'Invoice:'}</span>
+                                  <span className="font-mono font-bold text-gray-800">{matchingInvoice.id}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-gray-550">{language === 'es' ? 'Total Factura:' : 'Total Invoice:'}</span>
+                                  <span className="font-bold text-gray-900">{matchingInvoice.total.toFixed(2)}€</span>
+                                </div>
+                              </div>
+                            ) : (
+                              <p className="text-xs text-red-600 bg-red-50/50 p-2 rounded border border-red-100">
+                                {language === 'es' 
+                                  ? '⚠️ No se encontró factura activa para esta reserva. Al confirmar se generará la factura correspondiente.'
+                                  : '⚠️ No active invoice found for this reservation. Confirming will generate the corresponding invoice.'}
+                              </p>
+                            )}
+
+                            {/* Confirmar venta Card */}
+                            <div className="border border-blue-200 bg-white p-4 rounded-xl space-y-3 shadow-sm my-1">
+                              <h5 className="font-bold text-blue-900 text-sm flex items-center gap-1.5">
+                                <span>🛒</span> {language === 'es' ? 'Confirmar venta' : 'Confirm sale'}
+                              </h5>
+                              <div className="space-y-2">
+                                <label className="text-xs font-semibold text-gray-700 block">
+                                  {language === 'es' ? 'Cliente ha pagado:' : 'Customer has paid:'}
+                                </label>
+                                <div className="flex gap-4">
+                                  <label className="inline-flex items-center gap-2 cursor-pointer text-xs text-gray-700">
+                                    <input
+                                      type="radio"
+                                      name="closeSaleMethod"
+                                      value="Cash"
+                                      checked={closeSalePaymentMethod === 'Cash'}
+                                      onChange={() => setCloseSalePaymentMethod('Cash')}
+                                      className="h-4 w-4 text-blue-600 border-gray-300 focus:ring-blue-500 cursor-pointer"
+                                    />
+                                    <span>{language === 'es' ? 'Efectivo' : 'Cash'}</span>
+                                  </label>
+                                  <label className="inline-flex items-center gap-2 cursor-pointer text-xs text-gray-700">
+                                    <input
+                                      type="radio"
+                                      name="closeSaleMethod"
+                                      value="Transfer"
+                                      checked={closeSalePaymentMethod === 'Transfer'}
+                                      onChange={() => setCloseSalePaymentMethod('Transfer')}
+                                      className="h-4 w-4 text-blue-600 border-gray-300 focus:ring-blue-500 cursor-pointer"
+                                    />
+                                    <span>{language === 'es' ? 'Transferencia' : 'Transfer'}</span>
+                                  </label>
+                                </div>
+                              </div>
+                              <button
+                                onClick={handleConfirmCloseSale}
+                                disabled={isSaving}
+                                className="w-full py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white text-xs font-bold rounded-lg transition-colors cursor-pointer shadow-sm text-center flex items-center justify-center gap-1 font-sans"
+                              >
+                                {isSaving 
+                                  ? (language === 'es' ? 'Confirmando...' : 'Confirming...') 
+                                  : (language === 'es' ? 'Confirmar' : 'Confirm')}
+                              </button>
+                            </div>
+
+                            {matchingInvoice && (
+                              <div className="flex gap-2">
+                                <button 
+                                  onClick={() => handleSendEmail(matchingInvoice, false, false, true)}
+                                  className="flex-1 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 text-xs font-semibold rounded-lg transition-colors cursor-pointer"
+                                >
+                                  ✉️ {language === 'es' ? 'Enviar por Email' : 'Send by Email'}
+                                </button>
+                                <a 
+                                  href={`https://wa.me/${(matchingInvoice.customerPhone || c?.whatsapp || c?.phone || '').replace(/\D/g, '')}?text=${encodeURIComponent(getInvoiceWhatsAppMessage(matchingInvoice, templates))}`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="flex-1 py-1.5 bg-green-500 hover:bg-green-600 text-white text-xs font-semibold rounded-lg transition-colors flex items-center justify-center gap-1 cursor-pointer"
+                                >
+                                  💬 WhatsApp
+                                </a>
+                              </div>
+                            )}
+                            
+                            <button 
+                              onClick={() => handleDeleteAd(selectedAdIndex)}
+                              className="w-full py-2 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 text-xs font-bold rounded-lg transition-colors mt-1 cursor-pointer"
+                            >
+                              {language === 'es' ? 'Liberar/Cancelar Reserva' : 'Liberate/Cancel Reservation'}
+                            </button>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  )}
+
+                  {/* Actions for Paid Reservations */}
+                  {ad.isPaid && (
+                    <div className="space-y-3">
+                      <p className="text-xs text-green-800 bg-green-50 border border-green-200 p-3 rounded-lg">
+                        {language === 'es' 
+                          ? 'Esta venta está completada y pagada. Puede ver los detalles de la factura o enviar recordatorios.' 
+                          : 'This sale is completed and paid. You can view invoice details or send reminders.'}
+                      </p>
+                      
+                      {(() => {
+                        const matchingInvoice = invoices.find(inv => 
+                          inv.assignedPage === selectedPage.page_number && 
+                          inv.customerName === customerName &&
+                          inv.productName === ad.ad_type &&
+                          inv.status !== 'Cancelled'
+                        );
+                        
+                        return (
+                          <div className="space-y-2">
+                            {matchingInvoice && (
+                              <div className="bg-white p-3 rounded-lg border border-gray-250 text-xs space-y-1 mb-2">
+                                <div className="flex justify-between">
+                                  <span className="text-gray-500">{language === 'es' ? 'Factura ID:' : 'Invoice ID:'}</span>
+                                  <span className="font-mono font-bold text-gray-800">{matchingInvoice.id}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-gray-550">{language === 'es' ? 'Método Pago:' : 'Payment Method:'}</span>
+                                  <span className="font-bold text-gray-800">{matchingInvoice.paymentMethod}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-gray-550">{language === 'es' ? 'Total Pagado:' : 'Total Paid:'}</span>
+                                  <span className="font-bold text-emerald-700">{matchingInvoice.total.toFixed(2)}€</span>
+                                </div>
+                              </div>
+                            )}
+
+                            <div className="flex gap-2">
+                              {matchingInvoice && (
+                                <>
+                                  <button 
+                                    onClick={() => handleSendEmail(matchingInvoice, false, false, true)}
+                                    className="flex-1 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 text-xs font-semibold rounded-lg transition-colors cursor-pointer"
+                                  >
+                                    ✉️ {language === 'es' ? 'Reenviar Email' : 'Resend Email'}
+                                  </button>
+                                  <a 
+                                    href={`https://wa.me/${(matchingInvoice.customerPhone || c?.whatsapp || c?.phone || '').replace(/\D/g, '')}?text=${encodeURIComponent(getInvoiceWhatsAppMessage(matchingInvoice, templates))}`}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="flex-1 py-2 bg-green-500 hover:bg-green-600 text-white text-xs font-semibold rounded-lg transition-colors flex items-center justify-center gap-1 cursor-pointer"
+                                  >
+                                    💬 Reenviar WhatsApp
+                                  </a>
+                                </>
+                              )}
+                            </div>
+                            
+                            <button 
+                              onClick={() => handleDeleteAd(selectedAdIndex)}
+                              className="w-full py-2 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 text-xs font-bold rounded-lg transition-colors mt-2 cursor-pointer"
+                            >
+                              {language === 'es' ? 'Liberar/Cancelar Reserva' : 'Liberate/Cancel Reservation'}
+                            </button>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  )}
+                </div>
+              );
+            })()
+          )}
+        </div>
+      )}
+
+      {/* Option B: Standard New Reservation Screen */}
+      {activeViewMode === 'new_reservation' && (
+        <>
+          {/* Back button to choose options if both options are available */}
+          {selectedPage.ads && selectedPage.ads.length > 0 && availableProducts.length > 0 && (
+            <button
+              onClick={() => setActiveViewMode('select_mode')}
+              className="text-xs text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-1.5 mb-4 cursor-pointer"
+            >
+              &larr; {language === 'es' ? 'Volver a opciones' : 'Back to options'}
+            </button>
+          )}
+          {preReservedAds.length > 0 && (
         <div className="space-y-4">
           {hasExpired ? (
             <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg text-yellow-900">
@@ -2256,6 +2798,8 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
             })}
           </div>
         </div>
+      )}
+        </>
       )}
 
 
