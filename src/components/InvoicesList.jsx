@@ -6,6 +6,8 @@ import { FileText, Download, Receipt, Mail, MessageCircle, XCircle, CheckCircle,
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
 import { useLanguage } from '../context/LanguageContext';
+import { parseAddressDetails } from '../utils/addressParser';
+import { fallbackCustomers } from '../utils/fallbackCustomers';
 
 const InvoicesList = () => {
   const { t, language } = useLanguage();
@@ -41,6 +43,7 @@ const InvoicesList = () => {
   const [isConfigOpen, setIsConfigOpen] = useState(false);
   const [configSettings, setConfigSettings] = useState({ isSequentialEnabled: true, nextInvoiceNumber: 3 });
   const [reserveNote, setReserveNote] = useState('');
+  const [customers, setCustomers] = useState([]);
 
   const getReciboWhatsAppText = (rec) => {
     const waTemplate = templates?.recibo_whatsapp;
@@ -67,6 +70,26 @@ const InvoicesList = () => {
       setConfigSettings(settings);
     }
   }, [settings]);
+
+  useEffect(() => {
+    const fetchCustomers = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('customers')
+          .select('*');
+        if (error) throw error;
+        if (data && data.length > 0) {
+          setCustomers(data);
+        } else {
+          setCustomers(fallbackCustomers);
+        }
+      } catch (err) {
+        console.error("Error fetching customers for InvoicesList:", err);
+        setCustomers(fallbackCustomers);
+      }
+    };
+    fetchCustomers();
+  }, []);
 
   const handleReserveInvoiceDirect = async () => {
     if (!settings?.isSequentialEnabled) {
@@ -455,209 +478,269 @@ const InvoicesList = () => {
   const totalSinPagar = activeDisplayInvoices.filter(inv => !inv.isPaid).reduce((sum, inv) => sum + (inv.total || 0), 0);
 
   // ─── On-screen preview (Tailwind classes are fine here) ───────────────────
-  const renderInvoiceTemplate = (inv) => (
-    <>
-      <div className="border-b-2 border-gray-800 pb-4 mb-8 flex justify-between items-end">
-        <div>
-          <h1 className="text-3xl font-black text-gray-900 tracking-tight">{t('inv_invoice')}</h1>
-          <p className="text-gray-500 mt-1">{inv.id}</p>
-        </div>
-        <div className="text-right">
-          <h2 className="text-xl font-bold text-gray-800">I AM YOUR GRANNY S.L.</h2>
-          <p className="text-gray-500 text-sm">CIF: B72877640</p>
-          <p className="text-gray-500 text-sm">Ctra. Guadarama-Cercedilla S/N</p>
-          <p className="text-gray-500 text-sm">Portal 10 3C</p>
-          <p className="text-gray-500 text-sm">28470 Cercedilla</p>
-        </div>
-      </div>
-      
-      <div className="flex justify-between mb-12">
-        <div>
-          <h3 className="text-sm font-bold text-gray-400 uppercase mb-2">{t('inv_billed_to')}</h3>
-          <p className="text-lg font-bold text-gray-900">{inv.customerName}</p>
-        </div>
-        <div className="text-right">
-          <h3 className="text-sm font-bold text-gray-400 uppercase mb-2">{t('inv_date')}</h3>
-          <p className="text-lg font-bold text-gray-900">{new Date(inv.createdAt).toLocaleDateString()}</p>
-        </div>
-      </div>
+  const renderInvoiceTemplate = (inv) => {
+    const cust = customers.find(c => 
+      (c.commercial_name && c.commercial_name.trim().toLowerCase() === inv.customerName?.trim().toLowerCase()) ||
+      (c.fiscal_name && c.fiscal_name.trim().toLowerCase() === inv.customerName?.trim().toLowerCase())
+    );
+    const addrDetails = parseAddressDetails(cust?.address);
 
-      <table className="w-full mb-12">
-        <thead>
-          <tr className="border-b-2 border-gray-800 text-gray-800">
-            <th className="text-left py-3 font-bold">{t('inv_desc')}</th>
-            <th className="text-right py-3 font-bold">{t('inv_base_price')}</th>
-            {inv.designPrice > 0 && <th className="text-right py-3 font-bold">{t('inv_design')}</th>}
-            <th className="text-right py-3 font-bold">{t('inv_vat')}</th>
-            <th className="text-right py-3 font-bold">{t('inv_total')}</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr className="border-b border-gray-200">
-            <td className="py-4">
-              <div className="font-bold text-gray-900">{inv.productName}</div>
-              <div className="text-sm text-gray-500">{t('inv_page_assignment')} {inv.assignedPage}</div>
-            </td>
-            <td className="text-right py-4 text-gray-700">{inv.price.toFixed(2)}€</td>
-            {inv.designPrice > 0 && <td className="text-right py-4 text-gray-700">{inv.designPrice.toFixed(2)}€</td>}
-            <td className="text-right py-4 text-gray-700">{inv.vat.toFixed(2)}€</td>
-            <td className="text-right py-4 font-bold text-gray-900">{inv.total.toFixed(2)}€</td>
-          </tr>
-        </tbody>
-      </table>
-
-      <div className="flex justify-end">
-        <div className="w-64">
-          <div className="flex justify-between py-2">
-            <span className="text-gray-600 font-medium">{t('inv_subtotal')}</span>
-            <span className="text-gray-900 font-medium">{inv.price.toFixed(2)}€</span>
+    return (
+      <>
+        <div className="border-b-2 border-gray-800 pb-4 mb-8 flex justify-between items-end">
+          <div>
+            <h1 className="text-3xl font-black text-gray-900 tracking-tight">{t('inv_invoice')}</h1>
+            <p className="text-gray-500 mt-1">{inv.id}</p>
           </div>
-          {inv.designPrice > 0 && (
+          <div className="text-right">
+            <h2 className="text-xl font-bold text-gray-800">I AM YOUR GRANNY S.L.</h2>
+            <p className="text-gray-500 text-sm">CIF: B72877640</p>
+            <p className="text-gray-500 text-sm">Ctra. Guadarama-Cercedilla S/N</p>
+            <p className="text-gray-500 text-sm">Portal 10 3C</p>
+            <p className="text-gray-500 text-sm">28470 Cercedilla</p>
+          </div>
+        </div>
+        
+        <div className="flex justify-between mb-12">
+          <div>
+            <h3 className="text-sm font-bold text-gray-400 uppercase mb-2">{t('inv_billed_to')}</h3>
+            <p className="text-lg font-bold text-gray-900">{inv.customerName}</p>
+            {cust?.fiscal_name && cust.fiscal_name !== inv.customerName && (
+              <p className="text-sm text-gray-600 font-semibold mt-0.5">{cust.fiscal_name}</p>
+            )}
+            {cust?.nif && (
+              <p className="text-sm text-gray-600 font-mono mt-0.5">NIF/CIF: {cust.nif}</p>
+            )}
+            {cust?.address && (
+              <p className="text-sm text-gray-500 mt-1.5 leading-snug">
+                {cust.address}
+                {(addrDetails.zip || addrDetails.city) && (
+                  <span className="block text-xs text-gray-400 mt-0.5">
+                    {addrDetails.zip} {addrDetails.city} {addrDetails.province ? `(${addrDetails.province})` : ''}
+                  </span>
+                )}
+              </p>
+            )}
+            {(inv.customerEmail || cust?.email) && (
+              <p className="text-xs text-gray-500 mt-1">Email: {inv.customerEmail || cust?.email}</p>
+            )}
+            {(inv.customerPhone || cust?.whatsapp) && (
+              <p className="text-xs text-gray-500 mt-0.5">Tel: {inv.customerPhone || cust?.whatsapp}</p>
+            )}
+          </div>
+          <div className="text-right">
+            <h3 className="text-sm font-bold text-gray-400 uppercase mb-2">{t('inv_date')}</h3>
+            <p className="text-lg font-bold text-gray-900">{new Date(inv.createdAt).toLocaleDateString()}</p>
+          </div>
+        </div>
+
+        <table className="w-full mb-12">
+          <thead>
+            <tr className="border-b-2 border-gray-800 text-gray-800">
+              <th className="text-left py-3 font-bold">{t('inv_desc')}</th>
+              <th className="text-right py-3 font-bold">{t('inv_base_price')}</th>
+              {inv.designPrice > 0 && <th className="text-right py-3 font-bold">{t('inv_design')}</th>}
+              <th className="text-right py-3 font-bold">{t('inv_vat')}</th>
+              <th className="text-right py-3 font-bold">{t('inv_total')}</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr className="border-b border-gray-200">
+              <td className="py-4">
+                <div className="font-bold text-gray-900">{inv.productName}</div>
+                <div className="text-sm text-gray-500">{t('inv_page_assignment')} {inv.assignedPage}</div>
+              </td>
+              <td className="text-right py-4 text-gray-700">{inv.price.toFixed(2)}€</td>
+              {inv.designPrice > 0 && <td className="text-right py-4 text-gray-700">{inv.designPrice.toFixed(2)}€</td>}
+              <td className="text-right py-4 text-gray-700">{inv.vat.toFixed(2)}€</td>
+              <td className="text-right py-4 font-bold text-gray-900">{inv.total.toFixed(2)}€</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div className="flex justify-end">
+          <div className="w-64">
             <div className="flex justify-between py-2">
-              <span className="text-gray-600 font-medium">{t('inv_design_work')}</span>
-              <span className="text-gray-900 font-medium">{inv.designPrice.toFixed(2)}€</span>
+              <span className="text-gray-600 font-medium">{t('inv_subtotal')}</span>
+              <span className="text-gray-900 font-medium">{inv.price.toFixed(2)}€</span>
             </div>
-          )}
-          <div className="flex justify-between py-2 border-b border-gray-200">
-            <span className="text-gray-600 font-medium">{t('inv_vat')}</span>
-            <span className="text-gray-900 font-medium">{inv.vat.toFixed(2)}€</span>
-          </div>
-          <div className="flex justify-between py-3">
-            <span className="text-xl font-bold text-gray-900">{t('inv_total')}</span>
-            <span className="text-xl font-bold text-blue-600">{inv.total.toFixed(2)}€</span>
-          </div>
-        </div>
-      </div>
-      
-      <div className="mt-8 pt-8 border-t border-gray-200">
-        <h4 className="font-bold text-gray-800 mb-2">{t('inv_payment_status')}</h4>
-        <div className="flex items-center gap-4 bg-gray-50 p-4 rounded-lg">
-          <div>
-            <span className="text-sm text-gray-500 block">{t('inv_method')}</span>
-            <span className="font-bold text-gray-900">{inv.paymentMethod}</span>
-          </div>
-          <div className="h-8 w-px bg-gray-300"></div>
-          <div>
-            <span className="text-sm text-gray-500 block">{t('inv_status')}</span>
-            <span className={`font-bold ${inv.isPaid ? 'text-green-600' : 'text-red-600'}`}>
-              {inv.isPaid ? t('inv_paid') : t('inv_pending')}
-            </span>
+            {inv.designPrice > 0 && (
+              <div className="flex justify-between py-2">
+                <span className="text-gray-600 font-medium">{t('inv_design_work')}</span>
+                <span className="text-gray-900 font-medium">{inv.designPrice.toFixed(2)}€</span>
+              </div>
+            )}
+            <div className="flex justify-between py-2 border-b border-gray-200">
+              <span className="text-gray-600 font-medium">{t('inv_vat')}</span>
+              <span className="text-gray-900 font-medium">{inv.vat.toFixed(2)}€</span>
+            </div>
+            <div className="flex justify-between py-3">
+              <span className="text-xl font-bold text-gray-900">{t('inv_total')}</span>
+              <span className="text-xl font-bold text-blue-600">{inv.total.toFixed(2)}€</span>
+            </div>
           </div>
         </div>
-      </div>
-      
-      <div className="mt-8 pt-8 border-t border-gray-200">
-        <h4 className="font-bold text-gray-800 mb-2">{t('inv_important_info')}</h4>
-        <p className="text-gray-600 bg-gray-50 p-4 rounded-lg">{inv.artworkComment}</p>
-      </div>
-    </>
-  );
+        
+        <div className="mt-8 pt-8 border-t border-gray-200">
+          <h4 className="font-bold text-gray-800 mb-2">{t('inv_payment_status')}</h4>
+          <div className="flex items-center gap-4 bg-gray-50 p-4 rounded-lg">
+            <div>
+              <span className="text-sm text-gray-500 block">{t('inv_method')}</span>
+              <span className="font-bold text-gray-900">{inv.paymentMethod}</span>
+            </div>
+            <div className="h-8 w-px bg-gray-300"></div>
+            <div>
+              <span className="text-sm text-gray-500 block">{t('inv_status')}</span>
+              <span className={`font-bold ${inv.isPaid ? 'text-green-600' : 'text-red-600'}`}>
+                {inv.isPaid ? t('inv_paid') : t('inv_pending')}
+              </span>
+            </div>
+          </div>
+        </div>
+        
+        <div className="mt-8 pt-8 border-t border-gray-200">
+          <h4 className="font-bold text-gray-800 mb-2">{t('inv_important_info')}</h4>
+          <p className="text-gray-600 bg-gray-50 p-4 rounded-lg">{inv.artworkComment}</p>
+        </div>
+      </>
+    );
+  };
 
   // ─── PDF-only template: ONLY inline styles with hex/rgb colors ─────────────
   // html2canvas cannot parse oklch() (used by Tailwind v4). No className allowed here.
-  const renderPDFTemplate = (inv) => (
-    <div style={{ fontFamily: 'Arial, Helvetica, sans-serif', color: '#111827', fontSize: '14px', lineHeight: '1.5' }}>
-      {/* Header */}
-      <div style={{ borderBottom: '2px solid #1f2937', paddingBottom: '16px', marginBottom: '32px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
-        <div>
-          <h1 style={{ fontSize: '28px', fontWeight: '900', color: '#111827', margin: 0, letterSpacing: '-0.5px' }}>{t('inv_invoice')}</h1>
-          <p style={{ color: '#6b7280', marginTop: '4px', fontSize: '13px' }}>{inv.id}</p>
-        </div>
-        <div style={{ textAlign: 'right' }}>
-          <h2 style={{ fontSize: '18px', fontWeight: '700', color: '#1f2937', margin: 0 }}>I AM YOUR GRANNY S.L.</h2>
-          <p style={{ color: '#6b7280', fontSize: '12px', margin: '2px 0 0' }}>CIF: B72877640</p>
-          <p style={{ color: '#6b7280', fontSize: '12px', margin: '2px 0 0' }}>Ctra. Guadarama-Cercedilla S/N</p>
-          <p style={{ color: '#6b7280', fontSize: '12px', margin: '2px 0 0' }}>Portal 10 3C</p>
-          <p style={{ color: '#6b7280', fontSize: '12px', margin: '2px 0 0' }}>28470 Cercedilla</p>
-        </div>
-      </div>
+  const renderPDFTemplate = (inv) => {
+    const cust = customers.find(c => 
+      (c.commercial_name && c.commercial_name.trim().toLowerCase() === inv.customerName?.trim().toLowerCase()) ||
+      (c.fiscal_name && c.fiscal_name.trim().toLowerCase() === inv.customerName?.trim().toLowerCase())
+    );
+    const addrDetails = parseAddressDetails(cust?.address);
 
-      {/* Billed to / Date */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '40px' }}>
-        <div>
-          <p style={{ fontSize: '11px', fontWeight: '700', color: '#9ca3af', textTransform: 'uppercase', marginBottom: '6px' }}>{t('inv_billed_to')}</p>
-          <p style={{ fontSize: '16px', fontWeight: '700', color: '#111827', margin: 0 }}>{inv.customerName}</p>
-        </div>
-        <div style={{ textAlign: 'right' }}>
-          <p style={{ fontSize: '11px', fontWeight: '700', color: '#9ca3af', textTransform: 'uppercase', marginBottom: '6px' }}>{t('inv_date')}</p>
-          <p style={{ fontSize: '16px', fontWeight: '700', color: '#111827', margin: 0 }}>{new Date(inv.createdAt).toLocaleDateString()}</p>
-        </div>
-      </div>
-
-      {/* Line items table */}
-      <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '40px' }}>
-        <thead>
-          <tr style={{ borderBottom: '2px solid #1f2937' }}>
-            <th style={{ textAlign: 'left', padding: '10px 0', fontWeight: '700', color: '#1f2937' }}>{t('inv_desc')}</th>
-            <th style={{ textAlign: 'right', padding: '10px 0', fontWeight: '700', color: '#1f2937' }}>{t('inv_base_price')}</th>
-            {inv.designPrice > 0 && <th style={{ textAlign: 'right', padding: '10px 0', fontWeight: '700', color: '#1f2937' }}>{t('inv_design')}</th>}
-            <th style={{ textAlign: 'right', padding: '10px 0', fontWeight: '700', color: '#1f2937' }}>{t('inv_vat')}</th>
-            <th style={{ textAlign: 'right', padding: '10px 0', fontWeight: '700', color: '#1f2937' }}>{t('inv_total')}</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr style={{ borderBottom: '1px solid #e5e7eb' }}>
-            <td style={{ padding: '14px 0' }}>
-              <div style={{ fontWeight: '700', color: '#111827' }}>{inv.productName}</div>
-              <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '2px' }}>{t('inv_page_assignment')} {inv.assignedPage}</div>
-            </td>
-            <td style={{ textAlign: 'right', padding: '14px 0', color: '#374151' }}>{inv.price.toFixed(2)}€</td>
-            {inv.designPrice > 0 && <td style={{ textAlign: 'right', padding: '14px 0', color: '#374151' }}>{inv.designPrice.toFixed(2)}€</td>}
-            <td style={{ textAlign: 'right', padding: '14px 0', color: '#374151' }}>{inv.vat.toFixed(2)}€</td>
-            <td style={{ textAlign: 'right', padding: '14px 0', fontWeight: '700', color: '#111827' }}>{inv.total.toFixed(2)}€</td>
-          </tr>
-        </tbody>
-      </table>
-
-      {/* Totals summary */}
-      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-        <div style={{ width: '240px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0' }}>
-            <span style={{ color: '#4b5563', fontWeight: '500' }}>{t('inv_subtotal')}</span>
-            <span style={{ color: '#111827', fontWeight: '500' }}>{inv.price.toFixed(2)}€</span>
+    return (
+      <div style={{ fontFamily: 'Arial, Helvetica, sans-serif', color: '#111827', fontSize: '14px', lineHeight: '1.5' }}>
+        {/* Header */}
+        <div style={{ borderBottom: '2px solid #1f2937', paddingBottom: '16px', marginBottom: '32px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+          <div>
+            <h1 style={{ fontSize: '28px', fontWeight: '900', color: '#111827', margin: 0, letterSpacing: '-0.5px' }}>{t('inv_invoice')}</h1>
+            <p style={{ color: '#6b7280', marginTop: '4px', fontSize: '13px' }}>{inv.id}</p>
           </div>
-          {inv.designPrice > 0 && (
+          <div style={{ textAlign: 'right' }}>
+            <h2 style={{ fontSize: '18px', fontWeight: '700', color: '#1f2937', margin: 0 }}>I AM YOUR GRANNY S.L.</h2>
+            <p style={{ color: '#6b7280', fontSize: '12px', margin: '2px 0 0' }}>CIF: B72877640</p>
+            <p style={{ color: '#6b7280', fontSize: '12px', margin: '2px 0 0' }}>Ctra. Guadarama-Cercedilla S/N</p>
+            <p style={{ color: '#6b7280', fontSize: '12px', margin: '2px 0 0' }}>Portal 10 3C</p>
+            <p style={{ color: '#6b7280', fontSize: '12px', margin: '2px 0 0' }}>28470 Cercedilla</p>
+          </div>
+        </div>
+
+        {/* Billed to / Date */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '40px' }}>
+          <div>
+            <p style={{ fontSize: '11px', fontWeight: '700', color: '#9ca3af', textTransform: 'uppercase', marginBottom: '6px' }}>{t('inv_billed_to')}</p>
+            <p style={{ fontSize: '16px', fontWeight: '700', color: '#111827', margin: 0 }}>{inv.customerName}</p>
+            {cust?.fiscal_name && cust.fiscal_name !== inv.customerName && (
+              <p style={{ fontSize: '13px', fontWeight: '600', color: '#374151', margin: '2px 0 0' }}>{cust.fiscal_name}</p>
+            )}
+            {cust?.nif && (
+              <p style={{ fontSize: '13px', fontFamily: 'monospace', color: '#374151', margin: '2px 0 0' }}>NIF/CIF: {cust.nif}</p>
+            )}
+            {cust?.address && (
+              <p style={{ fontSize: '12px', color: '#4b5563', margin: '6px 0 0', lineHeight: '1.4' }}>
+                {cust.address}
+                {(addrDetails.zip || addrDetails.city) && (
+                  <span style={{ display: 'block', fontSize: '11px', color: '#9ca3af', marginTop: '2px' }}>
+                    {addrDetails.zip} {addrDetails.city} {addrDetails.province ? `(${addrDetails.province})` : ''}
+                  </span>
+                )}
+              </p>
+            )}
+            {(inv.customerEmail || cust?.email) && (
+              <p style={{ fontSize: '11px', color: '#6b7280', margin: '4px 0 0' }}>Email: {inv.customerEmail || cust?.email}</p>
+            )}
+            {(inv.customerPhone || cust?.whatsapp) && (
+              <p style={{ fontSize: '11px', color: '#6b7280', margin: '2px 0 0' }}>Tel: {inv.customerPhone || cust?.whatsapp}</p>
+            )}
+          </div>
+          <div style={{ textAlign: 'right' }}>
+            <p style={{ fontSize: '11px', fontWeight: '700', color: '#9ca3af', textTransform: 'uppercase', marginBottom: '6px' }}>{t('inv_date')}</p>
+            <p style={{ fontSize: '16px', fontWeight: '700', color: '#111827', margin: 0 }}>{new Date(inv.createdAt).toLocaleDateString()}</p>
+          </div>
+        </div>
+
+        {/* Line items table */}
+        <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '40px' }}>
+          <thead>
+            <tr style={{ borderBottom: '2px solid #1f2937' }}>
+              <th style={{ textAlign: 'left', padding: '10px 0', fontWeight: '700', color: '#1f2937' }}>{t('inv_desc')}</th>
+              <th style={{ textAlign: 'right', padding: '10px 0', fontWeight: '700', color: '#1f2937' }}>{t('inv_base_price')}</th>
+              {inv.designPrice > 0 && <th style={{ textAlign: 'right', padding: '10px 0', fontWeight: '700', color: '#1f2937' }}>{t('inv_design')}</th>}
+              <th style={{ textAlign: 'right', padding: '10px 0', fontWeight: '700', color: '#1f2937' }}>{t('inv_vat')}</th>
+              <th style={{ textAlign: 'right', padding: '10px 0', fontWeight: '700', color: '#1f2937' }}>{t('inv_total')}</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr style={{ borderBottom: '1px solid #e5e7eb' }}>
+              <td style={{ padding: '14px 0' }}>
+                <div style={{ fontWeight: '700', color: '#111827' }}>{inv.productName}</div>
+                <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '2px' }}>{t('inv_page_assignment')} {inv.assignedPage}</div>
+              </td>
+              <td style={{ textAlign: 'right', padding: '14px 0', color: '#374151' }}>{inv.price.toFixed(2)}€</td>
+              {inv.designPrice > 0 && <td style={{ textAlign: 'right', padding: '14px 0', color: '#374151' }}>{inv.designPrice.toFixed(2)}€</td>}
+              <td style={{ textAlign: 'right', padding: '14px 0', color: '#374151' }}>{inv.vat.toFixed(2)}€</td>
+              <td style={{ textAlign: 'right', padding: '14px 0', fontWeight: '700', color: '#111827' }}>{inv.total.toFixed(2)}€</td>
+            </tr>
+          </tbody>
+        </table>
+
+        {/* Totals summary */}
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <div style={{ width: '240px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0' }}>
-              <span style={{ color: '#4b5563', fontWeight: '500' }}>{t('inv_design_work')}</span>
-              <span style={{ color: '#111827', fontWeight: '500' }}>{inv.designPrice.toFixed(2)}€</span>
+              <span style={{ color: '#4b5563', fontWeight: '500' }}>{t('inv_subtotal')}</span>
+              <span style={{ color: '#111827', fontWeight: '500' }}>{inv.price.toFixed(2)}€</span>
             </div>
-          )}
-          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid #e5e7eb' }}>
-            <span style={{ color: '#4b5563', fontWeight: '500' }}>{t('inv_vat')}</span>
-            <span style={{ color: '#111827', fontWeight: '500' }}>{inv.vat.toFixed(2)}€</span>
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0' }}>
-            <span style={{ fontSize: '18px', fontWeight: '700', color: '#111827' }}>{t('inv_total')}</span>
-            <span style={{ fontSize: '18px', fontWeight: '700', color: '#2563eb' }}>{inv.total.toFixed(2)}€</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Payment status */}
-      <div style={{ marginTop: '32px', paddingTop: '32px', borderTop: '1px solid #e5e7eb' }}>
-        <h4 style={{ fontWeight: '700', color: '#1f2937', marginBottom: '8px' }}>{t('inv_payment_status')}</h4>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', backgroundColor: '#f9fafb', padding: '14px', borderRadius: '8px' }}>
-          <div>
-            <span style={{ fontSize: '12px', color: '#6b7280', display: 'block' }}>{t('inv_method')}</span>
-            <span style={{ fontWeight: '700', color: '#111827' }}>{inv.paymentMethod}</span>
-          </div>
-          <div style={{ width: '1px', height: '32px', backgroundColor: '#d1d5db' }} />
-          <div>
-            <span style={{ fontSize: '12px', color: '#6b7280', display: 'block' }}>{t('inv_status')}</span>
-            <span style={{ fontWeight: '700', color: inv.isPaid ? '#16a34a' : '#dc2626' }}>
-              {inv.isPaid ? t('inv_paid') : t('inv_pending')}
-            </span>
+            {inv.designPrice > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0' }}>
+                <span style={{ color: '#4b5563', fontWeight: '500' }}>{t('inv_design_work')}</span>
+                <span style={{ color: '#111827', fontWeight: '500' }}>{inv.designPrice.toFixed(2)}€</span>
+              </div>
+            )}
+            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid #e5e7eb' }}>
+              <span style={{ color: '#4b5563', fontWeight: '500' }}>{t('inv_vat')}</span>
+              <span style={{ color: '#111827', fontWeight: '500' }}>{inv.vat.toFixed(2)}€</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0' }}>
+              <span style={{ fontSize: '18px', fontWeight: '700', color: '#111827' }}>{t('inv_total')}</span>
+              <span style={{ fontSize: '18px', fontWeight: '700', color: '#2563eb' }}>{inv.total.toFixed(2)}€</span>
+            </div>
           </div>
         </div>
-      </div>
 
-      {/* Artwork note */}
-      <div style={{ marginTop: '32px', paddingTop: '32px', borderTop: '1px solid #e5e7eb' }}>
-        <h4 style={{ fontWeight: '700', color: '#1f2937', marginBottom: '8px' }}>{t('inv_important_info')}</h4>
-        <p style={{ color: '#4b5563', backgroundColor: '#f9fafb', padding: '14px', borderRadius: '8px', margin: 0 }}>{inv.artworkComment}</p>
+        {/* Payment status */}
+        <div style={{ marginTop: '32px', paddingTop: '32px', borderTop: '1px solid #e5e7eb' }}>
+          <h4 style={{ fontWeight: '700', color: '#1f2937', marginBottom: '8px' }}>{t('inv_payment_status')}</h4>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px', backgroundColor: '#f9fafb', padding: '14px', borderRadius: '8px' }}>
+            <div>
+              <span style={{ fontSize: '12px', color: '#6b7280', display: 'block' }}>{t('inv_method')}</span>
+              <span style={{ fontWeight: '700', color: '#111827' }}>{inv.paymentMethod}</span>
+            </div>
+            <div style={{ width: '1px', height: '32px', backgroundColor: '#d1d5db' }} />
+            <div>
+              <span style={{ fontSize: '12px', color: '#6b7280', display: 'block' }}>{t('inv_status')}</span>
+              <span style={{ fontWeight: '700', color: inv.isPaid ? '#16a34a' : '#dc2626' }}>
+                {inv.isPaid ? t('inv_paid') : t('inv_pending')}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Artwork note */}
+        <div style={{ marginTop: '32px', paddingTop: '32px', borderTop: '1px solid #e5e7eb' }}>
+          <h4 style={{ fontWeight: '700', color: '#1f2937', marginBottom: '8px' }}>{t('inv_important_info')}</h4>
+          <p style={{ color: '#4b5563', backgroundColor: '#f9fafb', padding: '14px', borderRadius: '8px', margin: 0 }}>{inv.artworkComment}</p>
+        </div>
       </div>
-    </div>
-  );
+    );
+  };
 
 
 
@@ -786,7 +869,9 @@ const InvoicesList = () => {
                         <span>{t('il_col_id') || 'Invoice ID'}</span>
                         <button
                           onClick={() => {
-                            setConfigSettings(getInvoiceSettings());
+                            if (settings) {
+                              setConfigSettings(settings);
+                            }
                             setIsConfigOpen(true);
                           }}
                           className="p-1 hover:bg-gray-200 rounded text-gray-500 hover:text-gray-800 transition-colors cursor-pointer"
@@ -798,49 +883,80 @@ const InvoicesList = () => {
                     </th>
                     <th className="p-3 font-semibold">{t('il_col_date') || 'Date'}</th>
                     <th className="p-3 font-semibold">{t('il_col_customer') || 'Customer'}</th>
+                    <th className="p-3 font-semibold">NIF/CIF</th>
+                    <th className="p-3 font-semibold">{language === 'es' ? 'Dirección' : 'Address'}</th>
+                    <th className="p-3 font-semibold">{language === 'es' ? 'C.P.' : 'ZIP'}</th>
+                    <th className="p-3 font-semibold">{language === 'es' ? 'Población' : 'City'}</th>
                     <th className="p-3 font-semibold">{t('il_col_payment') || 'Payment'}</th>
+                    <th className="p-3 font-semibold">{language === 'es' ? 'Imp. Base' : 'Base'}</th>
+                    <th className="p-3 font-semibold">{language === 'es' ? 'IVA' : 'VAT'}</th>
                     <th className="p-3 font-semibold">{t('il_col_total') || 'Total'}</th>
                     <th className="p-3 font-semibold text-right rounded-tr-lg">{t('il_col_actions') || 'Actions'}</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {displayInvoices.map((inv) => (
-                    <tr key={inv.id} className={`border-b border-gray-50 hover:bg-gray-50/50 transition-colors ${inv.status === 'Cancelled' ? 'opacity-50' : ''} ${inv.status === 'Reserved' ? 'bg-slate-50/70 border-l-4 border-l-slate-400' : ''}`}>
-                      <td className="p-3">
-                        <span className="font-mono text-sm text-blue-600 font-medium">{inv.id}</span>
-                        {inv.status === 'Cancelled' && <span className="ml-2 px-1.5 py-0.5 text-[10px] uppercase font-bold bg-red-100 text-red-800 rounded">{t('il_status_cancelled') || 'Cancelled'}</span>}
-                        {inv.status === 'Reserved' && <span className="ml-2 px-1.5 py-0.5 text-[10px] uppercase font-bold bg-slate-200 text-slate-800 rounded">{t('il_status_reserved') || 'Reserved'}</span>}
-                      </td>
-                      <td className="p-3 text-sm text-gray-600">
-                        <div>{new Date(inv.createdAt).toLocaleDateString()}</div>
-                        <div className="text-xs text-gray-400 font-medium">{new Date(inv.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
-                      </td>
-                      <td className="p-3">
-                        <div className="font-medium text-gray-900">{inv.customerName === 'System User' ? t('system_user') : inv.customerName}</div>
-                        <div className="text-xs text-gray-500 truncate max-w-[200px]">
-                          {inv.assignedPage ? `P${inv.assignedPage} - ` : ''}
-                          {inv.productName === 'Reserved ID' ? t('reserved_id_desc') : inv.productName}
-                        </div>
-                      </td>
-                      <td className="p-3">
-                        {inv.status === 'Reserved' ? (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-slate-100 text-slate-700 border border-slate-200">
-                            {t('il_status_reserved') || 'Reserved'}
-                          </span>
-                        ) : (
-                          <>
-                            <div className={`text-xs font-bold px-2 py-1 rounded inline-block ${inv.isPaid ? 'bg-green-100 text-green-800' : 'bg-orange-100 text-orange-800'}`}>
-                              {inv.isPaid ? (t('il_status_paid') || 'Paid') : (t('il_status_pending') || 'Pending')}
-                            </div>
-                            <div className="text-xs text-gray-500 mt-0.5">{t('rp_' + inv.paymentMethod?.toLowerCase()) || inv.paymentMethod}</div>
-                          </>
-                        )}
-                      </td>
-                      <td className="p-3 font-bold text-gray-900">
-                        {inv.total.toFixed(2)}€
-                      </td>
-                      <td className="p-3 text-right">
-                        <div className="flex justify-end gap-2">
+                  {displayInvoices.map((inv) => {
+                    const cust = customers.find(c => 
+                      (c.commercial_name && c.commercial_name.trim().toLowerCase() === inv.customerName?.trim().toLowerCase()) ||
+                      (c.fiscal_name && c.fiscal_name.trim().toLowerCase() === inv.customerName?.trim().toLowerCase())
+                    );
+                    const addrDetails = parseAddressDetails(cust?.address);
+
+                    return (
+                      <tr key={inv.id} className={`border-b border-gray-50 hover:bg-gray-50/50 transition-colors ${inv.status === 'Cancelled' ? 'opacity-50' : ''} ${inv.status === 'Reserved' ? 'bg-slate-50/70 border-l-4 border-l-slate-400' : ''}`}>
+                        <td className="p-3">
+                          <span className="font-mono text-sm text-blue-600 font-medium">{inv.id}</span>
+                          {inv.status === 'Cancelled' && <span className="ml-2 px-1.5 py-0.5 text-[10px] uppercase font-bold bg-red-100 text-red-800 rounded">{t('il_status_cancelled') || 'Cancelled'}</span>}
+                          {inv.status === 'Reserved' && <span className="ml-2 px-1.5 py-0.5 text-[10px] uppercase font-bold bg-slate-200 text-slate-800 rounded">{t('il_status_reserved') || 'Reserved'}</span>}
+                        </td>
+                        <td className="p-3 text-sm text-gray-600">
+                          <div>{new Date(inv.createdAt).toLocaleDateString()}</div>
+                          <div className="text-xs text-gray-400 font-medium">{new Date(inv.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+                        </td>
+                        <td className="p-3 text-sm text-gray-600">
+                          <div className="font-medium text-gray-900">{inv.customerName === 'System User' ? t('system_user') : inv.customerName}</div>
+                          <div className="text-xs text-gray-500 truncate max-w-[150px]">
+                            {inv.assignedPage ? `P${inv.assignedPage} - ` : ''}
+                            {inv.productName === 'Reserved ID' ? t('reserved_id_desc') : inv.productName}
+                          </div>
+                        </td>
+                        <td className="p-3 text-sm font-mono text-gray-600">
+                          {cust?.nif || '—'}
+                        </td>
+                        <td className="p-3 text-sm text-gray-500 truncate max-w-[150px]" title={cust?.address || ''}>
+                          {cust?.address || '—'}
+                        </td>
+                        <td className="p-3 text-sm font-mono text-gray-600">
+                          {addrDetails.zip || '—'}
+                        </td>
+                        <td className="p-3 text-sm text-gray-600 truncate max-w-[120px]" title={addrDetails.city || ''}>
+                          {addrDetails.city || '—'}
+                        </td>
+                        <td className="p-3">
+                          {inv.status === 'Reserved' ? (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-slate-100 text-slate-700 border border-slate-200">
+                              {t('il_status_reserved') || 'Reserved'}
+                            </span>
+                          ) : (
+                            <>
+                              <div className={`text-xs font-bold px-2 py-1 rounded inline-block ${inv.isPaid ? 'bg-green-100 text-green-800' : 'bg-orange-100 text-orange-800'}`}>
+                                {inv.isPaid ? (t('il_status_paid') || 'Paid') : (t('il_status_pending') || 'Pending')}
+                              </div>
+                              <div className="text-xs text-gray-500 mt-0.5">{t('rp_' + inv.paymentMethod?.toLowerCase()) || inv.paymentMethod}</div>
+                            </>
+                          )}
+                        </td>
+                        <td className="p-3 text-sm font-mono text-gray-600">
+                          {inv.status === 'Reserved' ? '—' : `${inv.price.toFixed(2)}€`}
+                        </td>
+                        <td className="p-3 text-sm font-mono text-gray-600">
+                          {inv.status === 'Reserved' ? '—' : `${inv.vat.toFixed(2)}€`}
+                        </td>
+                        <td className="p-3 font-bold text-gray-900">
+                          {inv.total.toFixed(2)}€
+                        </td>
+                        <td className="p-3 text-right">
+                          <div className="flex justify-end gap-2">
                           {inv.status === 'Reserved' ? (
                             <button 
                               onClick={() => handleHardDelete(inv)}
@@ -920,146 +1036,176 @@ const InvoicesList = () => {
                         </div>
                       </td>
                     </tr>
-                  ))}
+                  );
+                })}
                 </tbody>
               </table>
             </div>
 
-            {/* Mobile Card List (hidden on md and larger) */}
+                               {/* Mobile Card List (hidden on md and larger) */}
             <div className="grid grid-cols-1 gap-4 md:hidden">
-              {displayInvoices.map((inv) => (
-                <div 
-                  key={inv.id} 
-                  className={`bg-white rounded-xl border border-gray-100 p-4 shadow-sm flex flex-col gap-3 relative border-l-4 ${
-                    inv.status === 'Cancelled' ? 'opacity-60 border-l-red-400' :
-                    inv.status === 'Reserved' ? 'border-l-slate-400 bg-slate-50/40' :
-                    inv.isPaid ? 'border-l-green-500' : 'border-l-orange-500'
-                  }`}
-                >
-                  {/* Top row */}
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <span className="font-mono text-sm text-blue-600 font-bold">{inv.id}</span>
-                      {inv.status === 'Cancelled' && <span className="ml-2 px-1.5 py-0.5 text-[9px] uppercase font-bold bg-red-100 text-red-800 rounded">{t('il_status_cancelled') || 'Cancelled'}</span>}
-                      {inv.status === 'Reserved' && <span className="ml-2 px-1.5 py-0.5 text-[9px] uppercase font-bold bg-slate-200 text-slate-800 rounded">{t('il_status_reserved') || 'Reserved'}</span>}
-                    </div>
-                    <span className="text-xs text-gray-500">
-                      {new Date(inv.createdAt).toLocaleDateString()} {new Date(inv.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </span>
-                  </div>
+              {displayInvoices.map((inv) => {
+                const cust = customers.find(c => 
+                  (c.commercial_name && c.commercial_name.trim().toLowerCase() === inv.customerName?.trim().toLowerCase()) ||
+                  (c.fiscal_name && c.fiscal_name.trim().toLowerCase() === inv.customerName?.trim().toLowerCase())
+                );
+                const addrDetails = parseAddressDetails(cust?.address);
 
-                  {/* Customer details */}
-                  <div className="text-sm">
-                    <div className="font-bold text-gray-800">{inv.customerName === 'System User' ? t('system_user') : inv.customerName}</div>
-                    <div className="text-xs text-gray-500 mt-0.5">
-                      {inv.assignedPage ? `P${inv.assignedPage} - ` : ''}
-                      {inv.productName === 'Reserved ID' ? t('reserved_id_desc') : inv.productName}
+                return (
+                  <div 
+                    key={inv.id} 
+                    className={`bg-white rounded-xl border border-gray-100 p-4 shadow-sm flex flex-col gap-3 relative border-l-4 ${
+                      inv.status === 'Cancelled' ? 'opacity-60 border-l-red-400' :
+                      inv.status === 'Reserved' ? 'border-l-slate-400 bg-slate-50/40' :
+                      inv.isPaid ? 'border-l-green-500' : 'border-l-orange-500'
+                    }`}
+                  >
+                    {/* Top row */}
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <span className="font-mono text-sm text-blue-600 font-bold">{inv.id}</span>
+                        {inv.status === 'Cancelled' && <span className="ml-2 px-1.5 py-0.5 text-[9px] uppercase font-bold bg-red-100 text-red-800 rounded">{t('il_status_cancelled') || 'Cancelled'}</span>}
+                        {inv.status === 'Reserved' && <span className="ml-2 px-1.5 py-0.5 text-[9px] uppercase font-bold bg-slate-200 text-slate-800 rounded">{t('il_status_reserved') || 'Reserved'}</span>}
+                      </div>
+                      <span className="text-xs text-gray-500">
+                        {new Date(inv.createdAt).toLocaleDateString()} {new Date(inv.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </span>
                     </div>
-                    <div className="text-xs text-blue-600 mt-1 font-semibold">{t('inv_page_assignment') || 'Page:'} {inv.assignedPage}</div>
-                  </div>
 
-                  {/* Payment status & Total */}
-                  <div className="flex justify-between items-end bg-gray-50 p-2.5 rounded-lg border border-gray-100">
-                    <div>
-                      <span className="text-[10px] text-gray-400 uppercase font-semibold block">{t('il_col_payment') || 'Payment'}</span>
-                      {inv.status === 'Reserved' ? (
-                        <span className="text-xs font-bold text-slate-600">{t('il_status_reserved') || 'Reserved'}</span>
-                      ) : (
-                        <div className="flex flex-col">
-                          <span className={`text-xs font-bold ${inv.isPaid ? 'text-green-600' : 'text-orange-600'}`}>
-                            {inv.isPaid ? (t('il_status_paid') || 'Paid') : (t('il_status_pending') || 'Pending')}
-                          </span>
-                          <span className="text-[10px] text-gray-500">{t('rp_' + inv.paymentMethod?.toLowerCase()) || inv.paymentMethod}</span>
+                    {/* Customer details */}
+                    <div className="text-sm">
+                      <div className="font-bold text-gray-800">
+                        {inv.customerName === 'System User' ? t('system_user') : inv.customerName}
+                        {cust?.fiscal_name && cust.fiscal_name !== inv.customerName && (
+                          <span className="text-xs text-gray-400 font-normal block">({cust.fiscal_name})</span>
+                        )}
+                      </div>
+                      {cust?.nif && (
+                        <div className="text-xs text-gray-500 font-mono mt-0.5">NIF: {cust.nif}</div>
+                      )}
+                      {cust?.address && (
+                        <div className="text-[11px] text-gray-400 mt-1 leading-snug">
+                          {cust.address}
+                          {addrDetails.zip && ` - ${addrDetails.zip}`}
+                          {addrDetails.city && ` ${addrDetails.city}`}
                         </div>
                       )}
+                      <div className="text-xs text-gray-500 mt-1.5">
+                        {inv.assignedPage ? `P${inv.assignedPage} - ` : ''}
+                        {inv.productName === 'Reserved ID' ? t('reserved_id_desc') : inv.productName}
+                      </div>
+                      <div className="text-xs text-blue-600 mt-1 font-semibold">{t('inv_page_assignment') || 'Page:'} {inv.assignedPage}</div>
                     </div>
-                    <div className="text-right">
-                      <span className="text-[10px] text-gray-400 uppercase font-semibold block">{t('il_col_total') || 'Total'}</span>
-                      <span className="text-lg font-black text-gray-800">{inv.total.toFixed(2)}€</span>
-                    </div>
-                  </div>
 
-                  {/* Actions always visible */}
-                  <div className="flex flex-wrap gap-1.5 justify-end border-t border-gray-100 pt-3 mt-1">
-                    {inv.status === 'Reserved' ? (
-                      <button 
-                        onClick={() => handleHardDelete(inv)}
-                        className="p-2.5 bg-red-50 text-red-600 hover:bg-red-100 rounded-lg transition-colors cursor-pointer text-xs font-bold flex items-center gap-1"
-                        title={t('il_tooltip_hard_delete')}
-                      >
-                        <Trash2 size={16} /> {t('delete') || 'Delete'}
-                      </button>
-                    ) : (
-                      <>
-                        <button 
-                          onClick={() => setViewingInvoice(inv)}
-                          className="p-2 bg-gray-50 hover:bg-blue-50 hover:text-blue-600 text-gray-600 rounded-lg transition-colors"
-                          title="View Invoice"
-                        >
-                          <Eye size={16} />
-                        </button>
-                        
-                        <button 
-                          onClick={() => generatePDF(inv)}
-                          disabled={renderingInvoice !== null}
-                          className="p-2 bg-gray-50 hover:bg-blue-50 hover:text-blue-600 text-gray-600 rounded-lg transition-colors"
-                          title="Download PDF"
-                        >
-                          <Download size={16} />
-                        </button>
-                        
-                        <button 
-                          onClick={() => sendInvoiceEmail(inv)}
-                          disabled={renderingInvoice !== null || sendingEmailId === inv.id}
-                          className={`p-2 bg-gray-50 rounded-lg transition-colors ${inv.status === 'Cancelled' ? 'pointer-events-none opacity-50' : (sentEmailIds.includes(inv.id) ? 'bg-green-50 text-green-600 hover:bg-green-100 hover:text-green-700' : 'hover:bg-blue-50 hover:text-blue-600 text-gray-600')} ${sendingEmailId === inv.id ? 'animate-pulse text-blue-400' : ''}`}
-                          title="Send via Email"
-                        >
-                          <Mail size={16} />
-                        </button>
-                        
-                        <button 
-                          onClick={() => sendInvoiceWhatsApp(inv)}
-                          disabled={renderingInvoice !== null || sendingWhatsappId === inv.id}
-                          className={`p-2 bg-gray-50 rounded-lg transition-colors flex items-center justify-center ${inv.status === 'Cancelled' ? 'pointer-events-none opacity-50' : (sentWhatsappIds.includes(inv.id) ? 'bg-green-50 text-green-600 hover:bg-green-100 hover:text-green-700' : 'hover:bg-green-50 hover:text-green-600 text-gray-600')} ${sendingWhatsappId === inv.id ? 'animate-pulse text-green-400' : ''}`}
-                          title="Send via WhatsApp"
-                        >
-                          <MessageCircle size={16} />
-                        </button>
-                        
-                        {inv.status !== 'Cancelled' && (
-                          <>
-                            {!inv.isPaid && (
-                              <button 
-                                onClick={() => handleMarkAsPaid(inv)}
-                                className="p-2 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 rounded-lg transition-colors font-bold text-xs flex items-center gap-1"
-                                title="Mark as Paid"
-                              >
-                                <CheckCircle size={16} /> {t('il_status_paid') || 'Paid'}
-                              </button>
-                            )}
-                            <button 
-                              onClick={() => handleCancelInvoice(inv)}
-                              className="p-2 bg-red-50 text-red-700 hover:bg-red-100 rounded-lg transition-colors"
-                              title="Cancel Invoice"
-                            >
-                              <XCircle size={16} />
-                            </button>
-                          </>
+                    {/* Payment status & Total */}
+                    <div className="flex justify-between items-end bg-gray-50 p-2.5 rounded-lg border border-gray-100">
+                      <div>
+                        <span className="text-[10px] text-gray-400 uppercase font-semibold block">{t('il_col_payment') || 'Payment'}</span>
+                        {inv.status === 'Reserved' ? (
+                          <span className="text-xs font-bold text-slate-600">{t('il_status_reserved') || 'Reserved'}</span>
+                        ) : (
+                          <div className="flex flex-col">
+                            <span className={`text-xs font-bold ${inv.isPaid ? 'text-green-600' : 'text-orange-600'}`}>
+                              {inv.isPaid ? (t('il_status_paid') || 'Paid') : (t('il_status_pending') || 'Pending')}
+                            </span>
+                            <span className="text-[10px] text-gray-500">{t('rp_' + inv.paymentMethod?.toLowerCase()) || inv.paymentMethod}</span>
+                          </div>
                         )}
-                        {inv.status === 'Cancelled' && (
+                      </div>
+                      <div className="text-right">
+                        {inv.status !== 'Reserved' && (
+                          <div className="text-[10px] text-gray-400 leading-none mb-1">
+                            <span>Base: {inv.price.toFixed(2)}€</span>
+                            <span className="ml-1.5">IVA: {inv.vat.toFixed(2)}€</span>
+                          </div>
+                        )}
+                        <span className="text-[10px] text-gray-400 uppercase font-semibold block leading-none">{t('il_col_total') || 'Total'}</span>
+                        <span className="text-lg font-black text-gray-800">{inv.total.toFixed(2)}€</span>
+                      </div>
+                    </div>
+
+                    {/* Actions always visible */}
+                    <div className="flex flex-wrap gap-1.5 justify-end border-t border-gray-100 pt-3 mt-1">
+                      {inv.status === 'Reserved' ? (
+                        <button 
+                          onClick={() => handleHardDelete(inv)}
+                          className="p-2.5 bg-red-50 text-red-600 hover:bg-red-100 rounded-lg transition-colors cursor-pointer text-xs font-bold flex items-center gap-1"
+                          title={t('il_tooltip_hard_delete')}
+                        >
+                          <Trash2 size={16} /> {t('delete') || 'Delete'}
+                        </button>
+                      ) : (
+                        <>
                           <button 
-                            onClick={() => handleHardDelete(inv)}
-                            className="p-2 bg-red-50 text-red-700 hover:bg-red-100 rounded-lg transition-colors"
-                            title="Permanently Delete Invoice & Refunds"
+                            onClick={() => setViewingInvoice(inv)}
+                            className="p-2 bg-gray-50 hover:bg-blue-50 hover:text-blue-600 text-gray-600 rounded-lg transition-colors"
+                            title="View Invoice"
                           >
-                            <Trash2 size={16} />
+                            <Eye size={16} />
                           </button>
-                        )}
-                      </>
-                    )}
+                          
+                          <button 
+                            onClick={() => generatePDF(inv)}
+                            disabled={renderingInvoice !== null}
+                            className="p-2 bg-gray-50 hover:bg-blue-50 hover:text-blue-600 text-gray-600 rounded-lg transition-colors"
+                            title="Download PDF"
+                          >
+                            <Download size={16} />
+                          </button>
+                          
+                          <button 
+                            onClick={() => sendInvoiceEmail(inv)}
+                            disabled={renderingInvoice !== null || sendingEmailId === inv.id}
+                            className={`p-2 bg-gray-50 rounded-lg transition-colors ${inv.status === 'Cancelled' ? 'pointer-events-none opacity-50' : (sentEmailIds.includes(inv.id) ? 'bg-green-50 text-green-600 hover:bg-green-100 hover:text-green-700' : 'hover:bg-blue-50 hover:text-blue-600 text-gray-600')} ${sendingEmailId === inv.id ? 'animate-pulse text-blue-400' : ''}`}
+                            title="Send via Email"
+                          >
+                            <Mail size={16} />
+                          </button>
+                          
+                          <button 
+                            onClick={() => sendInvoiceWhatsApp(inv)}
+                            disabled={renderingInvoice !== null || sendingWhatsappId === inv.id}
+                            className={`p-2 bg-gray-50 rounded-lg transition-colors flex items-center justify-center ${inv.status === 'Cancelled' ? 'pointer-events-none opacity-50' : (sentWhatsappIds.includes(inv.id) ? 'bg-green-50 text-green-600 hover:bg-green-100 hover:text-green-700' : 'hover:bg-green-50 hover:text-green-600 text-gray-600')} ${sendingWhatsappId === inv.id ? 'animate-pulse text-green-400' : ''}`}
+                            title="Send via WhatsApp"
+                          >
+                            <MessageCircle size={16} />
+                          </button>
+                          
+                          {inv.status !== 'Cancelled' && (
+                            <>
+                              {!inv.isPaid && (
+                                <button 
+                                  onClick={() => handleMarkAsPaid(inv)}
+                                  className="p-2 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 rounded-lg transition-colors font-bold text-xs flex items-center gap-1"
+                                  title="Mark as Paid"
+                                >
+                                  <CheckCircle size={16} /> {t('il_status_paid') || 'Paid'}
+                                </button>
+                              )}
+                              <button 
+                                onClick={() => handleCancelInvoice(inv)}
+                                className="p-2 bg-red-50 text-red-700 hover:bg-red-100 rounded-lg transition-colors"
+                                title="Cancel Invoice"
+                              >
+                                <XCircle size={16} />
+                              </button>
+                            </>
+                          )}
+                          {inv.status === 'Cancelled' && (
+                            <button 
+                              onClick={() => handleHardDelete(inv)}
+                              className="p-2 bg-red-50 text-red-700 hover:bg-red-100 rounded-lg transition-colors"
+                              title="Permanently Delete Invoice & Refunds"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          )}
+                        </>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </>
         )}
@@ -1083,34 +1229,61 @@ const InvoicesList = () => {
                     <th className="p-3 font-semibold rounded-tl-lg">{t('il_recibos_col_id')}</th>
                     <th className="p-3 font-semibold">{t('il_recibos_col_date')}</th>
                     <th className="p-3 font-semibold">{t('il_recibos_col_customer')}</th>
+                    <th className="p-3 font-semibold">NIF/CIF</th>
+                    <th className="p-3 font-semibold">{language === 'es' ? 'Dirección' : 'Address'}</th>
+                    <th className="p-3 font-semibold">{language === 'es' ? 'C.P.' : 'ZIP'}</th>
+                    <th className="p-3 font-semibold">{language === 'es' ? 'Población' : 'City'}</th>
                     <th className="p-3 font-semibold">{t('il_recibos_col_product')}</th>
+                    <th className="p-3 font-semibold">{language === 'es' ? 'Imp. Base' : 'Base'}</th>
                     <th className="p-3 font-semibold">{t('il_recibos_col_total')}</th>
                     <th className="p-3 font-semibold text-right rounded-tr-lg">{t('il_recibos_col_actions')}</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {recibos.map((rec) => (
-                    <tr key={rec.id} className="border-b border-gray-50 hover:bg-emerald-50/30 transition-colors">
-                      <td className="p-3">
-                        <span className="font-mono text-sm text-emerald-700 font-medium">{rec.id}</span>
-                        <span className="ml-2 px-1.5 py-0.5 text-[10px] uppercase font-bold bg-green-100 text-green-700 rounded">Efectivo</span>
-                      </td>
-                      <td className="p-3 text-sm text-gray-600">
-                        <div>{new Date(rec.createdAt).toLocaleDateString()}</div>
-                        <div className="text-xs text-gray-400 font-medium">{new Date(rec.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
-                      </td>
-                      <td className="p-3">
-                        <div className="font-medium text-gray-900">{rec.customerName}</div>
-                        <div className="text-xs text-gray-500">Pág. {rec.assignedPage}</div>
-                      </td>
-                      <td className="p-3">
-                        <div className="text-sm text-gray-700 max-w-[200px] truncate">{rec.productName}</div>
-                      </td>
-                      <td className="p-3 font-bold text-emerald-700">
-                        {rec.total.toFixed(2)}€
-                        <div className="text-xs text-gray-400 font-normal">sin IVA</div>
-                      </td>
-                      <td className="p-3 text-right">
+                  {recibos.map((rec) => {
+                    const cust = customers.find(c => 
+                      (c.commercial_name && c.commercial_name.trim().toLowerCase() === rec.customerName?.trim().toLowerCase()) ||
+                      (c.fiscal_name && c.fiscal_name.trim().toLowerCase() === rec.customerName?.trim().toLowerCase())
+                    );
+                    const addrDetails = parseAddressDetails(cust?.address);
+
+                    return (
+                      <tr key={rec.id} className="border-b border-gray-50 hover:bg-emerald-50/30 transition-colors">
+                        <td className="p-3">
+                          <span className="font-mono text-sm text-emerald-700 font-medium">{rec.id}</span>
+                          <span className="ml-2 px-1.5 py-0.5 text-[10px] uppercase font-bold bg-green-100 text-green-700 rounded">Efectivo</span>
+                        </td>
+                        <td className="p-3 text-sm text-gray-600">
+                          <div>{new Date(rec.createdAt).toLocaleDateString()}</div>
+                          <div className="text-xs text-gray-400 font-medium">{new Date(rec.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+                        </td>
+                        <td className="p-3 text-sm">
+                          <div className="font-medium text-gray-900">{rec.customerName}</div>
+                          <div className="text-xs text-gray-500">Pág. {rec.assignedPage}</div>
+                        </td>
+                        <td className="p-3 text-sm font-mono text-gray-600">
+                          {cust?.nif || '—'}
+                        </td>
+                        <td className="p-3 text-sm text-gray-500 truncate max-w-[150px]" title={cust?.address || ''}>
+                          {cust?.address || '—'}
+                        </td>
+                        <td className="p-3 text-sm font-mono text-gray-600">
+                          {addrDetails.zip || '—'}
+                        </td>
+                        <td className="p-3 text-sm text-gray-600 truncate max-w-[120px]" title={addrDetails.city || ''}>
+                          {addrDetails.city || '—'}
+                        </td>
+                        <td className="p-3">
+                          <div className="text-sm text-gray-700 max-w-[150px] truncate">{rec.productName}</div>
+                        </td>
+                        <td className="p-3 text-sm font-mono text-gray-600">
+                          {rec.price.toFixed(2)}€
+                        </td>
+                        <td className="p-3 font-bold text-emerald-700">
+                          {rec.total.toFixed(2)}€
+                          <div className="text-xs text-gray-400 font-normal">sin IVA</div>
+                        </td>
+                        <td className="p-3 text-right">
                         <div className="flex justify-end gap-2 items-center">
                           <button
                             onClick={() => sendReciboEmail(rec)}
@@ -1141,7 +1314,8 @@ const InvoicesList = () => {
                         </div>
                       </td>
                     </tr>
-                  ))}
+                  );
+                })}
                 </tbody>
                 {recibos.length > 0 && (
                   <tfoot>
@@ -1160,33 +1334,56 @@ const InvoicesList = () => {
 
             {/* Mobile Card List for Recibos (hidden on md and larger) */}
             <div className="grid grid-cols-1 gap-4 md:hidden">
-              {recibos.map((rec) => (
-                <div key={rec.id} className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm flex flex-col gap-3 relative border-l-4 border-l-emerald-500">
-                  {/* Top row */}
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <span className="font-mono text-sm text-emerald-700 font-bold">{rec.id}</span>
-                      <span className="ml-2 px-1.5 py-0.5 text-[9px] uppercase font-bold bg-green-100 text-green-700 rounded">Efectivo</span>
-                    </div>
-                    <span className="text-xs text-gray-500">
-                      {new Date(rec.createdAt).toLocaleDateString()} {new Date(rec.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </span>
-                  </div>
+              {recibos.map((rec) => {
+                const cust = customers.find(c => 
+                  (c.commercial_name && c.commercial_name.trim().toLowerCase() === rec.customerName?.trim().toLowerCase()) ||
+                  (c.fiscal_name && c.fiscal_name.trim().toLowerCase() === rec.customerName?.trim().toLowerCase())
+                );
+                const addrDetails = parseAddressDetails(cust?.address);
 
-                  {/* Content */}
-                  <div className="text-sm">
-                    <div className="font-bold text-gray-800">{rec.customerName}</div>
-                    <div className="text-xs text-blue-600 font-semibold mt-0.5">Pág. {rec.assignedPage}</div>
-                    <div className="text-xs text-gray-500 mt-1 max-w-[250px] truncate">{rec.productName}</div>
-                  </div>
-
-                  {/* Total and actions */}
-                  <div className="flex justify-between items-center bg-emerald-50/50 p-2.5 rounded-lg border border-emerald-50 mt-1">
-                    <div>
-                      <span className="text-[10px] text-emerald-800/80 uppercase font-semibold block">{t('il_recibos_col_total')}</span>
-                      <span className="text-lg font-black text-emerald-700">{rec.total.toFixed(2)}€</span>
-                      <span className="text-[9px] text-gray-400 block -mt-1">sin IVA</span>
+                return (
+                  <div key={rec.id} className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm flex flex-col gap-3 relative border-l-4 border-l-emerald-500">
+                    {/* Top row */}
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <span className="font-mono text-sm text-emerald-700 font-bold">{rec.id}</span>
+                        <span className="ml-2 px-1.5 py-0.5 text-[9px] uppercase font-bold bg-green-100 text-green-700 rounded">Efectivo</span>
+                      </div>
+                      <span className="text-xs text-gray-500">
+                        {new Date(rec.createdAt).toLocaleDateString()} {new Date(rec.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </span>
                     </div>
+
+                    {/* Content */}
+                    <div className="text-sm">
+                      <div className="font-bold text-gray-800">
+                        {rec.customerName}
+                        {cust?.fiscal_name && cust.fiscal_name !== rec.customerName && (
+                          <span className="text-xs text-gray-400 font-normal block">({cust.fiscal_name})</span>
+                        )}
+                      </div>
+                      {cust?.nif && (
+                        <div className="text-xs text-gray-500 font-mono mt-0.5">NIF: {cust.nif}</div>
+                      )}
+                      {cust?.address && (
+                        <div className="text-[11px] text-gray-400 mt-1 leading-snug">
+                          {cust.address}
+                          {addrDetails.zip && ` - ${addrDetails.zip}`}
+                          {addrDetails.city && ` ${addrDetails.city}`}
+                        </div>
+                      )}
+                      <div className="text-xs text-blue-600 font-semibold mt-1">Pág. {rec.assignedPage}</div>
+                      <div className="text-xs text-gray-500 mt-1 max-w-[250px] truncate">{rec.productName}</div>
+                    </div>
+
+                    {/* Total and actions */}
+                    <div className="flex justify-between items-center bg-emerald-50/50 p-2.5 rounded-lg border border-emerald-50 mt-1">
+                      <div>
+                        <span className="text-[10px] text-emerald-800/80 uppercase font-semibold block">{t('il_recibos_col_total')}</span>
+                        <span className="text-xs font-bold text-emerald-600 block">Base: {rec.price.toFixed(2)}€</span>
+                        <span className="text-lg font-black text-emerald-700">{rec.total.toFixed(2)}€</span>
+                        <span className="text-[9px] text-gray-400 block -mt-1">sin IVA</span>
+                      </div>
                     
                     <div className="flex gap-1.5">
                       <button
@@ -1218,7 +1415,8 @@ const InvoicesList = () => {
                     </div>
                   </div>
                 </div>
-              ))}
+              );
+            })}
               {recibos.length === 0 && (
                 <div className="bg-white rounded-xl border border-gray-100 p-8 text-center text-gray-500">
                   {t('il_recibos_empty')}
