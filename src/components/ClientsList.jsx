@@ -11,8 +11,24 @@ const ClientsList = () => {
   const { logAction } = useDatabase();
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [selectedCustomer, setSelectedCustomer] = useState(null);
+  const [isModalOpen, setIsModalOpenRaw] = useState(() => {
+    return sessionStorage.getItem('cl_isModalOpen') === 'true';
+  });
+  const setIsModalOpen = (val) => {
+    setIsModalOpenRaw(val);
+    sessionStorage.setItem('cl_isModalOpen', val);
+  };
+
+  const [selectedCustomer, setSelectedCustomerRaw] = useState(() => {
+    const saved = sessionStorage.getItem('cl_selectedCustomer');
+    return saved ? JSON.parse(saved) : null;
+  });
+  const setSelectedCustomer = (val) => {
+    setSelectedCustomerRaw(val);
+    if (val) sessionStorage.setItem('cl_selectedCustomer', JSON.stringify(val));
+    else sessionStorage.removeItem('cl_selectedCustomer');
+  };
+
   const [searchTerm, setSearchTerm] = useState('');
 
 

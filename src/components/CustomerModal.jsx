@@ -4,45 +4,69 @@ import { useLanguage } from '../context/LanguageContext';
 
 const CustomerModal = ({ isOpen, onClose, customer, onSave }) => {
   const { t } = useLanguage();
-  const [formData, setFormData] = useState({
-    fiscal_name: '',
-    commercial_name: '',
-    nif: '',
-    contact_name: '',
-    email: '',
-    whatsapp: '',
-    address: '',
-    category: '',
-    last_year_product: ''
+  const [formData, setFormData] = useState(() => {
+    const saved = sessionStorage.getItem('cm_formData');
+    return saved ? JSON.parse(saved) : {
+      fiscal_name: '',
+      commercial_name: '',
+      nif: '',
+      contact_name: '',
+      email: '',
+      whatsapp: '',
+      address: '',
+      category: '',
+      last_year_product: ''
+    };
   });
 
   useEffect(() => {
-    if (customer) {
-      setFormData({
-        fiscal_name: customer.fiscal_name || '',
-        commercial_name: customer.commercial_name || '',
-        nif: customer.nif || '',
-        contact_name: customer.contact_name || '',
-        email: customer.email || '',
-        whatsapp: customer.whatsapp || '',
-        address: customer.address || '',
-        category: customer.category || '',
-        last_year_product: customer.last_year_product || ''
-      });
-    } else {
-      setFormData({
-        fiscal_name: '',
-        commercial_name: '',
-        nif: '',
-        contact_name: '',
-        email: '',
-        whatsapp: '',
-        address: '',
-        category: '',
-        last_year_product: ''
-      });
+    if (!isOpen) {
+      // Clear draft when closed
+      sessionStorage.removeItem('cm_formData');
+      sessionStorage.removeItem('cm_customer_id');
+      return;
+    }
+
+    const savedCustomerId = sessionStorage.getItem('cm_customer_id');
+    const currentCustomerId = customer ? String(customer.id) : 'new';
+
+    if (savedCustomerId !== currentCustomerId) {
+      // Customer changed or it's a new open, initialize from prop
+      if (customer) {
+        setFormData({
+          fiscal_name: customer.fiscal_name || '',
+          commercial_name: customer.commercial_name || '',
+          nif: customer.nif || '',
+          contact_name: customer.contact_name || '',
+          email: customer.email || '',
+          whatsapp: customer.whatsapp || '',
+          address: customer.address || '',
+          category: customer.category || '',
+          last_year_product: customer.last_year_product || ''
+        });
+      } else {
+        setFormData({
+          fiscal_name: '',
+          commercial_name: '',
+          nif: '',
+          contact_name: '',
+          email: '',
+          whatsapp: '',
+          address: '',
+          category: '',
+          last_year_product: ''
+        });
+      }
+      sessionStorage.setItem('cm_customer_id', currentCustomerId);
     }
   }, [customer, isOpen]);
+
+  // Save changes to sessionStorage
+  useEffect(() => {
+    if (isOpen) {
+      sessionStorage.setItem('cm_formData', JSON.stringify(formData));
+    }
+  }, [formData, isOpen]);
 
   if (!isOpen) return null;
 

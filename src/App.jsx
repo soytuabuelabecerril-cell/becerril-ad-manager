@@ -43,6 +43,22 @@ function App() {
       sessionStorage.removeItem('reciboModalOpen');
       sessionStorage.removeItem('reciboDetails');
       sessionStorage.removeItem('efectivoPreviewOpen');
+      
+      // Clear all reservation drafts
+      sessionStorage.removeItem('rp_page_number');
+      sessionStorage.removeItem('rp_selectedCustomerId');
+      sessionStorage.removeItem('rp_selectedProductId');
+      sessionStorage.removeItem('rp_isAddingNew');
+      sessionStorage.removeItem('rp_newCustomer');
+      sessionStorage.removeItem('rp_isEditingExisting');
+      sessionStorage.removeItem('rp_editedCustomer');
+      sessionStorage.removeItem('rp_artworkOption');
+      sessionStorage.removeItem('rp_designWorkOption');
+      sessionStorage.removeItem('rp_designWorkPrice');
+      sessionStorage.removeItem('rp_activeViewMode');
+      sessionStorage.removeItem('rp_assignmentPref');
+      sessionStorage.removeItem('rp_paymentMethod');
+      sessionStorage.removeItem('rp_reservationPaymentMethod');
     }
   };
 
@@ -51,11 +67,14 @@ function App() {
     : selectedPageRaw;
 
   const [locationData, setLocationData] = useState(null);
-  const [currentTab, setCurrentTab] = useState('magazine');
+  const [currentTab, setCurrentTab] = useState(() => {
+    return sessionStorage.getItem('currentTab') || 'magazine';
+  });
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   const handleTabChange = (tab) => {
     setCurrentTab(tab);
+    sessionStorage.setItem('currentTab', tab);
     setIsMobileMenuOpen(false);
   };
 

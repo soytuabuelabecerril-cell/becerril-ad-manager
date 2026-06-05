@@ -21,10 +21,34 @@ const CustomersList = ({ onSelectPage }) => {
 
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [selectedCustomer, setSelectedCustomer] = useState(null);
+  const [isModalOpen, setIsModalOpenRaw] = useState(() => {
+    return sessionStorage.getItem('cs_isModalOpen') === 'true';
+  });
+  const setIsModalOpen = (val) => {
+    setIsModalOpenRaw(val);
+    sessionStorage.setItem('cs_isModalOpen', val);
+  };
+
+  const [selectedCustomer, setSelectedCustomerRaw] = useState(() => {
+    const saved = sessionStorage.getItem('cs_selectedCustomer');
+    return saved ? JSON.parse(saved) : null;
+  });
+  const setSelectedCustomer = (val) => {
+    setSelectedCustomerRaw(val);
+    if (val) sessionStorage.setItem('cs_selectedCustomer', JSON.stringify(val));
+    else sessionStorage.removeItem('cs_selectedCustomer');
+  };
+
   const [searchTerm, setSearchTerm] = useState('');
-  const [activeState, setActiveState] = useState('pending');
+
+  const [activeState, setActiveStateRaw] = useState(() => {
+    return sessionStorage.getItem('cs_activeState') || 'pending';
+  });
+  const setActiveState = (val) => {
+    setActiveStateRaw(val);
+    sessionStorage.setItem('cs_activeState', val);
+  };
+
   const [liberateModalOpen, setLiberateModalOpen] = useState(false);
   const [liberateCustomer, setLiberateCustomer] = useState(null);
   const [liberatePaymentMethod, setLiberatePaymentMethod] = useState('Transfer');

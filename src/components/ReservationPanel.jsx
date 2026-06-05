@@ -133,38 +133,57 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
   const [customers, setCustomers] = useState([]);
   const [usedProducts, setUsedProducts] = useState(new Set());
   
-  const [selectedCustomerId, setSelectedCustomerId] = useState('');
-  const [selectedProductId, setSelectedProductId] = useState('');
+  const savedPageNum = sessionStorage.getItem('rp_page_number');
+  const isSamePage = savedPageNum === String(selectedPage?.page_number);
+
+  const [selectedCustomerId, setSelectedCustomerId] = useState(() => {
+    return isSamePage ? (sessionStorage.getItem('rp_selectedCustomerId') || '') : '';
+  });
+  const [selectedProductId, setSelectedProductId] = useState(() => {
+    return isSamePage ? (sessionStorage.getItem('rp_selectedProductId') || '') : '';
+  });
   const [isSaving, setIsSaving] = useState(false);
   const [renderingInvoice, setRenderingInvoice] = useState(null);
   
-  const [isAddingNew, setIsAddingNew] = useState(false);
-  const [newCustomer, setNewCustomer] = useState({ 
-    fiscal_name: '', 
-    commercial_name: '', 
-    nif: '', 
-    contact_name: '',
-    email: '', 
-    whatsapp: '',
-    address: '',
-    category: '',
-    last_year_product: ''
+  const [isAddingNew, setIsAddingNew] = useState(() => {
+    return isSamePage ? (sessionStorage.getItem('rp_isAddingNew') === 'true') : false;
+  });
+  const [newCustomer, setNewCustomer] = useState(() => {
+    const saved = isSamePage ? sessionStorage.getItem('rp_newCustomer') : null;
+    return saved ? JSON.parse(saved) : { 
+      fiscal_name: '', 
+      commercial_name: '', 
+      nif: '', 
+      contact_name: '',
+      email: '', 
+      whatsapp: '',
+      address: '',
+      category: '',
+      last_year_product: ''
+    };
   });
   const [isSavingCustomer, setIsSavingCustomer] = useState(false);
-  const [isEditingExisting, setIsEditingExisting] = useState(false);
-  const [editedCustomer, setEditedCustomer] = useState({
-    fiscal_name: '',
-    commercial_name: '',
-    nif: '',
-    contact_name: '',
-    email: '',
-    whatsapp: '',
-    address: '',
-    category: '',
-    last_year_product: ''
+  const [isEditingExisting, setIsEditingExisting] = useState(() => {
+    return isSamePage ? (sessionStorage.getItem('rp_isEditingExisting') === 'true') : false;
+  });
+  const [editedCustomer, setEditedCustomer] = useState(() => {
+    const saved = isSamePage ? sessionStorage.getItem('rp_editedCustomer') : null;
+    return saved ? JSON.parse(saved) : {
+      fiscal_name: '',
+      commercial_name: '',
+      nif: '',
+      contact_name: '',
+      email: '',
+      whatsapp: '',
+      address: '',
+      category: '',
+      last_year_product: ''
+    };
   });
 
-  const [assignmentPref, setAssignmentPref] = useState('aleatorio');
+  const [assignmentPref, setAssignmentPref] = useState(() => {
+    return isSamePage ? (sessionStorage.getItem('rp_assignmentPref') || 'aleatorio') : 'aleatorio';
+  });
   
   const [invoiceModalOpen, setInvoiceModalOpenRaw] = useState(() => {
     return sessionStorage.getItem('invoiceModalOpen') === 'true';
@@ -192,14 +211,24 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
     sessionStorage.setItem('efectivoPreviewOpen', val);
   };
   
-  const [paymentMethod, setPaymentMethod] = useState('Transfer');
-  const [reservationPaymentMethod, setReservationPaymentMethod] = useState('Transfer');
+  const [paymentMethod, setPaymentMethod] = useState(() => {
+    return isSamePage ? (sessionStorage.getItem('rp_paymentMethod') || 'Transfer') : 'Transfer';
+  });
+  const [reservationPaymentMethod, setReservationPaymentMethod] = useState(() => {
+    return isSamePage ? (sessionStorage.getItem('rp_reservationPaymentMethod') || 'Transfer') : 'Transfer';
+  });
   const [isPaid, setIsPaid] = useState(false);
   const [currentAdRef, setCurrentAdRef] = useState(null);
   
-  const [artworkOption, setArtworkOption] = useState('');
-  const [designWorkOption, setDesignWorkOption] = useState('');
-  const [designWorkPrice, setDesignWorkPrice] = useState('');
+  const [artworkOption, setArtworkOption] = useState(() => {
+    return isSamePage ? (sessionStorage.getItem('rp_artworkOption') || '') : '';
+  });
+  const [designWorkOption, setDesignWorkOption] = useState(() => {
+    return isSamePage ? (sessionStorage.getItem('rp_designWorkOption') || '') : '';
+  });
+  const [designWorkPrice, setDesignWorkPrice] = useState(() => {
+    return isSamePage ? (sessionStorage.getItem('rp_designWorkPrice') || '') : '';
+  });
 
   // Recibo state
   const [reciboModalOpen, setReciboModalOpenRaw] = useState(() => {
@@ -251,13 +280,98 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
   const [preBillingAd, setPreBillingAd] = useState(null);
   const [preBillingIndex, setPreBillingIndex] = useState(null);
 
-  const [activeViewMode, setActiveViewMode] = useState(null); // 'select_mode', 'process_clients', 'new_reservation'
+  const [activeViewMode, setActiveViewMode] = useState(() => {
+    return isSamePage ? (sessionStorage.getItem('rp_activeViewMode') || null) : null;
+  }); // 'select_mode', 'process_clients', 'new_reservation'
   const [selectedAdIndex, setSelectedAdIndex] = useState(null);
   const [closeSalePaymentMethod, setCloseSalePaymentMethod] = useState('Transfer');
 
   const [graphicalSelectedSlot, setGraphicalSelectedSlot] = useState(null);
   const [collapsedPreview, setCollapsedPreview] = useState(false);
   const [hoveredLayoutSlots, setHoveredLayoutSlots] = useState([]);
+
+  // Save drafts to sessionStorage whenever they change
+  useEffect(() => {
+    if (selectedPage) {
+      sessionStorage.setItem('rp_selectedCustomerId', selectedCustomerId);
+    }
+  }, [selectedCustomerId, selectedPage]);
+
+  useEffect(() => {
+    if (selectedPage) {
+      sessionStorage.setItem('rp_selectedProductId', selectedProductId);
+    }
+  }, [selectedProductId, selectedPage]);
+
+  useEffect(() => {
+    if (selectedPage) {
+      sessionStorage.setItem('rp_isAddingNew', isAddingNew);
+    }
+  }, [isAddingNew, selectedPage]);
+
+  useEffect(() => {
+    if (selectedPage) {
+      sessionStorage.setItem('rp_newCustomer', JSON.stringify(newCustomer));
+    }
+  }, [newCustomer, selectedPage]);
+
+  useEffect(() => {
+    if (selectedPage) {
+      sessionStorage.setItem('rp_isEditingExisting', isEditingExisting);
+    }
+  }, [isEditingExisting, selectedPage]);
+
+  useEffect(() => {
+    if (selectedPage) {
+      sessionStorage.setItem('rp_editedCustomer', JSON.stringify(editedCustomer));
+    }
+  }, [editedCustomer, selectedPage]);
+
+  useEffect(() => {
+    if (selectedPage) {
+      sessionStorage.setItem('rp_assignmentPref', assignmentPref);
+    }
+  }, [assignmentPref, selectedPage]);
+
+  useEffect(() => {
+    if (selectedPage) {
+      sessionStorage.setItem('rp_paymentMethod', paymentMethod);
+    }
+  }, [paymentMethod, selectedPage]);
+
+  useEffect(() => {
+    if (selectedPage) {
+      sessionStorage.setItem('rp_reservationPaymentMethod', reservationPaymentMethod);
+    }
+  }, [reservationPaymentMethod, selectedPage]);
+
+  useEffect(() => {
+    if (selectedPage) {
+      sessionStorage.setItem('rp_artworkOption', artworkOption);
+    }
+  }, [artworkOption, selectedPage]);
+
+  useEffect(() => {
+    if (selectedPage) {
+      sessionStorage.setItem('rp_designWorkOption', designWorkOption);
+    }
+  }, [designWorkOption, selectedPage]);
+
+  useEffect(() => {
+    if (selectedPage) {
+      sessionStorage.setItem('rp_designWorkPrice', designWorkPrice);
+    }
+  }, [designWorkPrice, selectedPage]);
+
+  useEffect(() => {
+    if (selectedPage) {
+      if (activeViewMode) {
+        sessionStorage.setItem('rp_activeViewMode', activeViewMode);
+      } else {
+        sessionStorage.removeItem('rp_activeViewMode');
+      }
+    }
+  }, [activeViewMode, selectedPage]);
 
   useEffect(() => {
     if (!dropdownOpen) {
@@ -654,12 +768,32 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
 
   useEffect(() => {
     if (selectedPage) {
-      setSelectedProductId('');
-      setSelectedCustomerId('');
-      setIsAddingNew(false);
-      setSentEmailAddress('');
-      setSelectedAdIndex(null);
-      setCloseSalePaymentMethod('Transfer');
+      const savedPageNum = sessionStorage.getItem('rp_page_number');
+      if (savedPageNum !== String(selectedPage.page_number)) {
+        // Different page selected, reset all inputs
+        setSelectedProductId('');
+        setSelectedCustomerId('');
+        setIsAddingNew(false);
+        setSentEmailAddress('');
+        setSelectedAdIndex(null);
+        setCloseSalePaymentMethod('Transfer');
+        
+        // Update stored page number and clear draft storage
+        sessionStorage.setItem('rp_page_number', String(selectedPage.page_number));
+        sessionStorage.removeItem('rp_selectedCustomerId');
+        sessionStorage.removeItem('rp_selectedProductId');
+        sessionStorage.removeItem('rp_isAddingNew');
+        sessionStorage.removeItem('rp_newCustomer');
+        sessionStorage.removeItem('rp_isEditingExisting');
+        sessionStorage.removeItem('rp_editedCustomer');
+        sessionStorage.removeItem('rp_artworkOption');
+        sessionStorage.removeItem('rp_designWorkOption');
+        sessionStorage.removeItem('rp_designWorkPrice');
+        sessionStorage.removeItem('rp_activeViewMode');
+        sessionStorage.removeItem('rp_assignmentPref');
+        sessionStorage.removeItem('rp_paymentMethod');
+        sessionStorage.removeItem('rp_reservationPaymentMethod');
+      }
     }
   }, [selectedPage]);
 
@@ -811,6 +945,14 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
 
   useEffect(() => {
     if (selectedPage) {
+      // If activeViewMode is already restored from sessionStorage for this page, don't overwrite it
+      const savedMode = sessionStorage.getItem('rp_activeViewMode');
+      const savedPage = sessionStorage.getItem('rp_page_number');
+      if (savedMode && savedPage === String(selectedPage.page_number)) {
+        setActiveViewMode(savedMode);
+        return;
+      }
+
       const hasSomeAds = selectedPage.ads && selectedPage.ads.length > 0;
       
       const available = products.filter(p => {
