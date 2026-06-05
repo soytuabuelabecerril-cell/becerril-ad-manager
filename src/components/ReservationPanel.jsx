@@ -6,7 +6,9 @@ import { useDatabase } from '../context/DatabaseContext';
 import { CheckCircle, FileText, X, Trash2, CreditCard } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
 import { getProductAbbreviation } from '../utils/invoicesStore';
-import { formatTemplate, getTemplateVariables } from '../utils/notifications';
+import { formatTemplate, getTemplateVariables, getHtmlEmailTemplate } from '../utils/notifications';
+import { jsPDF } from 'jspdf';
+import html2canvas from 'html2canvas';
 
 const getInvoiceWhatsAppMessage = (invoice, templates) => {
   const tObj = templates?.invoice_whatsapp;
@@ -123,6 +125,7 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
     addOrder,
     deleteOrder,
     updateOrder,
+    confirmOrderPayment,
     deleteAdReservationDirect,
     resolvePreReservation
   } = useDatabase();
@@ -132,6 +135,7 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
   const [selectedProductId, setSelectedProductId] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [renderingInvoice, setRenderingInvoice] = useState(null);
   
   const [isAddingNew, setIsAddingNew] = useState(false);
   const [newCustomer, setNewCustomer] = useState({ 
@@ -240,6 +244,11 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
   const [sentEmailAddress, setSentEmailAddress] = useState('');
   const [emailStatus, setEmailStatus] = useState({ sending: false, status: null, error: '' });
   const dropdownRef = useRef(null);
+
+  // Pre-billing state (pre-reservation confirmation)
+  const [preBillingModalOpen, setPreBillingModalOpen] = useState(false);
+  const [preBillingAd, setPreBillingAd] = useState(null);
+  const [preBillingIndex, setPreBillingIndex] = useState(null);
 
   useEffect(() => {
     if (!dropdownOpen) {
@@ -379,57 +388,126 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
     }
 
     setEmailStatus({ sending: true, status: 'sending', error: '' });
-    try {
-      let subject = '';
-      let text = '';
+
+    if (isInvoice) {
+      setRenderingInvoice(details);
       
-      const vars = getTemplateVariables(details, language);
-      let templateId = 'order_reservation_email';
-      if (isRecibo) templateId = 'recibo_email';
-      else if (isInvoice) templateId = 'invoice_email';
-      else if (isPreReservation) templateId = 'order_prereservation_email';
+      // Allow React to fully paint the hidden element before capturing
+      setTimeout(async () => {
+        try {
+          const element = document.getElementById('pdf-template');
+          if (!element) throw new Error('PDF template element not found in DOM');
 
-      const tObj = templates?.[templateId];
-      if (tObj) {
-        subject = formatTemplate(tObj.subject, vars);
-        text = formatTemplate(tObj.body, vars);
-      } else {
-        if (isRecibo) {
-          subject = `Recibo de Pago Revista de Fiestas Patronales Becerril de la Sierra 2026: Pág. ${details.assignedPage}`;
-          text = `Hola,\n\nConfirmamos la reserva y el recibo de pago en efectivo para su anuncio en la Revista de Fiestas Patronales Becerril de la Sierra 2026:\n\n- Producto: ${details.productName}\n- Página Asignada: ${details.assignedPage}\n- Precio Base: ${details.price.toFixed(2)}€\n${details.designPrice > 0 ? `- Precio Diseño: ${details.designPrice.toFixed(2)}€\n` : ''}- Recibo: ${details.total.toFixed(2)}€\n\nGracias,\nEquipo de Coordinación Publicitaria`;
-        } else if (isInvoice) {
-          subject = `Factura Revista de Fiestas Patronales Becerril de la Sierra 2026: Nro. ${details.id}`;
-          text = `Hola,\n\nAdjuntamos la confirmación de pago y factura correspondiente a su anuncio en la Revista de Fiestas Patronales Becerril de la Sierra 2026:\n\n- Número de Factura: ${details.id}\n- Producto: ${details.productName}\n- Página Asignada: ${details.assignedPage}\n- Método de Pago: Efectivo\n- Precio Base: ${details.price.toFixed(2)}€\n${details.designPrice > 0 ? `- Precio Diseño: ${details.designPrice.toFixed(2)}€\n` : ''}- Subtotal: ${(details.price + details.designPrice).toFixed(2)}€\n- IVA (21%): ${details.vat.toFixed(2)}€\n- Total Pagado: ${details.total.toFixed(2)}€\n\nGracias,\nEquipo de Coordinación Publicitaria`;
-        } else {
-          subject = isPreReservation
-            ? `Pre-Reserva Revista de Fiestas Patronales Becerril de la Sierra 2026: Pág. ${details.assignedPage}`
-            : `Confirmación de Reserva Revista de Fiestas Patronales Becerril de la Sierra 2026: Pág. ${details.assignedPage}`;
-          text = isPreReservation
-            ? `Hola,\n\nConfirmamos la pre-reserva (retención de 1 semana) del espacio publicitario en la Revista de Fiestas Patronales Becerril de la Sierra 2026:\n\n- Producto: ${details.productName}\n- Página Asignada: ${details.assignedPage}\n- Comentarios de Arte/Diseño: ${details.artworkComment}\n\nNota: Esta reserva es temporal y vencerá en una semana si no se confirma el pago.\n\nGracias,\nEquipo de Coordinación Publicitaria`
-            : `Hola,\n\nConfirmamos la reserva del espacio publicitario en la Revista de Fiestas Patronales Becerril de la Sierra 2026:\n\n- Producto: ${details.productName}\n- Página Asignada: ${details.assignedPage}\n- Método de Pago: ${t('rp_' + details.paymentMethod.toLowerCase()) || details.paymentMethod}\n- Comentarios de Arte/Diseño: ${details.artworkComment}\n\nLa factura correspondiente se generará una vez confirmado el pago.\n\nGracias,\nEquipo de Coordinación Publicitaria`;
+          const canvas = await html2canvas(element, {
+            scale: 2,
+            useCORS: true,
+            logging: false,
+            scrollX: 0,
+            scrollY: 0,
+            windowWidth: element.scrollWidth,
+            windowHeight: element.scrollHeight,
+          });
+          const imgData = canvas.toDataURL('image/jpeg', 0.85);
+          
+          const pdf = new jsPDF('p', 'mm', 'a4');
+          const pdfWidth = pdf.internal.pageSize.getWidth();
+          const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+          
+          pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight, undefined, 'FAST');
+          
+          const base64DataUri = pdf.output('datauristring');
+          
+          const invoiceTemplate = templates?.invoice_email;
+          const vars = getTemplateVariables(details, language);
+          
+          const subject = invoiceTemplate?.subject 
+            ? formatTemplate(invoiceTemplate.subject, vars) 
+            : `Factura Revista de Fiestas Patronales Becerril de la Sierra 2026: Nro. ${details.id}`;
+            
+          const text = invoiceTemplate?.body 
+            ? formatTemplate(invoiceTemplate.body, vars) 
+            : `Hola,\n\nAdjuntamos la confirmación de pago y factura correspondiente a su anuncio en la Revista de Fiestas Patronales Becerril de la Sierra 2026:\n\n- Número de Factura: ${details.id}\n- Producto: ${details.productName}\n- Página Asignada: ${details.assignedPage}\n- Método de Pago: ${details.paymentMethod || 'Transfer'}\n- Precio Base: ${details.price.toFixed(2)}€\n${details.designPrice > 0 ? `- Precio Diseño: ${details.designPrice.toFixed(2)}€\n` : ''}- Subtotal: ${(details.price + details.designPrice).toFixed(2)}€\n- IVA (21%): ${details.vat.toFixed(2)}€\n- Total Pagado: ${details.total.toFixed(2)}€\n\nGracias,\nEquipo de Coordinación Publicitaria`;
+
+          const cleanSubject = subject.replace(/\\n/g, ' ');
+          const cleanText = text.replace(/\\n/g, '\n');
+          const html = getEmailHtml(cleanSubject, getFormattedHtmlContent(text));
+
+          const apiUrl = import.meta.env.VITE_API_URL || '/api/send-email';
+          const response = await fetch(apiUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              to,
+              subject: cleanSubject,
+              text: cleanText,
+              html,
+              attachmentBase64: base64DataUri,
+              attachmentName: `Factura_${details.id}.pdf`,
+              background: true
+            })
+          });
+          
+          const data = await response.json();
+          if (data.success) {
+            setEmailStatus({ sending: false, status: 'success', error: '' });
+          } else {
+            setEmailStatus({ sending: false, status: 'error', error: data.error || 'Failed to send' });
+          }
+        } catch (err) {
+          console.error('Error al enviar email con factura PDF:', err);
+          setEmailStatus({ sending: false, status: 'error', error: err.message });
+        } finally {
+          setRenderingInvoice(null);
         }
-      }
+      }, 600);
+    } else {
+      try {
+        let subject = '';
+        let text = '';
+        
+        const vars = getTemplateVariables(details, language);
+        let templateId = 'order_reservation_email';
+        if (isRecibo) templateId = 'recibo_email';
+        else if (isPreReservation) templateId = 'order_prereservation_email';
 
-      // Convert literal \n in subjects/texts for normal display, and parse it to HTML
-      const cleanSubject = subject.replace(/\\n/g, ' ');
-      const cleanText = text.replace(/\\n/g, '\n');
-      const html = getEmailHtml(cleanSubject, getFormattedHtmlContent(text));
+        const tObj = templates?.[templateId];
+        if (tObj) {
+          subject = formatTemplate(tObj.subject, vars);
+          text = formatTemplate(tObj.body, vars);
+        } else {
+          if (isRecibo) {
+            subject = `Recibo de Pago Revista de Fiestas Patronales Becerril de la Sierra 2026: Pág. ${details.assignedPage}`;
+            text = `Hola,\n\nConfirmamos la reserva y el recibo de pago en efectivo para su anuncio en la Revista de Fiestas Patronales Becerril de la Sierra 2026:\n\n- Producto: ${details.productName}\n- Página Asignada: ${details.assignedPage}\n- Precio Base: ${details.price.toFixed(2)}€\n${details.designPrice > 0 ? `- Precio Diseño: ${details.designPrice.toFixed(2)}€\n` : ''}- Recibo: ${details.total.toFixed(2)}€\n\nGracias,\nEquipo de Coordinación Publicitaria`;
+          } else {
+            subject = isPreReservation
+              ? `Pre-Reserva Revista de Fiestas Patronales Becerril de la Sierra 2026: Pág. ${details.assignedPage}`
+              : `Confirmación de Reserva Revista de Fiestas Patronales Becerril de la Sierra 2026: Pág. ${details.assignedPage}`;
+            text = isPreReservation
+              ? `Hola,\n\nConfirmamos la pre-reserva (retención de 1 semana) del espacio publicitario en la Revista de Fiestas Patronales Becerril de la Sierra 2026:\n\n- Producto: ${details.productName}\n- Página Asignada: ${details.assignedPage}\n- Comentarios de Arte/Diseño: ${details.artworkComment}\n\nNota: Esta reserva es temporal y vencerá en una semana si no se confirma el pago.\n\nGracias,\nEquipo de Coordinación Publicitaria`
+              : `Hola,\n\nConfirmamos la reserva del espacio publicitario en la Revista de Fiestas Patronales Becerril de la Sierra 2026:\n\n- Producto: ${details.productName}\n- Página Asignada: ${details.assignedPage}\n- Método de Pago: ${t('rp_' + details.paymentMethod.toLowerCase()) || details.paymentMethod}\n- Comentarios de Arte/Diseño: ${details.artworkComment}\n\nLa factura correspondiente se generará una vez confirmado el pago.\n\nGracias,\nEquipo de Coordinación Publicitaria`;
+          }
+        }
 
-      const apiUrl = import.meta.env.VITE_API_URL || '/api/send-email';
-      const response = await fetch(apiUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ to, subject: cleanSubject, text: cleanText, html, background: true })
-      });
-      const data = await response.json();
-      if (data.success) {
-        setEmailStatus({ sending: false, status: 'success', error: '' });
-      } else {
-        setEmailStatus({ sending: false, status: 'error', error: data.error || 'Failed to send' });
+        const cleanSubject = subject.replace(/\\n/g, ' ');
+        const cleanText = text.replace(/\\n/g, '\n');
+        const html = getEmailHtml(cleanSubject, getFormattedHtmlContent(text));
+
+        const apiUrl = import.meta.env.VITE_API_URL || '/api/send-email';
+        const response = await fetch(apiUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ to, subject: cleanSubject, text: cleanText, html, background: true })
+        });
+        const data = await response.json();
+        if (data.success) {
+          setEmailStatus({ sending: false, status: 'success', error: '' });
+        } else {
+          setEmailStatus({ sending: false, status: 'error', error: data.error || 'Failed to send' });
+        }
+      } catch (err) {
+        console.error(err);
+        setEmailStatus({ sending: false, status: 'error', error: err.message });
       }
-    } catch (err) {
-      console.error(err);
-      setEmailStatus({ sending: false, status: 'error', error: err.message });
     }
   };
 
@@ -1252,6 +1330,10 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
         o.orderType === 'pre-reserved'
       );
       
+      const customerObj = customers.find(c => c.id === ad.customer_id || c.nif === ad.customer_id || (c.commercial_name && c.commercial_name.toLowerCase() === customerName.toLowerCase()));
+      const customerEmail = customerObj ? customerObj.email : null;
+      const customerPhone = customerObj ? customerObj.whatsapp : null;
+
       let orderToUse;
       if (oldOrder) {
         await updateOrder(oldOrder.id, {
@@ -1259,7 +1341,9 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
           price: basePrice,
           designPrice: designPrice,
           artworkComment: artworkComment,
-          status: 'Pending'
+          status: 'Pending',
+          customerEmail: customerEmail,
+          customerPhone: customerPhone
         });
         orderToUse = {
           ...oldOrder,
@@ -1267,7 +1351,9 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
           price: basePrice,
           designPrice: designPrice,
           artworkComment: artworkComment,
-          status: 'Pending'
+          status: 'Pending',
+          customerEmail: customerEmail,
+          customerPhone: customerPhone
         };
       } else {
         orderToUse = await addOrder({
@@ -1279,13 +1365,118 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
           date: new Date().toLocaleDateString(),
           artworkComment: artworkComment,
           orderType: 'transfer',
-          customerId: ad.customer_id
+          customerId: ad.customer_id,
+          customerEmail: customerEmail,
+          customerPhone: customerPhone,
+          status: 'Pending'
         }, true);
       }
       
       await resolvePreReservation(selectedPage.page_number, customerName, adType, 'confirm');
-      setOrderDetails(orderToUse);
-      setOrderConfirmModalOpen(true);
+      
+      const invoice = await confirmOrderPayment(orderToUse, 'Transfer', true);
+      if (invoice) {
+        setInvoiceDetails(invoice);
+        setInvoiceModalOpen(true);
+      } else {
+        setOrderDetails(orderToUse);
+        setOrderConfirmModalOpen(true);
+      }
+    }
+  };
+
+  const handleOpenPreBilling = (ad, idx) => {
+    setPreBillingAd(ad);
+    setPreBillingIndex(idx);
+    setPreBillingModalOpen(true);
+  };
+
+  const handleConfirmPreReservation = async (ad, paymentMethod) => {
+    setIsSaving(true);
+    try {
+      const customerName = ad.customer_name;
+      const adType = ad.ad_type;
+      const prod = products.find(p => p.name === adType);
+      const basePrice = prod ? parseFloat(prod.price) : 0;
+      const designPrice = parseFloat(ad.designWorkPrice) || 0;
+      
+      let artworkComment = "";
+      if (ad.artworkOption === '1') artworkComment = t('artwork_note_opt1') || "";
+      else if (ad.artworkOption === '2') artworkComment = t('artwork_note_opt2') || "";
+      else if (ad.artworkOption === '3') {
+        if (ad.designWorkOption === '1') artworkComment = t('artwork_note_opt3_1') || "";
+        else if (ad.designWorkOption === '2') artworkComment = t('artwork_note_opt3_2') || "";
+        else if (ad.designWorkOption === '3') artworkComment = t('artwork_note_opt3_3') || "";
+      }
+
+      // Update the old pre-reserved order
+      const oldOrder = orders.find(o => 
+        o.assignedPage === selectedPage.page_number && 
+        o.customerName === customerName &&
+        o.productName === adType &&
+        o.orderType === 'pre-reserved'
+      );
+      
+      const customerObj = customers.find(c => c.id === ad.customer_id || c.nif === ad.customer_id || (c.commercial_name && c.commercial_name.toLowerCase() === customerName.toLowerCase()));
+      const customerEmail = customerObj ? customerObj.email : null;
+      const customerPhone = customerObj ? customerObj.whatsapp : null;
+
+      let orderToUse;
+      const dbOrderType = paymentMethod === 'Cash' ? 'cash' : 'transfer';
+      
+      if (oldOrder) {
+        await updateOrder(oldOrder.id, {
+          orderType: dbOrderType,
+          price: basePrice,
+          designPrice: designPrice,
+          artworkComment: artworkComment,
+          status: 'Pending',
+          customerEmail: customerEmail,
+          customerPhone: customerPhone
+        });
+        orderToUse = {
+          ...oldOrder,
+          orderType: dbOrderType,
+          price: basePrice,
+          designPrice: designPrice,
+          artworkComment: artworkComment,
+          status: 'Pending',
+          customerEmail: customerEmail,
+          customerPhone: customerPhone
+        };
+      } else {
+        orderToUse = await addOrder({
+          customerName: customerName,
+          productName: adType,
+          price: basePrice,
+          designPrice: designPrice,
+          assignedPage: selectedPage.page_number,
+          date: new Date().toLocaleDateString(),
+          artworkComment: artworkComment,
+          orderType: dbOrderType,
+          customerId: ad.customer_id,
+          customerEmail: customerEmail,
+          customerPhone: customerPhone,
+          status: 'Pending'
+        }, true);
+      }
+      
+      await resolvePreReservation(selectedPage.page_number, customerName, adType, 'confirm');
+      
+      const invoice = await confirmOrderPayment(orderToUse, paymentMethod, true);
+      setPreBillingModalOpen(false);
+      if (invoice) {
+        setInvoiceDetails(invoice);
+        setInvoiceModalOpen(true);
+      } else {
+        setOrderDetails(orderToUse);
+        setOrderConfirmModalOpen(true);
+      }
+    } catch (err) {
+      console.error("Error confirming pre-reservation:", err);
+      alert(language === 'es' ? 'Error al confirmar la pre-reserva: ' + err.message : 'Error confirming pre-reservation: ' + err.message);
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -1380,6 +1571,110 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
     return true;
   });
 
+  const renderPDFTemplate = (inv) => (
+    <div style={{ fontFamily: 'Arial, Helvetica, sans-serif', color: '#111827', fontSize: '14px', lineHeight: '1.5' }}>
+      {/* Header */}
+      <div style={{ borderBottom: '2px solid #1f2937', paddingBottom: '16px', marginBottom: '32px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+        <div>
+          <h1 style={{ fontSize: '28px', fontWeight: '900', color: '#111827', margin: 0, letterSpacing: '-0.5px' }}>{t('inv_invoice')}</h1>
+          <p style={{ color: '#6b7280', marginTop: '4px', fontSize: '13px' }}>{inv.id}</p>
+        </div>
+        <div style={{ textAlign: 'right' }}>
+          <h2 style={{ fontSize: '18px', fontWeight: '700', color: '#1f2937', margin: 0 }}>I AM YOUR GRANNY S.L.</h2>
+          <p style={{ color: '#6b7280', fontSize: '12px', margin: '2px 0 0' }}>CIF: B72877640</p>
+          <p style={{ color: '#6b7280', fontSize: '12px', margin: '2px 0 0' }}>Ctra. Guadarama-Cercedilla S/N</p>
+          <p style={{ color: '#6b7280', fontSize: '12px', margin: '2px 0 0' }}>Portal 10 3C</p>
+          <p style={{ color: '#6b7280', fontSize: '12px', margin: '2px 0 0' }}>28470 Cercedilla</p>
+        </div>
+      </div>
+
+      {/* Billed to / Date */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '40px' }}>
+        <div>
+          <p style={{ fontSize: '11px', fontWeight: '700', color: '#9ca3af', textTransform: 'uppercase', marginBottom: '6px' }}>{t('inv_billed_to')}</p>
+          <p style={{ fontSize: '16px', fontWeight: '700', color: '#111827', margin: 0 }}>{inv.customerName}</p>
+        </div>
+        <div style={{ textAlign: 'right' }}>
+          <p style={{ fontSize: '11px', fontWeight: '700', color: '#9ca3af', textTransform: 'uppercase', marginBottom: '6px' }}>{t('inv_date')}</p>
+          <p style={{ fontSize: '16px', fontWeight: '700', color: '#111827', margin: 0 }}>{new Date(inv.createdAt).toLocaleDateString()}</p>
+        </div>
+      </div>
+
+      {/* Line items table */}
+      <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '40px' }}>
+        <thead>
+          <tr style={{ borderBottom: '2px solid #1f2937' }}>
+            <th style={{ textAlign: 'left', padding: '10px 0', fontWeight: '700', color: '#1f2937' }}>{t('inv_desc')}</th>
+            <th style={{ textAlign: 'right', padding: '10px 0', fontWeight: '700', color: '#1f2937' }}>{t('inv_base_price')}</th>
+            {inv.designPrice > 0 && <th style={{ textAlign: 'right', padding: '10px 0', fontWeight: '700', color: '#1f2937' }}>{t('inv_design')}</th>}
+            <th style={{ textAlign: 'right', padding: '10px 0', fontWeight: '700', color: '#1f2937' }}>{t('inv_vat')}</th>
+            <th style={{ textAlign: 'right', padding: '10px 0', fontWeight: '700', color: '#1f2937' }}>{t('inv_total')}</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr style={{ borderBottom: '1px solid #e5e7eb' }}>
+            <td style={{ padding: '14px 0' }}>
+              <div style={{ fontWeight: '700', color: '#111827' }}>{inv.productName}</div>
+              <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '2px' }}>{t('inv_page_assignment')} {inv.assignedPage}</div>
+            </td>
+            <td style={{ textAlign: 'right', padding: '14px 0', color: '#374151' }}>{inv.price.toFixed(2)}€</td>
+            {inv.designPrice > 0 && <td style={{ textAlign: 'right', padding: '14px 0', color: '#374151' }}>{inv.designPrice.toFixed(2)}€</td>}
+            <td style={{ textAlign: 'right', padding: '14px 0', color: '#374151' }}>{inv.vat.toFixed(2)}€</td>
+            <td style={{ textAlign: 'right', padding: '14px 0', fontWeight: '700', color: '#111827' }}>{inv.total.toFixed(2)}€</td>
+          </tr>
+        </tbody>
+      </table>
+
+      {/* Totals summary */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+        <div style={{ width: '240px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0' }}>
+            <span style={{ color: '#4b5563', fontWeight: '500' }}>{t('inv_subtotal')}</span>
+            <span style={{ color: '#111827', fontWeight: '500' }}>{inv.price.toFixed(2)}€</span>
+          </div>
+          {inv.designPrice > 0 && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0' }}>
+              <span style={{ color: '#4b5563', fontWeight: '500' }}>{t('inv_design_work')}</span>
+              <span style={{ color: '#111827', fontWeight: '500' }}>{inv.designPrice.toFixed(2)}€</span>
+            </div>
+          )}
+          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid #e5e7eb' }}>
+            <span style={{ color: '#4b5563', fontWeight: '500' }}>{t('inv_vat')}</span>
+            <span style={{ color: '#111827', fontWeight: '500' }}>{inv.vat.toFixed(2)}€</span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0' }}>
+            <span style={{ fontSize: '18px', fontWeight: '700', color: '#111827' }}>{t('inv_total')}</span>
+            <span style={{ fontSize: '18px', fontWeight: '700', color: '#2563eb' }}>{inv.total.toFixed(2)}€</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Payment status */}
+      <div style={{ marginTop: '32px', paddingTop: '32px', borderTop: '1px solid #e5e7eb' }}>
+        <h4 style={{ fontWeight: '700', color: '#1f2937', marginBottom: '8px' }}>{t('inv_payment_status')}</h4>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', backgroundColor: '#f9fafb', padding: '14px', borderRadius: '8px' }}>
+          <div>
+            <span style={{ fontSize: '12px', color: '#6b7280', display: 'block' }}>{t('inv_method')}</span>
+            <span style={{ fontWeight: '700', color: '#111827' }}>{inv.paymentMethod}</span>
+          </div>
+          <div style={{ width: '1px', height: '32px', backgroundColor: '#d1d5db' }} />
+          <div>
+            <span style={{ fontSize: '12px', color: '#6b7280', display: 'block' }}>{t('inv_status')}</span>
+            <span style={{ fontWeight: '700', color: inv.isPaid ? '#16a34a' : '#dc2626' }}>
+              {inv.isPaid ? t('inv_paid') : t('inv_pending')}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Artwork note */}
+      <div style={{ marginTop: '32px', paddingTop: '32px', borderTop: '1px solid #e5e7eb' }}>
+        <h4 style={{ fontWeight: '700', color: '#1f2937', marginBottom: '8px' }}>{t('inv_important_info')}</h4>
+        <p style={{ color: '#4b5563', backgroundColor: '#f9fafb', padding: '14px', borderRadius: '8px', margin: 0 }}>{inv.artworkComment}</p>
+      </div>
+    </div>
+  );
+
   return (
     <div className="bg-white p-4 sm:p-6 rounded-xl border border-gray-100 shadow-sm relative">
       <div className="flex justify-between items-center mb-4">
@@ -1452,7 +1747,7 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
                     <button onClick={() => setResolvingAdIndex(idx)} className="flex-1 py-1.5 text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 rounded border border-blue-200 transition-colors">
                       {t('rp_prolong')}
                     </button>
-                    <button onClick={() => handleResolveAction(ad, idx, 'confirm')} className="flex-1 py-1.5 text-xs font-medium text-white bg-green-600 hover:bg-green-700 rounded transition-colors">
+                    <button onClick={() => handleOpenPreBilling(ad, idx)} className="flex-1 py-1.5 text-xs font-medium text-white bg-green-600 hover:bg-green-700 rounded transition-colors">
                       {t('rp_confirm_red')}
                     </button>
                   </div>
@@ -2190,6 +2485,125 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
         </div>
       )}
 
+      {/* ── PREPARACIÓN FACTURACIÓN MODAL ── */}
+      {preBillingModalOpen && preBillingAd && (
+        (() => {
+          const prod = products.find(p => p.name === preBillingAd.ad_type);
+          const basePrice = prod ? parseFloat(prod.price) : 0;
+          const designPrice = parseFloat(preBillingAd.designWorkPrice) || 0;
+          const subtotal = basePrice + designPrice;
+          const vat = subtotal * 0.21;
+          const total = subtotal * 1.21;
+
+          return (
+            <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[115] flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-in fade-in duration-200">
+              <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-5 sm:p-6 max-h-[92dvh] overflow-y-auto relative my-auto animate-in zoom-in-95 duration-200">
+                
+                {/* Close button */}
+                <button
+                  onClick={() => setPreBillingModalOpen(false)}
+                  className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors p-1 z-20"
+                  title={language === 'es' ? 'Cancelar' : 'Cancel'}
+                >
+                  <X size={22} />
+                </button>
+
+                {/* Header */}
+                <div className="flex flex-col items-center text-center mb-5">
+                  <div className="w-14 h-14 rounded-full bg-blue-100 flex items-center justify-center mb-3">
+                    <FileText className="w-8 h-8 text-blue-600" />
+                  </div>
+                  <h2 className="text-xl font-bold text-gray-900">
+                    {language === 'es' ? 'Preparación facturación' : 'Billing Preparation'}
+                  </h2>
+                  <p className="text-sm text-gray-500 mt-1">
+                    {language === 'es'
+                      ? 'Seleccione el método de pago para confirmar la reserva y generar la factura.'
+                      : 'Select the payment method to confirm the reservation and generate the invoice.'}
+                  </p>
+                </div>
+
+                {/* Summary Card */}
+                <div className="bg-gray-50 rounded-xl border border-gray-200 p-4 mb-4 space-y-2 text-sm">
+                  <div className="flex justify-between pb-2 border-b border-gray-200">
+                    <span className="text-gray-500 font-medium">{language === 'es' ? 'Cliente' : 'Customer'}</span>
+                    <span className="font-semibold text-gray-900">{preBillingAd.customer_name}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500 font-medium">{language === 'es' ? 'Producto' : 'Product'}</span>
+                    <span className="font-semibold text-gray-900">{preBillingAd.ad_type}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500 font-medium">{language === 'es' ? 'Página' : 'Page'}</span>
+                    <span className="font-bold text-blue-600">
+                      P{selectedPage.page_number}
+                    </span>
+                  </div>
+
+                  {/* Price breakdown */}
+                  <div className="pt-2 mt-1 border-t border-gray-200 space-y-1.5">
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">{language === 'es' ? 'Base' : 'Base price'}</span>
+                      <span className="text-gray-800">{basePrice.toFixed(2)} €</span>
+                    </div>
+                    {designPrice > 0 && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">{language === 'es' ? 'Diseño' : 'Design'}</span>
+                        <span className="text-gray-800">{designPrice.toFixed(2)} €</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">IVA (21%)</span>
+                      <span className="text-gray-800">{vat.toFixed(2)} €</span>
+                    </div>
+                    <div className="flex justify-between pt-2 border-t border-gray-200 font-bold text-base">
+                      <span className="text-gray-800">TOTAL</span>
+                      <span className="text-blue-600">{total.toFixed(2)} €</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Pago Realizado Section */}
+                <div className="mb-5">
+                  <span className="block text-sm font-bold text-gray-700 mb-3 text-center">
+                    {language === 'es' ? 'Pago realizado:' : 'Payment made:'}
+                  </span>
+                  
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => handleConfirmPreReservation(preBillingAd, 'Cash')}
+                      disabled={isSaving}
+                      className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 disabled:bg-emerald-300 text-white font-bold rounded-xl shadow-md hover:shadow-lg transition-all duration-200 flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                      💵 {language === 'es' ? 'Efectivo' : 'Cash'}
+                    </button>
+                    
+                    <button
+                      onClick={() => handleConfirmPreReservation(preBillingAd, 'Transfer')}
+                      disabled={isSaving}
+                      className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 disabled:bg-blue-300 text-white font-bold rounded-xl shadow-md hover:shadow-lg transition-all duration-200 flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                      🏦 {language === 'es' ? 'Transferencia' : 'Transfer'}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Cancel/Close Button */}
+                <button
+                  type="button"
+                  onClick={() => setPreBillingModalOpen(false)}
+                  disabled={isSaving}
+                  className="w-full py-2.5 bg-gray-100 hover:bg-gray-200 disabled:opacity-50 text-gray-700 font-semibold rounded-xl transition-colors text-sm cursor-pointer"
+                >
+                  {language === 'es' ? 'Cancelar' : 'Cancel'}
+                </button>
+
+              </div>
+            </div>
+          );
+        })()
+      )}
+
       {/* Invoice Success Modal Overlay */}
       {invoiceModalOpen && invoiceDetails && !invoiceDetails._preview && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[110] flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-in fade-in duration-200">
@@ -2209,7 +2623,9 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
                 {language === 'es' ? 'Factura Generada' : 'Invoice Generated'}
               </h2>
               <p className="text-xs sm:text-sm text-gray-500 mb-4 sm:mb-6">
-                {language === 'es' ? 'Venta completada con IVA en efectivo' : 'Sale completed in cash with VAT'}
+                {invoiceDetails.paymentMethod === 'Cash' 
+                  ? (language === 'es' ? 'Venta completada con IVA en efectivo' : 'Sale completed in cash with VAT') 
+                  : (language === 'es' ? 'Venta completada con IVA por transferencia' : 'Sale completed by transfer with VAT')}
               </p>
 
               <div className="bg-gray-50 rounded-lg p-3 sm:p-4 text-left mb-3 sm:mb-4 border border-gray-100 w-full">
@@ -2256,7 +2672,9 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
                   </div>
                   <div className="flex justify-between items-center mt-2 p-2 bg-emerald-50 rounded border border-emerald-200">
                     <span className="text-emerald-700 text-xs font-semibold uppercase tracking-wide">
-                      {language === 'es' ? 'Total (Efectivo)' : 'Total (Cash)'}
+                      {invoiceDetails.paymentMethod === 'Cash' 
+                        ? (language === 'es' ? 'Total (Efectivo)' : 'Total (Cash)') 
+                        : (language === 'es' ? 'Total (Transferencia)' : 'Total (Transfer)')}
                     </span>
                     <span className="font-bold text-emerald-700 text-lg">{invoiceDetails.total.toFixed(2)}€</span>
                   </div>
@@ -2418,6 +2836,23 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
               </button>
             </div>
           </div>
+        </div>
+      )}
+      {/* Hidden Off-Screen Invoice Template for PDF Rendering */}
+      {renderingInvoice && (
+        <div
+          id="pdf-template"
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: '-10000px',
+            width: '800px',
+            padding: '40px',
+            background: 'white',
+            zIndex: -1,
+          }}
+        >
+          {renderPDFTemplate(renderingInvoice)}
         </div>
       )}
     </div>

@@ -1315,31 +1315,22 @@ const InvoicesList = () => {
               {/* Toggle sequential */}
               <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                 <span className="text-sm font-medium text-gray-700">{t('config_sequential')}</span>
-                <button
-                  type="button"
-                  onClick={() => setConfigSettings(prev => ({ ...prev, isSequentialEnabled: !prev.isSequentialEnabled }))}
-                  className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                    configSettings.isSequentialEnabled ? 'bg-blue-600' : 'bg-gray-200'
-                  }`}
-                >
-                  <span
-                    className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                      configSettings.isSequentialEnabled ? 'translate-x-5' : 'translate-x-0'
-                    }`}
-                  />
-                </button>
+                <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded font-bold uppercase">
+                  {language === 'es' ? 'Activado y Congelado' : 'Active & Frozen'}
+                </span>
               </div>
 
               {/* Next invoice number input */}
               <div>
                 <label className="block text-sm font-bold text-gray-700 mb-1">{t('config_next_num')}</label>
-                <input
-                  type="number"
-                  disabled={!configSettings.isSequentialEnabled}
-                  value={configSettings.nextInvoiceNumber}
-                  onChange={(e) => setConfigSettings(prev => ({ ...prev, nextInvoiceNumber: parseInt(e.target.value, 10) || 0 }))}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:text-gray-400"
-                />
+                <div className="w-full px-3 py-2 bg-gray-100 border border-gray-200 rounded-lg text-gray-500 font-mono text-sm">
+                  {configSettings.nextInvoiceNumber} ({String(configSettings.nextInvoiceNumber).padStart(2, '0')}_2601)
+                </div>
+                <p className="text-[11px] text-gray-400 mt-1">
+                  {language === 'es' 
+                    ? 'El número de factura siguiente se autoincrementa de forma secuencial y no se puede modificar.' 
+                    : 'The next invoice number auto-increments sequentially and cannot be modified.'}
+                </p>
               </div>
 
               {/* Reserve Next ID section */}
@@ -1382,20 +1373,9 @@ const InvoicesList = () => {
               <button
                 type="button"
                 onClick={() => setIsConfigOpen(false)}
-                className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium rounded-lg transition-colors cursor-pointer"
-              >
-                {t('cancel')}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  saveInvoiceSettings(configSettings);
-                  setIsConfigOpen(false);
-                  alert('Settings saved successfully!');
-                }}
                 className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors cursor-pointer"
               >
-                {t('save')}
+                {language === 'es' ? 'Cerrar' : 'Close'}
               </button>
             </div>
           </div>

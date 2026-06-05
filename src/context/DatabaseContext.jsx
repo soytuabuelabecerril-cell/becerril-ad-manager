@@ -164,9 +164,7 @@ const toDbOrder = (ord) => ({
   email_reminder_sent_at: ord.emailReminderSentAt || null,
   whatsapp_reminder_sent_at: ord.whatsappReminderSentAt || null,
   email_reminders_count: ord.emailRemindersCount || 0,
-  whatsapp_reminders_count: ord.whatsappRemindersCount || 0,
-  last_auto_reminder_day: ord.lastAutoReminderDay || 0,
-  prolonged_count: ord.prolongedCount || 0
+  whatsapp_reminders_count: ord.whatsappRemindersCount || 0
 });
 
 const fromDbAd = (row) => ({
@@ -210,18 +208,16 @@ const toDbAd = (ad, pageNum) => ({
   email_reminder_sent_at: ad.emailReminderSentAt || null,
   whatsapp_reminder_sent_at: ad.whatsappReminderSentAt || null,
   email_reminders_count: ad.emailRemindersCount || 0,
-  whatsapp_reminders_count: ad.whatsappRemindersCount || 0,
-  last_auto_reminder_day: ad.lastAutoReminderDay || 0,
-  prolonged_count: ad.prolongedCount || 0
+  whatsapp_reminders_count: ad.whatsappRemindersCount || 0
 });
 const fromDbSettings = (row) => ({
-  isSequentialEnabled: row.is_sequential_enabled,
+  isSequentialEnabled: true,
   nextInvoiceNumber: row.next_invoice_number
 });
 
 const toDbSettings = (settings) => ({
   id: 1,
-  is_sequential_enabled: settings.isSequentialEnabled,
+  is_sequential_enabled: true,
   next_invoice_number: settings.nextInvoiceNumber
 });
 
@@ -569,7 +565,7 @@ export const DatabaseProvider = ({ children }) => {
 
   // --- Sequential settings ---
   const saveInvoiceSettings = async (newSettings) => {
-    const updated = { ...settings, ...newSettings };
+    const updated = { ...settings, ...newSettings, isSequentialEnabled: true };
     setSettings(updated);
     if (!session) return;
     try {
@@ -585,7 +581,6 @@ export const DatabaseProvider = ({ children }) => {
   // Helper to generate Invoice ID
   const getNextInvoiceId = async () => {
     // Fetch latest settings from DB to prevent race conditions or stale state
-    let isSeq = settings.isSequentialEnabled;
     let nextNum = settings.nextInvoiceNumber;
     try {
       const { data: dbSettings, error: dbErr } = await supabase
@@ -595,25 +590,21 @@ export const DatabaseProvider = ({ children }) => {
         .single();
       if (!dbErr && dbSettings) {
         const fetched = fromDbSettings(dbSettings);
-        isSeq = fetched.isSequentialEnabled;
         nextNum = fetched.nextInvoiceNumber;
       }
     } catch (e) {
       console.error("Error fetching settings for next invoice ID:", e);
     }
 
-    if (isSeq && nextNum) {
-      const parsedNum = parseInt(nextNum, 10);
-      const invoiceId = String(parsedNum).padStart(2, '0') + '_2601';
-      
-      // Increment sequentially in DB and local state
-      await saveInvoiceSettings({
-        nextInvoiceNumber: parsedNum + 1
-      });
-      return invoiceId;
-    } else {
-      return String(Math.floor(Math.random() * 1000000)).padStart(6, '0') + '_2601';
-    }
+    // Always sequential numbering (frozen functionality)
+    const parsedNum = nextNum ? parseInt(nextNum, 10) : 3;
+    const invoiceId = String(parsedNum).padStart(2, '0') + '_2601';
+    
+    // Increment sequentially in DB and local state
+    await saveInvoiceSettings({
+      nextInvoiceNumber: parsedNum + 1
+    });
+    return invoiceId;
   };
 
   // --- Mutation Actions ---
@@ -808,10 +799,10 @@ export const DatabaseProvider = ({ children }) => {
           .eq('customer_name', inv.customerName)
           .eq('ad_type', inv.productName);
         if (delErr) console.error("Error deleting ads on cancel:", delErr);
+        await updatePageStatusIfEmpty(inv.assignedPage);
       }
 
       if (generateRefund) {
-        let isSeq = settings.isSequentialEnabled;
         let nextNum = settings.nextInvoiceNumber;
         try {
           const { data: dbSettings, error: dbErr } = await supabase
@@ -821,21 +812,16 @@ export const DatabaseProvider = ({ children }) => {
             .single();
           if (!dbErr && dbSettings) {
             const fetched = fromDbSettings(dbSettings);
-            isSeq = fetched.isSequentialEnabled;
             nextNum = fetched.nextInvoiceNumber;
           }
         } catch (e) {
           console.error("Error fetching settings for refund ID:", e);
         }
 
-        let refundId = '';
-        if (isSeq && nextNum) {
-          const parsedNum = parseInt(nextNum, 10);
-          refundId = 'REF-' + String(parsedNum).padStart(2, '0') + '_2601';
-          await saveInvoiceSettings({ nextInvoiceNumber: parsedNum + 1 });
-        } else {
-          refundId = 'REF-' + String(Math.floor(Math.random() * 1000000)).padStart(6, '0') + '_2601';
-        }
+        // Always sequential numbering (frozen functionality)
+        const parsedNum = nextNum ? parseInt(nextNum, 10) : 3;
+        const refundId = 'REF-' + String(parsedNum).padStart(2, '0') + '_2601';
+        await saveInvoiceSettings({ nextInvoiceNumber: parsedNum + 1 });
 
         const refundInvoice = {
           id: refundId,
@@ -952,13 +938,10 @@ export const DatabaseProvider = ({ children }) => {
 
       let refundId;
       if (generateRefund) {
-        if (settings.isSequentialEnabled && settings.nextInvoiceNumber) {
-          const nextNum = parseInt(settings.nextInvoiceNumber, 10);
-          refundId = 'REF-' + String(nextNum).padStart(2, '0') + '_2601';
-          saveInvoiceSettings({ nextInvoiceNumber: nextNum + 1 });
-        } else {
-          refundId = 'REF-' + String(Math.floor(Math.random() * 1000000)).padStart(6, '0') + '_2601';
-        }
+        // Always sequential numbering (frozen functionality)
+        const nextNum = settings.nextInvoiceNumber ? parseInt(settings.nextInvoiceNumber, 10) : 3;
+        refundId = 'REF-' + String(nextNum).padStart(2, '0') + '_2601';
+        saveInvoiceSettings({ nextInvoiceNumber: nextNum + 1 });
 
         const refundInvoice = {
           id: refundId,
@@ -1040,7 +1023,6 @@ export const DatabaseProvider = ({ children }) => {
   };
 
   const reserveInvoiceNumber = async (note = '') => {
-    let isSeq = settings.isSequentialEnabled;
     let nextNum = settings.nextInvoiceNumber;
     try {
       const { data: dbSettings, error: dbErr } = await supabase
@@ -1050,15 +1032,14 @@ export const DatabaseProvider = ({ children }) => {
         .single();
       if (!dbErr && dbSettings) {
         const fetched = fromDbSettings(dbSettings);
-        isSeq = fetched.isSequentialEnabled;
         nextNum = fetched.nextInvoiceNumber;
       }
     } catch (e) {
       console.error("Error fetching settings for reservation ID:", e);
     }
 
-    if (!isSeq || !nextNum) return null;
-    const parsedNum = parseInt(nextNum, 10);
+    // Always sequential numbering (frozen functionality)
+    const parsedNum = nextNum ? parseInt(nextNum, 10) : 3;
     const invoiceId = String(parsedNum).padStart(2, '0') + '_2601';
     await saveInvoiceSettings({ nextInvoiceNumber: parsedNum + 1 });
 
@@ -1188,6 +1169,7 @@ export const DatabaseProvider = ({ children }) => {
           .eq('customer_name', ord.customerName)
           .eq('ad_type', ord.productName);
         if (adErr) console.error("Ad delete error for order deletion:", adErr);
+        await updatePageStatusIfEmpty(ord.assignedPage);
       }
 
       const { error } = await supabase
@@ -1302,8 +1284,6 @@ export const DatabaseProvider = ({ children }) => {
       if (orderData.whatsappReminderSentAt !== undefined) dbUpdate.whatsapp_reminder_sent_at = orderData.whatsappReminderSentAt;
       if (orderData.emailRemindersCount !== undefined) dbUpdate.email_reminders_count = orderData.emailRemindersCount;
       if (orderData.whatsappRemindersCount !== undefined) dbUpdate.whatsapp_reminders_count = orderData.whatsappRemindersCount;
-      if (orderData.lastAutoReminderDay !== undefined) dbUpdate.last_auto_reminder_day = orderData.lastAutoReminderDay;
-      if (orderData.prolongedCount !== undefined) dbUpdate.prolonged_count = orderData.prolongedCount;
 
       const { error } = await supabase
         .from('orders')
@@ -1322,9 +1302,30 @@ export const DatabaseProvider = ({ children }) => {
     }
   };
 
-  const confirmOrderPayment = async (orderId, paymentMethod = 'Transfer') => {
-    const order = orders.find(o => o.id === orderId);
+  const confirmOrderPayment = async (orderIdOrObj, paymentMethod = 'Transfer', skipEmail = false) => {
+    let order;
+    if (typeof orderIdOrObj === 'object' && orderIdOrObj !== null) {
+      order = orderIdOrObj;
+    } else {
+      order = orders.find(o => o.id === orderIdOrObj);
+      if (!order && typeof orderIdOrObj === 'string') {
+        try {
+          const { data, error } = await supabase
+            .from('orders')
+            .select('*')
+            .eq('id', orderIdOrObj)
+            .single();
+          if (data && !error) {
+            order = fromDbOrder(data);
+          }
+        } catch (err) {
+          console.error("Error fetching order in confirmOrderPayment fallback:", err);
+        }
+      }
+    }
     if (!order) return null;
+
+    const orderId = order.id;
 
     const basePrice = order.price || 0;
     const designPrice = order.designPrice || 0;
@@ -1349,7 +1350,7 @@ export const DatabaseProvider = ({ children }) => {
       });
 
       // Send automatic payment confirmation email in the background
-      if (order.customerEmail) {
+      if (order.customerEmail && !skipEmail) {
         const subject = `Confirmación de Pago: Factura Nro. ${invoice.id} - Revista de Fiestas Patronales Becerril de la Sierra 2026`;
         const text = `Hola,\n\nConfirmamos que hemos recibido el pago correspondiente a su espacio publicitario en la Revista de Fiestas Patronales Becerril de la Sierra 2026:\n\n- Número de Factura: ${invoice.id}\n- Producto: ${invoice.productName}\n- Página Asignada: ${invoice.assignedPage}\n- Método de Pago: ${paymentMethod}\n- Precio Base: ${invoice.price.toFixed(2)}€\n${invoice.designPrice > 0 ? `- Precio Diseño: ${invoice.designPrice.toFixed(2)}€\n` : ''}- Subtotal: ${(invoice.price + invoice.designPrice).toFixed(2)}€\n- IVA (21%): ${invoice.vat.toFixed(2)}€\n- Total Pagado: ${invoice.total.toFixed(2)}€\n\nGracias,\nEquipo de Coordinación Publicitaria`;
         const vars = getTemplateVariables(invoice, 'es');
@@ -1447,7 +1448,7 @@ export const DatabaseProvider = ({ children }) => {
       });
 
       // Send automatic payment confirmation email in the background (fallback)
-      if (order.customerEmail) {
+      if (order.customerEmail && !skipEmail) {
         const subject = `Confirmación de Pago: Factura Nro. ${invoice.id} - Revista de Fiestas Patronales Becerril de la Sierra 2026`;
         const text = `Hola,\n\nConfirmamos que hemos recibido el pago correspondiente a su espacio publicitario en la Revista de Fiestas Patronales Becerril de la Sierra 2026:\n\n- Número de Factura: ${invoice.id}\n- Producto: ${invoice.productName}\n- Página Asignada: ${invoice.assignedPage}\n- Método de Pago: ${paymentMethod}\n- Precio Base: ${invoice.price.toFixed(2)}€\n${invoice.designPrice > 0 ? `- Precio Diseño: ${invoice.designPrice.toFixed(2)}€\n` : ''}- Subtotal: ${(invoice.price + invoice.designPrice).toFixed(2)}€\n- IVA (21%): ${invoice.vat.toFixed(2)}€\n- Total Pagado: ${invoice.total.toFixed(2)}€\n\nGracias,\nEquipo de Coordinación Publicitaria`;
         const vars = getTemplateVariables(invoice, 'es');
@@ -1828,6 +1829,7 @@ export const DatabaseProvider = ({ children }) => {
           .eq('customer_name', rec.customerName)
           .eq('ad_type', rec.productName);
         if (adErr) console.error("Ad delete error for recibo deletion:", adErr);
+        await updatePageStatusIfEmpty(rec.assignedPage);
       }
 
       const { error } = await supabase
@@ -1941,6 +1943,26 @@ export const DatabaseProvider = ({ children }) => {
     }
   };
 
+  const updatePageStatusIfEmpty = async (pageNum) => {
+    if (!pageNum) return;
+    try {
+      const { data: remainingAds, error: remainingErr } = await supabase
+        .from('ad_reservations')
+        .select('id')
+        .eq('page_number', pageNum);
+      
+      if (!remainingErr && (!remainingAds || remainingAds.length === 0)) {
+        const { error: pageErr } = await supabase
+          .from('magazine_pages')
+          .update({ status: 'Available' })
+          .eq('page_number', pageNum);
+        if (pageErr) console.error("Error updating page status to Available:", pageErr);
+      }
+    } catch (e) {
+      console.error("Error checking remaining ads or updating page status:", e);
+    }
+  };
+
   const deleteAdReservationDirect = async (pageNum, customerName, adType) => {
     try {
       const { error } = await supabase
@@ -1950,6 +1972,7 @@ export const DatabaseProvider = ({ children }) => {
         .eq('customer_name', customerName)
         .eq('ad_type', adType);
       if (error) throw error;
+      await updatePageStatusIfEmpty(pageNum);
     } catch (err) {
       console.error("Error deleting ad reservation:", err);
       
@@ -2116,14 +2139,14 @@ export const DatabaseProvider = ({ children }) => {
       if (isOrder) {
         const { error } = await supabase
           .from('orders')
-          .update({ expires_at: newExpiresAt, prolonged_count: 1 })
+          .update({ expires_at: newExpiresAt })
           .eq('id', targetId);
         if (error) throw error;
         setOrders(prev => prev.map(o => o.id === targetId ? { ...o, expires_at: newExpiresAt, prolongedCount: 1 } : o));
       } else {
         const { error } = await supabase
           .from('ad_reservations')
-          .update({ expires_at: newExpiresAt, prolonged_count: 1 })
+          .update({ expires_at: newExpiresAt })
           .eq('id', targetId);
         if (error) throw error;
         setPages(prev => prev.map(p => {

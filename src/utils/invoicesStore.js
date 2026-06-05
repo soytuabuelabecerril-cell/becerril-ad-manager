@@ -54,24 +54,20 @@ const saveSettingsToLocalStorage = () => {
 };
 
 export const getInvoiceSettings = () => {
-  return { ...settings };
+  return { ...settings, isSequentialEnabled: true };
 };
 
 export const saveInvoiceSettings = (newSettings) => {
-  settings = { ...settings, ...newSettings };
+  settings = { ...settings, ...newSettings, isSequentialEnabled: true };
   saveSettingsToLocalStorage();
 };
 
 export const addInvoice = (invoice) => {
   let invoiceId;
-  if (settings.isSequentialEnabled && settings.nextInvoiceNumber) {
-    const nextNum = parseInt(settings.nextInvoiceNumber, 10);
-    invoiceId = String(nextNum).padStart(2, '0') + '_2601';
-    settings.nextInvoiceNumber = nextNum + 1;
-    saveSettingsToLocalStorage();
-  } else {
-    invoiceId = String(Math.floor(Math.random() * 1000000)).padStart(6, '0') + '_2601';
-  }
+  const nextNum = settings.nextInvoiceNumber ? parseInt(settings.nextInvoiceNumber, 10) : 3;
+  invoiceId = String(nextNum).padStart(2, '0') + '_2601';
+  settings.nextInvoiceNumber = nextNum + 1;
+  saveSettingsToLocalStorage();
 
   const newInvoice = {
     id: invoiceId,
@@ -104,14 +100,10 @@ export const cancelInvoice = (id, generateRefund = false) => {
   
   if (generateRefund) {
     let refundId;
-    if (settings.isSequentialEnabled && settings.nextInvoiceNumber) {
-      const nextNum = parseInt(settings.nextInvoiceNumber, 10);
-      refundId = 'REF-' + String(nextNum).padStart(2, '0') + '_2601';
-      settings.nextInvoiceNumber = nextNum + 1;
-      saveSettingsToLocalStorage();
-    } else {
-      refundId = 'REF-' + String(Math.floor(Math.random() * 1000000)).padStart(6, '0') + '_2601';
-    }
+    const nextNum = settings.nextInvoiceNumber ? parseInt(settings.nextInvoiceNumber, 10) : 3;
+    refundId = 'REF-' + String(nextNum).padStart(2, '0') + '_2601';
+    settings.nextInvoiceNumber = nextNum + 1;
+    saveSettingsToLocalStorage();
 
     const refundInvoice = {
       id: refundId,
@@ -158,9 +150,7 @@ export const hardDeleteInvoice = (id) => {
  * @returns {object|null} The reserved invoice, or null if sequential mode is off.
  */
 export const reserveInvoiceNumber = (note = '') => {
-  if (!settings.isSequentialEnabled || !settings.nextInvoiceNumber) return null;
-  
-  const nextNum = parseInt(settings.nextInvoiceNumber, 10);
+  const nextNum = settings.nextInvoiceNumber ? parseInt(settings.nextInvoiceNumber, 10) : 3;
   const invoiceId = String(nextNum).padStart(2, '0') + '_2601';
   settings.nextInvoiceNumber = nextNum + 1;
   saveSettingsToLocalStorage();
