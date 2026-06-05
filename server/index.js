@@ -23,11 +23,16 @@ app.use(express.json({ limit: '10mb' }));
 
 // Set up Nodemailer transporter for Gmail
 const transporter = nodemailer.createTransport({
-  service: 'gmail',
+  host: 'smtp.gmail.com',
+  port: 587,
+  secure: false, // true for port 465, false for other ports
   auth: {
     user: process.env.GMAIL_USER,
     pass: process.env.GMAIL_APP_PASSWORD,
   },
+  connectionTimeout: 10000, // 10 seconds
+  greetingTimeout: 10000,
+  socketTimeout: 10000,
 });
 
 app.post('/api/send-email', async (req, res) => {
@@ -56,27 +61,13 @@ app.post('/api/send-email', async (req, res) => {
     ];
   }
 
-  if (background) {
-    // Respond immediately to the client
-    res.status(200).json({ success: true, message: 'Email sending initiated in background' });
-
-    // Send the email asynchronously in the background
-    transporter.sendMail(mailOptions)
-      .then(info => {
-        console.log('Email sent in background:', info.messageId);
-      })
-      .catch(error => {
-        console.error('Error sending email in background:', error);
-      });
-  } else {
-    try {
-      const info = await transporter.sendMail(mailOptions);
-      console.log('Email sent:', info.messageId);
-      res.status(200).json({ success: true, messageId: info.messageId });
-    } catch (error) {
-      console.error('Error sending email:', error);
-      res.status(500).json({ error: 'Failed to send email', details: error.message });
-    }
+  try {
+    const info = await transporter.sendMail(mailOptions);
+    console.log('Email sent:', info.messageId);
+    res.status(200).json({ success: true, messageId: info.messageId });
+  } catch (error) {
+    console.error('Error sending email:', error);
+    res.status(500).json({ error: 'Failed to send email', details: error.message });
   }
 });
 

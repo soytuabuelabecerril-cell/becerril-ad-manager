@@ -29,11 +29,16 @@ export default async function handler(req, res) {
   });
 
   const transporter = nodemailer.createTransport({
-    service: 'gmail',
+    host: 'smtp.gmail.com',
+    port: 587,
+    secure: false, // true for port 465, false for other ports
     auth: {
       user: process.env.GMAIL_USER,
       pass: process.env.GMAIL_APP_PASSWORD,
     },
+    connectionTimeout: 10000, // 10 seconds
+    greetingTimeout: 10000,
+    socketTimeout: 10000,
   });
 
   const appUrl = process.env.VITE_APP_URL || req.headers.referer || 'http://localhost:5173';
@@ -299,9 +304,6 @@ export default async function handler(req, res) {
           );
           const text = `Hola ${name},\n\nLamentamos informarle que su pre-reserva para la página ${row.assigned_page} ha vencido hoy y ha sido cancelada automáticamente.\n\nGracias,\nEquipo de Coordinación Publicitaria`;
           await sendMail(email, subject, text, html);
-        }
-      }
-    }ail(email, subject, text);
         }
       }
     }
