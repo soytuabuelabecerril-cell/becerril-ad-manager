@@ -2049,11 +2049,6 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
         <h4 style={{ fontWeight: '700', color: '#1f2937', marginBottom: '8px' }}>{t('inv_payment_status')}</h4>
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px', backgroundColor: '#f9fafb', padding: '14px', borderRadius: '8px' }}>
           <div>
-            <span style={{ fontSize: '12px', color: '#6b7280', display: 'block' }}>{t('inv_method')}</span>
-            <span style={{ fontWeight: '700', color: '#111827' }}>{inv.paymentMethod}</span>
-          </div>
-          <div style={{ width: '1px', height: '32px', backgroundColor: '#d1d5db' }} />
-          <div>
             <span style={{ fontSize: '12px', color: '#6b7280', display: 'block' }}>{t('inv_status')}</span>
             <span style={{ fontWeight: '700', color: inv.isPaid ? '#16a34a' : '#dc2626' }}>
               {inv.isPaid ? t('inv_paid') : t('inv_pending')}

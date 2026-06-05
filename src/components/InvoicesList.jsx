@@ -585,11 +585,6 @@ const InvoicesList = () => {
           <h4 className="font-bold text-gray-800 mb-2">{t('inv_payment_status')}</h4>
           <div className="flex items-center gap-4 bg-gray-50 p-4 rounded-lg">
             <div>
-              <span className="text-sm text-gray-500 block">{t('inv_method')}</span>
-              <span className="font-bold text-gray-900">{inv.paymentMethod}</span>
-            </div>
-            <div className="h-8 w-px bg-gray-300"></div>
-            <div>
               <span className="text-sm text-gray-500 block">{t('inv_status')}</span>
               <span className={`font-bold ${inv.isPaid ? 'text-green-600' : 'text-red-600'}`}>
                 {inv.isPaid ? t('inv_paid') : t('inv_pending')}
@@ -719,11 +714,6 @@ const InvoicesList = () => {
         <div style={{ marginTop: '32px', paddingTop: '32px', borderTop: '1px solid #e5e7eb' }}>
           <h4 style={{ fontWeight: '700', color: '#1f2937', marginBottom: '8px' }}>{t('inv_payment_status')}</h4>
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px', backgroundColor: '#f9fafb', padding: '14px', borderRadius: '8px' }}>
-            <div>
-              <span style={{ fontSize: '12px', color: '#6b7280', display: 'block' }}>{t('inv_method')}</span>
-              <span style={{ fontWeight: '700', color: '#111827' }}>{inv.paymentMethod}</span>
-            </div>
-            <div style={{ width: '1px', height: '32px', backgroundColor: '#d1d5db' }} />
             <div>
               <span style={{ fontSize: '12px', color: '#6b7280', display: 'block' }}>{t('inv_status')}</span>
               <span style={{ fontWeight: '700', color: inv.isPaid ? '#16a34a' : '#dc2626' }}>
