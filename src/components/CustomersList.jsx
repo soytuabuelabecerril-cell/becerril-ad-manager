@@ -31,6 +31,7 @@ const CustomersList = ({ onSelectPage }) => {
   const [liberateSuccess, setLiberateSuccess] = useState(false);
   const [reminderModalOpen, setReminderModalOpen] = useState(false);
   const [reminderCustomer, setReminderCustomer] = useState(null);
+  const [reminderAd, setReminderAd] = useState(null);
   const [emailReminderStatus, setEmailReminderStatus] = useState({ sending: false, success: false, error: '' });
 
   useEffect(() => {
@@ -230,15 +231,16 @@ const CustomersList = ({ onSelectPage }) => {
   //   return preReservedAd ? preReservedAd.expires_at : null;
   // };
 
-  const handleReminderClick = (customer) => {
+  const handleReminderClick = (customer, ad = null) => {
     setReminderCustomer(customer);
+    setReminderAd(ad);
     setEmailReminderStatus({ sending: false, success: false, error: '' });
     setReminderModalOpen(true);
   };
 
   const handleSendEmailReminder = async () => {
     if (!reminderCustomer) return;
-    const preReservedAd = getCustomerPreReservedAd(reminderCustomer);
+    const preReservedAd = reminderAd || getCustomerPreReservedAd(reminderCustomer);
     if (!preReservedAd) return;
 
     setEmailReminderStatus({ sending: true, success: false, error: '' });
@@ -468,6 +470,79 @@ const CustomersList = ({ onSelectPage }) => {
     return Array.from(salesMap.values()).sort((a, b) => Number(a.page_number) - Number(b.page_number));
   };
 
+  const getPreReservedSales = () => {
+    const preReservedMap = new Map();
+
+    // 1. Pre-reserved ads from pages
+    pages.forEach(page => {
+      if (page.ads && page.ads.length > 0) {
+        page.ads.forEach((ad, idx) => {
+          if (ad.isPreReserved) {
+            const key = `ad-${page.page_number}-${(ad.customer_name || '').toLowerCase()}-${(ad.ad_type || '').toLowerCase()}`;
+            preReservedMap.set(key, {
+              id: `ad-${page.page_number}-${ad.id || ad.customer_id || idx}`,
+              page_number: page.page_number,
+              customer_name: ad.customer_name,
+              customer_id: ad.customer_id,
+              ad_type: ad.ad_type,
+              expires_at: ad.expires_at || null,
+              emailReminderSentAt: ad.emailReminderSentAt || ad.reminderSentAt || null,
+              whatsappReminderSentAt: ad.whatsappReminderSentAt || null,
+              emailRemindersCount: ad.emailRemindersCount || 0,
+              whatsappRemindersCount: ad.whatsappRemindersCount || 0,
+              _fromOrder: false,
+              source: 'ad'
+            });
+          }
+        });
+      } else if (page.status === 'Reserved' && page.payment_status === 'Pending') {
+        const key = `page-${page.page_number}-${(page.customer_name || '').toLowerCase()}-${(page.ad_type || '').toLowerCase()}`;
+        preReservedMap.set(key, {
+          id: `page-${page.page_number}`,
+          page_number: page.page_number,
+          customer_name: page.customer_name || 'Legacy Customer',
+          customer_id: page.customer_id,
+          ad_type: page.ad_type,
+          expires_at: page.expires_at || null,
+          emailReminderSentAt: page.reminderSentAt || null,
+          whatsappReminderSentAt: null,
+          emailRemindersCount: 0,
+          whatsappRemindersCount: 0,
+          _fromOrder: false,
+          source: 'page-direct'
+        });
+      }
+    });
+
+    // 2. Pre-reserved orders
+    orders.forEach(o => {
+      if (o.orderType === 'pre-reserved' && o.status !== 'Cancelled' && !o.isPaid) {
+        const key = `order-${o.assignedPage}-${(o.customerName || '').toLowerCase()}-${(o.productName || '').toLowerCase()}`;
+        
+        // Derive expiresAt: estimate 7 days if not provided
+        const expiresAt = o.expires_at ||
+          (o.createdAt ? new Date(new Date(o.createdAt).getTime() + 7 * 24 * 60 * 60 * 1000).toISOString() : null);
+
+        preReservedMap.set(key, {
+          id: `order-${o.id}`,
+          page_number: o.assignedPage,
+          customer_name: o.customerName,
+          customer_id: o.customerId,
+          ad_type: o.productName,
+          expires_at: expiresAt,
+          emailReminderSentAt: o.emailReminderSentAt || null,
+          whatsappReminderSentAt: o.whatsappReminderSentAt || null,
+          emailRemindersCount: o.emailRemindersCount || 0,
+          whatsappRemindersCount: o.whatsappRemindersCount || 0,
+          _fromOrder: true,
+          source: 'order'
+        });
+      }
+    });
+
+    return Array.from(preReservedMap.values()).sort((a, b) => Number(a.page_number) - Number(b.page_number));
+  };
+
   const findCustomerForSale = (sale) => {
     const saleCustName = (sale.customer_name || '').toLowerCase();
     return customers.find(c =>
@@ -487,19 +562,17 @@ const CustomersList = ({ onSelectPage }) => {
   };
 
   const closedSales = getClosedSales();
+  const preReservedSales = getPreReservedSales();
 
   const customersByState = {
     pending: [],
-    'pre-reserved': [],
+    'pre-reserved': preReservedSales,
     closed: closedSales
   };
 
   customers.forEach(c => {
     if (isCustomerPending(c)) {
       customersByState.pending.push(c);
-    }
-    if (isCustomerPreReserved(c)) {
-      customersByState['pre-reserved'].push(c);
     }
   });
 
@@ -530,7 +603,26 @@ const CustomersList = ({ onSelectPage }) => {
     );
   });
 
-  const displayItems = activeState === 'closed' ? filteredClosedSales : filteredCustomers;
+  const filteredPreReservedSales = preReservedSales.filter(sale => {
+    const customer = findCustomerForSale(sale);
+    if (!searchTerm) return true;
+    const term = searchTerm.toLowerCase();
+    return (
+      (customer.commercial_name && customer.commercial_name.toLowerCase().includes(term)) ||
+      (customer.fiscal_name && customer.fiscal_name.toLowerCase().includes(term)) ||
+      (customer.nif && customer.nif.toLowerCase().includes(term)) ||
+      (customer.email && customer.email.toLowerCase().includes(term)) ||
+      (`p${sale.page_number}`.includes(term)) ||
+      (sale.ad_type && sale.ad_type.toLowerCase().includes(term))
+    );
+  });
+
+  const displayItems =
+    activeState === 'closed'
+      ? filteredClosedSales
+      : activeState === 'pre-reserved'
+        ? filteredPreReservedSales
+        : filteredCustomers;
 
   const getActiveStateTitle = () => {
     switch (activeState) {
@@ -669,9 +761,10 @@ const CustomersList = ({ onSelectPage }) => {
             <tbody className="divide-y divide-gray-100">
               {displayItems.map((item) => {
                 const isClosed = activeState === 'closed';
-                const sale = isClosed ? item : null;
-                const customer = isClosed ? findCustomerForSale(item) : item;
-                const itemKey = isClosed ? sale.id : customer.id;
+                const isPreReserved = activeState === 'pre-reserved';
+                const sale = isClosed || isPreReserved ? item : null;
+                const customer = isClosed || isPreReserved ? findCustomerForSale(item) : item;
+                const itemKey = isClosed || isPreReserved ? sale.id : customer.id;
                 return (
                   <tr key={itemKey} className="hover:bg-slate-50 transition-colors">
                     <td className="p-4">
@@ -682,7 +775,7 @@ const CustomersList = ({ onSelectPage }) => {
                         <div>
                           <div className="font-bold text-gray-800 flex items-center gap-2">
                             {(() => {
-                              if (isClosed) {
+                              if (isClosed || isPreReserved) {
                                 return (
                                   <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-100 shrink-0">
                                     P{sale.page_number}
@@ -705,7 +798,7 @@ const CustomersList = ({ onSelectPage }) => {
                   <td className="p-4">
                     <div className="flex flex-col gap-2 text-sm text-gray-600 max-w-xs">
                       {customer.email && (() => {
-                        const preReservedAd = getCustomerPreReservedAd(customer);
+                        const preReservedAd = activeState === 'pre-reserved' ? item : getCustomerPreReservedAd(customer);
                         const hasEmailSent = preReservedAd?.emailReminderSentAt;
                         const formattedSentDate = hasEmailSent ? new Date(preReservedAd.emailReminderSentAt).toLocaleDateString() : '';
                         const emailCount = preReservedAd?.emailRemindersCount || 0;
@@ -726,7 +819,7 @@ const CustomersList = ({ onSelectPage }) => {
                         );
                       })()}
                       {customer.whatsapp && (() => {
-                        const preReservedAd = getCustomerPreReservedAd(customer);
+                        const preReservedAd = activeState === 'pre-reserved' ? item : getCustomerPreReservedAd(customer);
                         const hasWhatsAppSent = preReservedAd?.whatsappReminderSentAt;
                         const formattedSentDate = hasWhatsAppSent ? new Date(preReservedAd.whatsappReminderSentAt).toLocaleDateString() : '';
                         const whatsappCount = preReservedAd?.whatsappRemindersCount || 0;
@@ -757,7 +850,7 @@ const CustomersList = ({ onSelectPage }) => {
                   <td className="p-4">
                     {activeState === 'pre-reserved' ? (
                       (() => {
-                        const preReservedAd = getCustomerPreReservedAd(customer);
+                        const preReservedAd = item;
                         if (!preReservedAd) return <span className="text-gray-400">—</span>;
                         const expDate = new Date(preReservedAd.expires_at);
                         const formattedDate = `${expDate.getDate()}/${expDate.getMonth() + 1}/${expDate.getFullYear()}`;
@@ -828,14 +921,14 @@ const CustomersList = ({ onSelectPage }) => {
                         <>
                           <div className="flex flex-col items-center">
                             <button
-                              onClick={() => handleReminderClick(customer)}
+                              onClick={() => handleReminderClick(customer, item)}
                               className="bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap inline-flex items-center gap-1 shadow-sm cursor-pointer"
                             >
                               <Bell size={14} />
                               {t('send_reminder') || 'Send Reminder'}
                             </button>
                             {(() => {
-                              const preReservedAd = getCustomerPreReservedAd(customer);
+                              const preReservedAd = item;
                               const hasEmailSent = preReservedAd?.emailReminderSentAt;
                               const hasWhatsAppSent = preReservedAd?.whatsappReminderSentAt;
                               const emailCount = preReservedAd?.emailRemindersCount || 0;
@@ -863,7 +956,7 @@ const CustomersList = ({ onSelectPage }) => {
                             })()}
                           </div>
                           {(() => {
-                            const preReservedAd = getCustomerPreReservedAd(customer);
+                            const preReservedAd = item;
                             if (preReservedAd) {
                               return (
                                 <button
@@ -907,9 +1000,10 @@ const CustomersList = ({ onSelectPage }) => {
         <div className="grid grid-cols-1 gap-4 md:hidden">
           {displayItems.map((item) => {
             const isClosed = activeState === 'closed';
-            const sale = isClosed ? item : null;
-            const customer = isClosed ? findCustomerForSale(item) : item;
-            const itemKey = isClosed ? sale.id : customer.id;
+            const isPreReserved = activeState === 'pre-reserved';
+            const sale = isClosed || isPreReserved ? item : null;
+            const customer = isClosed || isPreReserved ? findCustomerForSale(item) : item;
+            const itemKey = isClosed || isPreReserved ? sale.id : customer.id;
             return (
               <div key={itemKey} className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm relative flex flex-col gap-3">
                 {/* Header: Avatar, Name & NIF */}
@@ -928,7 +1022,7 @@ const CustomersList = ({ onSelectPage }) => {
                           <Edit2 size={14} />
                         </button>
                         {(() => {
-                          if (isClosed) {
+                          if (isClosed || isPreReserved) {
                             return (
                               <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-100 shrink-0">
                                 P{sale.page_number}
@@ -980,7 +1074,7 @@ const CustomersList = ({ onSelectPage }) => {
               {/* Content Details */}
               <div className="text-xs text-gray-600 space-y-1.5 bg-gray-50/50 p-2.5 rounded-lg border border-gray-50">
                 {customer.email && (() => {
-                  const preReservedAd = getCustomerPreReservedAd(customer);
+                  const preReservedAd = activeState === 'pre-reserved' ? item : getCustomerPreReservedAd(customer);
                   const hasEmailSent = preReservedAd?.emailReminderSentAt;
                   const formattedSentDate = hasEmailSent ? new Date(preReservedAd.emailReminderSentAt).toLocaleDateString() : '';
                   const emailCount = preReservedAd?.emailRemindersCount || 0;
@@ -1001,7 +1095,7 @@ const CustomersList = ({ onSelectPage }) => {
                   );
                 })()}
                 {customer.whatsapp && (() => {
-                  const preReservedAd = getCustomerPreReservedAd(customer);
+                  const preReservedAd = activeState === 'pre-reserved' ? item : getCustomerPreReservedAd(customer);
                   const hasWhatsAppSent = preReservedAd?.whatsappReminderSentAt;
                   const formattedSentDate = hasWhatsAppSent ? new Date(preReservedAd.whatsappReminderSentAt).toLocaleDateString() : '';
                   const whatsappCount = preReservedAd?.whatsappRemindersCount || 0;
@@ -1023,7 +1117,7 @@ const CustomersList = ({ onSelectPage }) => {
                 })()}
                 {activeState === 'pre-reserved' ? (
                   (() => {
-                    const preReservedAd = getCustomerPreReservedAd(customer);
+                    const preReservedAd = item;
                     if (!preReservedAd) return null;
                     const expDate = new Date(preReservedAd.expires_at);
                     const formattedDate = `${expDate.getDate()}/${expDate.getMonth() + 1}/${expDate.getFullYear()}`;
@@ -1077,14 +1171,14 @@ const CustomersList = ({ onSelectPage }) => {
                 <div className="flex gap-2 justify-end border-t border-gray-100 pt-3 mt-1">
                   <div className="flex-1 flex flex-col items-center">
                     <button
-                      onClick={() => handleReminderClick(customer)}
+                      onClick={() => handleReminderClick(customer, item)}
                       className="w-full bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold py-2 px-3 rounded-lg transition-colors flex items-center justify-center gap-1 shadow-sm cursor-pointer"
                     >
                       <Bell size={14} />
                       {t('send_reminder') || 'Send Reminder'}
                     </button>
                     {(() => {
-                      const preReservedAd = getCustomerPreReservedAd(customer);
+                      const preReservedAd = item;
                       const hasEmailSent = preReservedAd?.emailReminderSentAt;
                       const hasWhatsAppSent = preReservedAd?.whatsappReminderSentAt;
                       const emailCount = preReservedAd?.emailRemindersCount || 0;
@@ -1112,7 +1206,7 @@ const CustomersList = ({ onSelectPage }) => {
                     })()}
                   </div>
                   {(() => {
-                    const preReservedAd = getCustomerPreReservedAd(customer);
+                    const preReservedAd = item;
                     if (preReservedAd) {
                       return (
                         <button
@@ -1248,7 +1342,7 @@ const CustomersList = ({ onSelectPage }) => {
             </p>
 
             {(() => {
-              const preReservedAd = getCustomerPreReservedAd(reminderCustomer);
+              const preReservedAd = reminderAd || getCustomerPreReservedAd(reminderCustomer);
               if (!preReservedAd) return null;
               
               const expDate = new Date(preReservedAd.expires_at);
@@ -1297,7 +1391,7 @@ const CustomersList = ({ onSelectPage }) => {
                       : (t('email_reminder') || 'Send Email Reminder')}
                 </button>
                 {(() => {
-                  const preReservedAd = getCustomerPreReservedAd(reminderCustomer);
+                  const preReservedAd = reminderAd || getCustomerPreReservedAd(reminderCustomer);
                   const hasEmailSent = preReservedAd?.emailReminderSentAt;
                   if (hasEmailSent && !emailReminderStatus.success) {
                     const dateStr = new Date(preReservedAd.emailReminderSentAt).toLocaleDateString();
@@ -1314,7 +1408,7 @@ const CustomersList = ({ onSelectPage }) => {
 
               {/* Send WhatsApp Button */}
               {(() => {
-                const preReservedAd = getCustomerPreReservedAd(reminderCustomer);
+                const preReservedAd = reminderAd || getCustomerPreReservedAd(reminderCustomer);
                 const url = getWhatsAppReminderUrl(reminderCustomer, preReservedAd);
                 const hasWhatsAppSent = preReservedAd?.whatsappReminderSentAt;
                 const dateStr = hasWhatsAppSent ? new Date(preReservedAd.whatsappReminderSentAt).toLocaleDateString() : '';

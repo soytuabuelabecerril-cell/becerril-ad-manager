@@ -255,11 +255,52 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
   const [selectedAdIndex, setSelectedAdIndex] = useState(null);
   const [closeSalePaymentMethod, setCloseSalePaymentMethod] = useState('Transfer');
 
+  const [graphicalSelectedSlot, setGraphicalSelectedSlot] = useState(null);
+  const [collapsedPreview, setCollapsedPreview] = useState(false);
+  const [hoveredLayoutSlots, setHoveredLayoutSlots] = useState([]);
+
   useEffect(() => {
     if (!dropdownOpen) {
       setCustomerSearchQuery('');
     }
   }, [dropdownOpen]);
+
+  // Reset preview collapse and selection when selectedPage changes
+  useEffect(() => {
+    setCollapsedPreview(false);
+    setGraphicalSelectedSlot(null);
+    setHoveredLayoutSlots([]);
+  }, [selectedPage]);
+
+  // Sync selectedProductId to graphicalSelectedSlot
+  useEffect(() => {
+    if (selectedProductId) {
+      const id = parseInt(selectedProductId);
+      if (id === 5) setGraphicalSelectedSlot('top');
+      else if (id === 6) setGraphicalSelectedSlot('middle');
+      else if (id === 7) setGraphicalSelectedSlot('bottom');
+      else if (id === 8) setGraphicalSelectedSlot('top_middle');
+      else if (id === 9) setGraphicalSelectedSlot('middle_bottom');
+      else {
+        const prod = products.find(p => p.id === id);
+        if (prod) {
+          if (prod.requiredSlots.length === 3) {
+            setGraphicalSelectedSlot('full');
+          } else if (prod.requiredSlots.includes('any_1')) {
+            if (!['top', 'middle', 'bottom'].includes(graphicalSelectedSlot)) {
+              setGraphicalSelectedSlot(null);
+            }
+          } else {
+            setGraphicalSelectedSlot(null);
+          }
+        } else {
+          setGraphicalSelectedSlot(null);
+        }
+      }
+    } else {
+      setGraphicalSelectedSlot(null);
+    }
+  }, [selectedProductId]);
 
 
   const getEmailHtml = (title, content) => {
@@ -450,6 +491,20 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
           const data = await response.json();
           if (data.success) {
             setEmailStatus({ sending: false, status: 'success', error: '' });
+            logAction(
+              'send_invoice_email',
+              details.id || '',
+              details.customerName || details.customer_name || '',
+              details.productName || details.ad_type || '',
+              details.assignedPage || details.page_number || null,
+              details.price || 0,
+              details.designPrice || details.design_work_price || 0,
+              details.vat || 0,
+              details.total || 0,
+              details.paymentMethod || details.payment_method || '',
+              details.isPaid || details.is_paid || false,
+              { to, subject: cleanSubject }
+            );
           } else {
             setEmailStatus({ sending: false, status: 'error', error: data.error || 'Failed to send' });
           }
@@ -501,6 +556,25 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
         const data = await response.json();
         if (data.success) {
           setEmailStatus({ sending: false, status: 'success', error: '' });
+          
+          let logActionType = 'send_reservation_email';
+          if (isRecibo) logActionType = 'send_recibo_email';
+          else if (isPreReservation) logActionType = 'send_prereservation_email';
+
+          logAction(
+            logActionType,
+            details.id || details.page_number?.toString() || '',
+            details.customerName || details.customer_name || '',
+            details.productName || details.ad_type || '',
+            details.assignedPage || details.page_number || null,
+            details.price || 0,
+            details.designPrice || details.design_work_price || 0,
+            details.vat || 0,
+            details.total || 0,
+            details.paymentMethod || details.payment_method || '',
+            details.isPaid || details.is_paid || false,
+            { to, subject: cleanSubject }
+          );
         } else {
           setEmailStatus({ sending: false, status: 'error', error: data.error || 'Failed to send' });
         }
@@ -664,6 +738,75 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
     }
     
     return product.requiredSlots.every(slot => availableSlots.has(slot));
+  };
+
+  const selectProductForSlot = (slotKey) => {
+    const preferredProductIdMap = {
+      top: 5,           // ⅓ tercio superior
+      middle: 6,        // ⅓ tercio medio
+      bottom: 7,        // ⅓ tercio faldón
+      top_middle: 8,    // ⅔ dos tercios superior
+      middle_bottom: 9, // ⅔ dos tercios bajo
+      full: 1           // Página completa
+    };
+    
+    let targetProductId = preferredProductIdMap[slotKey];
+    let selectedProd = availableProducts.find(p => p.id === targetProductId);
+    
+    if (!selectedProd) {
+      if (slotKey === 'top' || slotKey === 'middle' || slotKey === 'bottom') {
+        selectedProd = availableProducts.find(p => p.requiredSlots.includes('any_1'));
+      } else if (slotKey === 'full') {
+        selectedProd = availableProducts.find(p => p.requiredSlots.length === 3);
+      }
+    }
+    
+    if (selectedProd) {
+      setSelectedProductId(selectedProd.id.toString());
+      return selectedProd;
+    }
+    
+    return null;
+  };
+
+  const handleSlotClick = (slotKey) => {
+    if (activeViewMode === 'select_mode') {
+      setActiveViewMode('new_reservation');
+    }
+    
+    setGraphicalSelectedSlot(slotKey);
+    const prod = selectProductForSlot(slotKey);
+    if (prod) {
+      setTimeout(() => {
+        setCollapsedPreview(true);
+      }, 400);
+    }
+  };
+
+  const getSlotLabel = (slotKey) => {
+    const labels = {
+      top: language === 'es' ? '1/3 Superior' : '1/3 Top',
+      middle: language === 'es' ? '1/3 Medio' : '1/3 Middle',
+      bottom: language === 'es' ? '1/3 Inferior' : '1/3 Bottom',
+      top_middle: language === 'es' ? '2/3 Superior' : '2/3 Top',
+      middle_bottom: language === 'es' ? '2/3 Inferior' : '2/3 Bottom',
+      full: language === 'es' ? 'Página Completa' : 'Full Page'
+    };
+    return labels[slotKey] || slotKey;
+  };
+
+  const renderMiniPageGraphic = (slotKey) => {
+    const isTop = slotKey === 'top' || slotKey === 'top_middle' || slotKey === 'full';
+    const isMiddle = slotKey === 'middle' || slotKey === 'top_middle' || slotKey === 'middle_bottom' || slotKey === 'full';
+    const isBottom = slotKey === 'bottom' || slotKey === 'middle_bottom' || slotKey === 'full';
+    
+    return (
+      <div className="w-8 h-10 bg-white border border-slate-400 rounded flex flex-col gap-0.5 p-0.5 shadow-inner shrink-0" aria-hidden="true">
+        <div className={`flex-1 rounded-[1px] ${isTop ? 'bg-green-500 border-green-600' : 'bg-slate-50 border-[0.5px] border-slate-200 border-dashed'}`} />
+        <div className={`flex-1 rounded-[1px] ${isMiddle ? 'bg-green-500 border-green-600' : 'bg-slate-50 border-[0.5px] border-slate-200 border-dashed'}`} />
+        <div className={`flex-1 rounded-[1px] ${isBottom ? 'bg-green-500 border-green-600' : 'bg-slate-50 border-[0.5px] border-slate-200 border-dashed'}`} />
+      </div>
+    );
   };
 
   useEffect(() => {
@@ -1864,18 +2007,50 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
       return cName;
     };
 
-    const renderSlotBlock = (ad, heightClass, label) => {
+    const renderSlotBlock = (ad, heightClass, label, slotKey, forceStyle = null) => {
       const cName = getAdCustomerName(ad);
       const colorClass = getAdBgColor(ad);
+      const isAvailable = !ad;
+      
+      const isSelected = forceStyle === 'selected' || (isAvailable && !forceStyle && (
+        graphicalSelectedSlot === slotKey ||
+        (slotKey === 'top' && (graphicalSelectedSlot === 'top_middle' || graphicalSelectedSlot === 'full')) ||
+        (slotKey === 'middle' && (graphicalSelectedSlot === 'top_middle' || graphicalSelectedSlot === 'middle_bottom' || graphicalSelectedSlot === 'full')) ||
+        (slotKey === 'bottom' && (graphicalSelectedSlot === 'middle_bottom' || graphicalSelectedSlot === 'full'))
+      ));
+
+      const isHovered = forceStyle === 'hovered' || (isAvailable && !forceStyle && hoveredLayoutSlots.includes(slotKey));
+
+      let customColorClass = colorClass;
+      let clickHandler = undefined;
+
+      if (isSelected) {
+        customColorClass = 'bg-green-500 border-green-600 text-white shadow-md scale-[1.02] ring-4 ring-green-200 cursor-pointer font-bold';
+      } else if (isHovered) {
+        customColorClass = 'bg-green-100 border-green-400 text-green-700 shadow-sm scale-[1.01] cursor-pointer';
+      } else if (isAvailable) {
+        customColorClass = 'bg-gray-50/50 border-gray-200 text-gray-400 border-dashed hover:bg-green-50 hover:border-green-300 hover:text-green-600 cursor-pointer hover:scale-[1.01]';
+      }
+
+      if (isAvailable) {
+        clickHandler = () => handleSlotClick(slotKey);
+      }
+
       return (
-        <div className={`flex flex-col items-center justify-center p-3 border-2 rounded-xl transition-all ${heightClass} ${colorClass} shadow-inner text-center overflow-hidden`}>
+        <div 
+          key={slotKey}
+          onClick={clickHandler}
+          className={`flex flex-col items-center justify-center p-3 border-2 rounded-xl transition-all duration-200 ${heightClass} ${customColorClass} shadow-inner text-center overflow-hidden`}
+        >
           {ad ? (
             <>
               <span className="font-bold text-sm truncate max-w-full drop-shadow-sm">{cName}</span>
               <span className="text-xs opacity-90 truncate max-w-full mt-0.5">{ad.ad_type}</span>
             </>
           ) : (
-            <span className="text-xs font-medium uppercase tracking-wider">{label} ({t('po_available') || 'Disponible'})</span>
+            <span className="text-xs font-semibold uppercase tracking-wider">
+              {label} {isSelected ? `(${language === 'es' ? 'Seleccionado' : 'Selected'})` : `(${t('po_available') || 'Disponible'})`}
+            </span>
           )}
         </div>
       );
@@ -1889,30 +2064,280 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
     const isTopTwoThirds = topAd && topAd === middleAd && topAd !== bottomAd;
     const isBottomTwoThirds = middleAd && middleAd === bottomAd && topAd !== middleAd;
 
+    // Determine the active slot configuration
+    let activeSlotKey = null;
+    let activeSlotStyle = null; // 'selected' or 'hovered'
+    
+    if (hoveredLayoutSlots && hoveredLayoutSlots.length > 0) {
+      activeSlotStyle = 'hovered';
+      if (hoveredLayoutSlots.length === 3) activeSlotKey = 'full';
+      else if (hoveredLayoutSlots.includes('top') && hoveredLayoutSlots.includes('middle')) activeSlotKey = 'top_middle';
+      else if (hoveredLayoutSlots.includes('middle') && hoveredLayoutSlots.includes('bottom')) activeSlotKey = 'middle_bottom';
+      else activeSlotKey = hoveredLayoutSlots[0];
+    } else if (graphicalSelectedSlot) {
+      activeSlotStyle = 'selected';
+      activeSlotKey = graphicalSelectedSlot;
+    }
+
+    // Now, let's build the blocks to render in the diagram container dynamically
+    let blocksToRender = [];
+    
+    if (activeSlotKey) {
+      if (activeSlotKey === 'full') {
+        blocksToRender.push({
+          key: 'full',
+          heightClass: 'flex-1 h-full',
+          label: language === 'es' ? 'Página Completa' : 'Full Page',
+          ad: null,
+          forceStyle: activeSlotStyle
+        });
+      } else if (activeSlotKey === 'top_middle') {
+        blocksToRender.push({
+          key: 'top_middle',
+          heightClass: 'h-[66.6%]',
+          label: language === 'es' ? '2/3 Página (Superior)' : '2/3 Page (Top)',
+          ad: null,
+          forceStyle: activeSlotStyle
+        });
+        if (bottomAd) {
+          blocksToRender.push({ key: 'bottom', heightClass: 'h-[33.3%]', label: '1/3 Inferior', ad: bottomAd });
+        } else {
+          blocksToRender.push({ key: 'bottom_blank', heightClass: 'h-[33.3%]', isBlank: true });
+        }
+      } else if (activeSlotKey === 'middle_bottom') {
+        if (topAd) {
+          blocksToRender.push({ key: 'top', heightClass: 'h-[33.3%]', label: '1/3 Superior', ad: topAd });
+        } else {
+          blocksToRender.push({ key: 'top_blank', heightClass: 'h-[33.3%]', isBlank: true });
+        }
+        blocksToRender.push({
+          key: 'middle_bottom',
+          heightClass: 'h-[66.6%]',
+          label: language === 'es' ? '2/3 Página (Inferior)' : '2/3 Page (Bottom)',
+          ad: null,
+          forceStyle: activeSlotStyle
+        });
+      } else if (activeSlotKey === 'top') {
+        blocksToRender.push({
+          key: 'top',
+          heightClass: 'h-[33.3%]',
+          label: language === 'es' ? '1/3 Superior' : '1/3 Top',
+          ad: null,
+          forceStyle: activeSlotStyle
+        });
+        if (middleAd) {
+          blocksToRender.push({ key: 'middle', heightClass: 'h-[33.3%]', label: '1/3 Medio', ad: middleAd });
+        } else {
+          blocksToRender.push({ key: 'middle_blank', heightClass: 'h-[33.3%]', isBlank: true });
+        }
+        if (bottomAd) {
+          blocksToRender.push({ key: 'bottom', heightClass: 'h-[33.3%]', label: '1/3 Inferior', ad: bottomAd });
+        } else {
+          blocksToRender.push({ key: 'bottom_blank', heightClass: 'h-[33.3%]', isBlank: true });
+        }
+      } else if (activeSlotKey === 'middle') {
+        if (topAd) {
+          blocksToRender.push({ key: 'top', heightClass: 'h-[33.3%]', label: '1/3 Superior', ad: topAd });
+        } else {
+          blocksToRender.push({ key: 'top_blank', heightClass: 'h-[33.3%]', isBlank: true });
+        }
+        blocksToRender.push({
+          key: 'middle',
+          heightClass: 'h-[33.3%]',
+          label: language === 'es' ? '1/3 Medio' : '1/3 Middle',
+          ad: null,
+          forceStyle: activeSlotStyle
+        });
+        if (bottomAd) {
+          blocksToRender.push({ key: 'bottom', heightClass: 'h-[33.3%]', label: '1/3 Inferior', ad: bottomAd });
+        } else {
+          blocksToRender.push({ key: 'bottom_blank', heightClass: 'h-[33.3%]', isBlank: true });
+        }
+      } else if (activeSlotKey === 'bottom') {
+        if (topAd) {
+          blocksToRender.push({ key: 'top', heightClass: 'h-[33.3%]', label: '1/3 Superior', ad: topAd });
+        } else {
+          blocksToRender.push({ key: 'top_blank', heightClass: 'h-[33.3%]', isBlank: true });
+        }
+        if (middleAd) {
+          blocksToRender.push({ key: 'middle', heightClass: 'h-[33.3%]', label: '1/3 Medio', ad: middleAd });
+        } else {
+          blocksToRender.push({ key: 'middle_blank', heightClass: 'h-[33.3%]', isBlank: true });
+        }
+        blocksToRender.push({
+          key: 'bottom',
+          heightClass: 'h-[33.3%]',
+          label: language === 'es' ? '1/3 Inferior' : '1/3 Bottom',
+          ad: null,
+          forceStyle: activeSlotStyle
+        });
+      }
+    } else {
+      if (isFullPage) {
+        blocksToRender.push({ key: 'full', heightClass: 'flex-1 h-full', label: 'Página Completa', ad: topAd });
+      } else if (isTopTwoThirds) {
+        blocksToRender.push({ key: 'top_middle', heightClass: 'flex-[2]', label: '2/3 Página (Superior)', ad: topAd });
+        blocksToRender.push({ key: 'bottom', heightClass: 'flex-1', label: '1/3 Página (Inferior)', ad: bottomAd });
+      } else if (isBottomTwoThirds) {
+        blocksToRender.push({ key: 'top', heightClass: 'flex-1', label: '1/3 Página (Superior)', ad: topAd });
+        blocksToRender.push({ key: 'middle_bottom', heightClass: 'flex-[2]', label: '2/3 Página (Inferior)', ad: middleAd });
+      } else {
+        blocksToRender.push({ key: 'top', heightClass: 'flex-1', label: '1/3 Superior', ad: topAd });
+        blocksToRender.push({ key: 'middle', heightClass: 'flex-1', label: '1/3 Medio', ad: middleAd });
+        blocksToRender.push({ key: 'bottom', heightClass: 'flex-1', label: '1/3 Inferior', ad: bottomAd });
+      }
+    }
+
+    // Generate list of bookable layouts dynamically based on availableProducts and occupied slots
+    const layoutsToBook = [];
+    
+    availableProducts.forEach(p => {
+      if (p.requiredSlots.length === 3) {
+        layoutsToBook.push({
+          id: p.id,
+          name: language === 'es' ? 'Página Completa' : 'Full Page',
+          slots: ['top', 'middle', 'bottom'],
+          desc: p.name,
+          price: p.price
+        });
+      } else if (p.requiredSlots.includes('top') && p.requiredSlots.includes('middle')) {
+        layoutsToBook.push({
+          id: p.id,
+          name: language === 'es' ? '2/3 Página (Superior)' : '2/3 Page (Top)',
+          slots: ['top', 'middle'],
+          desc: p.name,
+          price: p.price
+        });
+      } else if (p.requiredSlots.includes('middle') && p.requiredSlots.includes('bottom')) {
+        layoutsToBook.push({
+          id: p.id,
+          name: language === 'es' ? '2/3 Página (Inferior)' : '2/3 Page (Bottom)',
+          slots: ['middle', 'bottom'],
+          desc: p.name,
+          price: p.price
+        });
+      } else if (p.requiredSlots.includes('top')) {
+        layoutsToBook.push({
+          id: p.id,
+          name: language === 'es' ? '1/3 Superior' : '1/3 Top',
+          slots: ['top'],
+          desc: p.name,
+          price: p.price
+        });
+      } else if (p.requiredSlots.includes('middle')) {
+        layoutsToBook.push({
+          id: p.id,
+          name: language === 'es' ? '1/3 Medio' : '1/3 Middle',
+          slots: ['middle'],
+          desc: p.name,
+          price: p.price
+        });
+      } else if (p.requiredSlots.includes('bottom')) {
+        layoutsToBook.push({
+          id: p.id,
+          name: language === 'es' ? '1/3 Inferior' : '1/3 Bottom',
+          slots: ['bottom'],
+          desc: p.name,
+          price: p.price
+        });
+      } else if (p.requiredSlots.includes('any_1')) {
+        const slotsAvail = [];
+        if (!slots.top) slotsAvail.push('top');
+        if (!slots.middle) slotsAvail.push('middle');
+        if (!slots.bottom) slotsAvail.push('bottom');
+        
+        slotsAvail.forEach(sKey => {
+          let sLabel = '';
+          if (sKey === 'top') sLabel = language === 'es' ? '1/3 Superior (Libre)' : '1/3 Top (Free)';
+          else if (sKey === 'middle') sLabel = language === 'es' ? '1/3 Medio (Libre)' : '1/3 Middle (Free)';
+          else if (sKey === 'bottom') sLabel = language === 'es' ? '1/3 Inferior (Libre)' : '1/3 Bottom (Free)';
+          
+          layoutsToBook.push({
+            id: p.id,
+            name: sLabel,
+            slots: [sKey],
+            desc: p.name,
+            price: p.price,
+            isGeneric: true
+          });
+        });
+      }
+    });
+
     return (
-      <div className="mb-6 p-4 bg-slate-50 border border-slate-200 rounded-2xl">
-        <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
-          {language === 'es' ? 'Distribución Visual de la Página' : 'Visual Page Distribution'}
-        </h4>
-        <div className="aspect-[3/4] max-w-[280px] mx-auto bg-white border-4 border-slate-800 rounded-2xl p-2.5 flex flex-col gap-2 shadow-md relative overflow-hidden">
-          {isFullPage ? (
-            renderSlotBlock(topAd, 'flex-1', 'Página Completa')
-          ) : isTopTwoThirds ? (
-            <>
-              {renderSlotBlock(topAd, 'flex-[2]', '2/3 Página (Superior)')}
-              {renderSlotBlock(bottomAd, 'flex-1', '1/3 Página (Inferior)')}
-            </>
-          ) : isBottomTwoThirds ? (
-            <>
-              {renderSlotBlock(topAd, 'flex-1', '1/3 Página (Superior)')}
-              {renderSlotBlock(middleAd, 'flex-[2]', '2/3 Página (Inferior)')}
-            </>
+      <div className="mb-6 p-4 bg-slate-50 border border-slate-200 rounded-2xl flex flex-col md:flex-row gap-6 items-center md:items-start justify-center">
+        {/* Left column: Diagram */}
+        <div className="w-full max-w-[200px] shrink-0">
+          <h5 className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2 text-center">
+            {language === 'es' ? 'Distribución Visual' : 'Visual Page Distribution'}
+          </h5>
+          <div className="aspect-[3/4] bg-white border-4 border-slate-800 rounded-2xl p-2.5 flex flex-col gap-2 shadow-md relative overflow-hidden">
+            {blocksToRender.map(block => {
+              if (block.isBlank) {
+                return <div key={block.key} className={block.heightClass} />;
+              }
+              return renderSlotBlock(block.ad, block.heightClass, block.label, block.key, block.forceStyle);
+            })}
+          </div>
+        </div>
+
+        {/* Right column: Layout Selection Grid */}
+        <div className="flex-1 w-full space-y-2.5">
+          <h5 className="text-[11px] font-bold text-slate-500 uppercase tracking-wider text-left">
+            {language === 'es' ? 'Seleccionar Tamaño/Posición' : 'Select Size/Position'}
+          </h5>
+          {layoutsToBook.length === 0 ? (
+            <div className="p-4 bg-white border border-slate-250 rounded-xl text-xs text-slate-500 text-center">
+              {language === 'es' ? 'No hay más espacio disponible para reservar en esta página.' : 'No further space available for reservation on this page.'}
+            </div>
           ) : (
-            <>
-              {renderSlotBlock(topAd, 'flex-1', '1/3 Superior')}
-              {renderSlotBlock(middleAd, 'flex-1', '1/3 Medio')}
-              {renderSlotBlock(bottomAd, 'flex-1', '1/3 Inferior')}
-            </>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[220px] overflow-y-auto pr-1">
+              {layoutsToBook.map((layout, idx) => {
+                const isSelected = selectedProductId === layout.id.toString() && (
+                  graphicalSelectedSlot === layout.slots[0] || 
+                  (layout.slots.length === 2 && graphicalSelectedSlot === (layout.slots[0] === 'top' ? 'top_middle' : 'middle_bottom')) ||
+                  (layout.slots.length === 3 && graphicalSelectedSlot === 'full')
+                );
+                
+                return (
+                  <button
+                    key={idx}
+                    type="button"
+                    onMouseEnter={() => setHoveredLayoutSlots(layout.slots)}
+                    onMouseLeave={() => setHoveredLayoutSlots([])}
+                    onClick={() => {
+                      let sKey = layout.slots[0];
+                      if (layout.slots.length === 2) {
+                        sKey = layout.slots[0] === 'top' ? 'top_middle' : 'middle_bottom';
+                      } else if (layout.slots.length === 3) {
+                        sKey = 'full';
+                      }
+                      
+                      setSelectedProductId(layout.id.toString());
+                      setGraphicalSelectedSlot(sKey);
+                      setTimeout(() => {
+                        setCollapsedPreview(true);
+                      }, 400);
+                    }}
+                    className={`p-2.5 border rounded-xl text-left transition-all duration-200 cursor-pointer flex flex-col justify-between ${
+                      isSelected 
+                        ? 'border-green-600 bg-green-50 text-green-950 shadow-sm font-bold ring-2 ring-green-100 scale-[1.01]' 
+                        : 'border-slate-200 bg-white text-slate-700 hover:border-green-500 hover:bg-slate-50'
+                    }`}
+                  >
+                    <div className="flex justify-between items-center w-full gap-2">
+                      <span className="text-xs font-bold truncate">{layout.name}</span>
+                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ${
+                        isSelected ? 'bg-green-200 text-green-800' : 'bg-slate-100 text-slate-600'
+                      }`}>
+                        {layout.price}€
+                      </span>
+                    </div>
+                    <span className="text-[10px] opacity-75 mt-1 truncate max-w-full font-normal">{layout.desc}</span>
+                  </button>
+                );
+              })}
+            </div>
           )}
         </div>
       </div>
@@ -1944,7 +2369,32 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
         </div>
       </div>
 
-      {selectedPage.page_number !== 'Unassigned' && renderVisualPagePreview()}
+      {selectedPage.page_number !== 'Unassigned' && (
+        collapsedPreview && graphicalSelectedSlot ? (
+          <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-xl flex items-center justify-between shadow-sm animate-in fade-in duration-200">
+            <div className="flex items-center gap-3">
+              {renderMiniPageGraphic(graphicalSelectedSlot)}
+              <div>
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block leading-none mb-1">
+                  {language === 'es' ? 'Distribución Visual' : 'Visual Page Distribution'}
+                </span>
+                <span className="text-xs text-slate-800 font-bold">
+                  {getSlotLabel(graphicalSelectedSlot)}
+                </span>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setCollapsedPreview(false)}
+              className="text-xs font-bold text-blue-600 hover:text-blue-800 px-2.5 py-1.5 rounded bg-blue-50 hover:bg-blue-100 transition-colors shadow-sm"
+            >
+              {language === 'es' ? 'Editar' : 'Edit'}
+            </button>
+          </div>
+        ) : (
+          renderVisualPagePreview()
+        )
+      )}
       
       {/* Choice Selector Mode */}
       {activeViewMode === 'select_mode' && (

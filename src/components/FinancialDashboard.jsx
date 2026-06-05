@@ -1,8 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useDatabase } from '../context/DatabaseContext';
-import { TrendingUp, CheckCircle, Clock, Euro, BookOpen, AlertCircle, BarChart2, ArrowUpRight, ArrowDownRight, Send, Loader2, Mail, FileText, Copy, Check, X, Search } from 'lucide-react';
+import { TrendingUp, CheckCircle, Clock, Euro, BookOpen, AlertCircle, BarChart2, ArrowUpRight, ArrowDownRight, Send, Loader2, Mail, FileText, Copy, Check, X, Search, Download } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
 import { supabase } from '../lib/supabase';
+import * as XLSX from 'xlsx';
+import { parseAddressDetails } from '../utils/addressParser';
 
 const fmt = (n) => n.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €';
 
@@ -169,12 +171,27 @@ const FinancialDashboard = () => {
   const { invoices, pages, recibos, actionLogs } = useDatabase();
   const [reportStatus, setReportStatus] = useState(null); // null | 'sending' | 'success' | 'error'
   const [reportMsg, setReportMsg] = useState('');
-  const [syncStatus, setSyncStatus] = useState(null); // null | 'syncing' | 'success' | 'error' | 'configure'
   const [isLogModalOpen, setIsLogModalOpen] = useState(false);
-  const [activeLogTab, setActiveLogTab] = useState('ledger'); // 'ledger' | 'cash' | 'event_logs'
+  const [activeLogTab, setActiveLogTab] = useState('ledger'); // 'ledger' | 'invoices' | 'recibos' | 'event_logs'
   const [copied, setCopied] = useState(false);
   const [logSearchQuery, setLogSearchQuery] = useState('');
   const [expandedLogId, setExpandedLogId] = useState(null);
+  const [customers, setCustomers] = useState([]);
+
+  useEffect(() => {
+    const fetchCustomers = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('customers')
+          .select('*');
+        if (error) throw error;
+        if (data) setCustomers(data);
+      } catch (err) {
+        console.error("Error fetching customers for FinancialDashboard:", err);
+      }
+    };
+    fetchCustomers();
+  }, []);
 
   const sendDailyReport = async () => {
     setReportStatus('sending');
@@ -284,21 +301,178 @@ const FinancialDashboard = () => {
     // Sort by page number ascending
     ledgerRows.sort((a, b) => a['Página'] - b['Página']);
 
-    // 2. Prepare Cash transactions without VAT Data
-    const cashRows = recibos
-      .filter(r => r.status !== 'Cancelled')
-      .map(r => ({
+    // 2. Prepare Invoices (Facturas) Data with complete customer info
+    const invoiceRows = invoices.map(inv => {
+      const cust = customers.find(c => 
+        (c.commercial_name && c.commercial_name.trim().toLowerCase() === inv.customerName?.trim().toLowerCase()) ||
+        (c.fiscal_name && c.fiscal_name.trim().toLowerCase() === inv.customerName?.trim().toLowerCase())
+      );
+      const addrDetails = parseAddressDetails(cust?.address);
+      
+      return {
+        'ID Factura': inv.id,
+        'Fecha': inv.createdAt ? new Date(inv.createdAt).toLocaleDateString('es-ES') : '',
+        'Cliente': inv.customerName || '',
+        'Nombre Fiscal': cust?.fiscal_name || '',
+        'NIF / CIF': cust?.nif || '',
+        'Dirección Completa': cust?.address || '',
+        'Población / Ciudad': addrDetails.city || '',
+        'Código Postal': addrDetails.zip || '',
+        'Provincia': addrDetails.province || '',
+        'Email': inv.customerEmail || cust?.email || '',
+        'Teléfono': inv.customerPhone || cust?.whatsapp || '',
+        'Categoría': cust?.category || 'General',
+        'Página Asignada': inv.assignedPage || 'Sin asignar',
+        'Importe Base (€)': inv.price,
+        'Importe Diseño (€)': inv.designPrice,
+        'IVA (21%) (€)': inv.vat,
+        'Importe Total (€)': inv.total,
+        'Método de Pago': inv.paymentMethod || 'No especificado',
+        'Estado Pago': inv.isPaid ? 'Pagado' : 'Pendiente de Pago',
+        'Estado Factura': inv.status === 'Active' ? 'Activa' : inv.status === 'Cancelled' ? 'Cancelada' : inv.status === 'Refund' ? 'Abono/Devolución' : inv.status,
+        'Comentario de Arte': inv.artworkComment || ''
+      };
+    });
+
+    // 3. Prepare Recibos (Receipts) Data with complete customer info
+    const reciboRows = recibos.map(r => {
+      const cust = customers.find(c => 
+        (c.commercial_name && c.commercial_name.trim().toLowerCase() === r.customerName?.trim().toLowerCase()) ||
+        (c.fiscal_name && c.fiscal_name.trim().toLowerCase() === r.customerName?.trim().toLowerCase())
+      );
+      const addrDetails = parseAddressDetails(cust?.address);
+
+      return {
         'ID Recibo': r.id,
         'Fecha': r.createdAt ? new Date(r.createdAt).toLocaleDateString('es-ES') : '',
-        'Cliente': r.customerName,
-        'Producto': r.productName,
+        'Cliente': r.customerName || '',
+        'Nombre Fiscal': cust?.fiscal_name || '',
+        'NIF / CIF': cust?.nif || '',
+        'Dirección Completa': cust?.address || '',
+        'Población / Ciudad': addrDetails.city || '',
+        'Código Postal': addrDetails.zip || '',
+        'Provincia': addrDetails.province || '',
+        'Email': r.customerEmail || cust?.email || '',
+        'Teléfono': r.customerPhone || cust?.whatsapp || '',
+        'Categoría': cust?.category || 'General',
+        'Producto': r.productName || '',
         'Página Asignada': r.assignedPage || 'Sin asignar',
-        'Importe Cobrado (Sin IVA) (€)': parseFloat(r.total || 0),
+        'Importe Base (€)': r.price,
+        'Importe Diseño (€)': r.designPrice,
+        'Importe Total (Sin IVA) (€)': r.total,
         'Método de Pago': r.paymentMethod || 'Efectivo',
-        'Estado': r.status === 'Active' ? 'Activo' : r.status
-      }));
+        'Estado Pago': r.isPaid ? 'Pagado' : 'Pendiente',
+        'Estado Recibo': r.status === 'Active' ? 'Activo' : r.status === 'Cancelled' ? 'Cancelado' : r.status,
+        'Comentario de Arte': r.artworkComment || ''
+      };
+    });
 
-    return { ledgerRows, cashRows };
+    // 4. Map for legacy cash rows (only non-cancelled receipts)
+    const cashRows = reciboRows.filter(row => row['Estado Recibo'] !== 'Cancelado').map(row => ({
+      'ID Recibo': row['ID Recibo'],
+      'Fecha': row['Fecha'],
+      'Cliente': row['Cliente'],
+      'Producto': row['Producto'],
+      'Página Asignada': row['Página Asignada'],
+      'Importe Cobrado (Sin IVA) (€)': row['Importe Total (Sin IVA) (€)'],
+      'Método de Pago': row['Método de Pago'],
+      'Estado': row['Estado Recibo']
+    }));
+
+    return { ledgerRows, invoiceRows, reciboRows, cashRows };
+  };
+
+  const getFilteredData = (activeTab, query) => {
+    const { ledgerRows, invoiceRows, reciboRows } = getReportData();
+    const q = query ? query.toLowerCase() : '';
+
+    if (activeTab === 'ledger') {
+      return ledgerRows.filter(row => {
+        if (!q) return true;
+        return (
+          String(row['Página']).includes(q) ||
+          String(row['Tipo de Reserva']).toLowerCase().includes(q) ||
+          String(row['Cliente']).toLowerCase().includes(q) ||
+          String(row['ID Factura / Recibo']).toLowerCase().includes(q) ||
+          String(row['Método de Pago']).toLowerCase().includes(q) ||
+          String(row['Estado']).toLowerCase().includes(q)
+        );
+      });
+    }
+
+    if (activeTab === 'invoices') {
+      return invoiceRows.filter(row => {
+        if (!q) return true;
+        return (
+          String(row['ID Factura']).toLowerCase().includes(q) ||
+          String(row['Fecha']).includes(q) ||
+          String(row['Cliente']).toLowerCase().includes(q) ||
+          String(row['Nombre Fiscal']).toLowerCase().includes(q) ||
+          String(row['NIF / CIF']).toLowerCase().includes(q) ||
+          String(row['Email']).toLowerCase().includes(q) ||
+          String(row['Teléfono']).toLowerCase().includes(q) ||
+          String(row['Dirección Completa']).toLowerCase().includes(q) ||
+          String(row['Página Asignada']).includes(q) ||
+          String(row['Método de Pago']).toLowerCase().includes(q) ||
+          String(row['Estado Factura']).toLowerCase().includes(q)
+        );
+      });
+    }
+
+    if (activeTab === 'recibos') {
+      return reciboRows.filter(row => {
+        if (!q) return true;
+        return (
+          String(row['ID Recibo']).toLowerCase().includes(q) ||
+          String(row['Fecha']).includes(q) ||
+          String(row['Cliente']).toLowerCase().includes(q) ||
+          String(row['Nombre Fiscal']).toLowerCase().includes(q) ||
+          String(row['NIF / CIF']).toLowerCase().includes(q) ||
+          String(row['Email']).toLowerCase().includes(q) ||
+          String(row['Teléfono']).toLowerCase().includes(q) ||
+          String(row['Dirección Completa']).toLowerCase().includes(q) ||
+          String(row['Producto']).toLowerCase().includes(q) ||
+          String(row['Página Asignada']).includes(q) ||
+          String(row['Método de Pago']).toLowerCase().includes(q) ||
+          String(row['Estado Recibo']).toLowerCase().includes(q)
+        );
+      });
+    }
+
+    if (activeTab === 'event_logs') {
+      const filteredLogs = (actionLogs || []).filter(log => {
+        if (!q) return true;
+        return (
+          (log.action_type && log.action_type.toLowerCase().includes(q)) ||
+          (log.target_id && log.target_id.toLowerCase().includes(q)) ||
+          (log.customer_name && log.customer_name.toLowerCase().includes(q)) ||
+          (log.customer_email && log.customer_email.toLowerCase().includes(q)) ||
+          (log.customer_phone && log.customer_phone.toLowerCase().includes(q)) ||
+          (log.product_name && log.product_name.toLowerCase().includes(q)) ||
+          (log.payment_method && log.payment_method.toLowerCase().includes(q)) ||
+          (log.payment_status && log.payment_status.toLowerCase().includes(q))
+        );
+      });
+
+      return filteredLogs.map(log => ({
+        'Fecha/Hora': formatDateTime(log.created_at),
+        'Acción': translateActionType(log.action_type, language),
+        'ID Target': log.target_id || '',
+        'Cliente': log.customer_name || '',
+        'Email Cliente': log.customer_email || '',
+        'Teléfono Cliente': log.customer_phone || '',
+        'Producto': log.product_name || '',
+        'Página': log.page_number !== null && log.page_number !== undefined ? log.page_number : '',
+        'Precio Base (€)': log.price || 0,
+        'Precio Diseño (€)': log.design_price || 0,
+        'IVA (€)': log.vat || 0,
+        'Total (€)': log.total || 0,
+        'Método Pago': log.payment_method || '',
+        'Estado Pago': log.payment_status || (log.is_paid ? 'Pagado' : 'Pendiente')
+      }));
+    }
+
+    return [];
   };
 
   const convertToCsv = (data) => {
@@ -323,40 +497,35 @@ const FinancialDashboard = () => {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const syncGoogleSheets = async () => {
-    const scriptUrl = localStorage.getItem('google_sheets_sync_url');
-    if (!scriptUrl) {
-      setSyncStatus('configure');
-      setTimeout(() => setSyncStatus(null), 5000);
-      return;
+  const downloadExcel = () => {
+    const filteredRows = getFilteredData(activeLogTab, logSearchQuery);
+
+    let sheetName = 'Datos';
+    let filenamePrefix = 'Reporte';
+    
+    if (activeLogTab === 'ledger') {
+      sheetName = 'Libro de Reservas';
+      filenamePrefix = 'Libro_de_Reservas';
+    } else if (activeLogTab === 'invoices') {
+      sheetName = 'Facturas';
+      filenamePrefix = 'Facturas';
+    } else if (activeLogTab === 'recibos') {
+      sheetName = 'Recibos';
+      filenamePrefix = 'Recibos';
+    } else if (activeLogTab === 'event_logs') {
+      sheetName = 'Historial de Eventos';
+      filenamePrefix = 'Historial_de_Eventos';
     }
 
-    setSyncStatus('syncing');
-    try {
-      const { ledgerRows, cashRows } = getReportData();
+    // Create worksheet
+    const ws = XLSX.utils.json_to_sheet(filteredRows);
 
-      const payload = {
-        ledger: ledgerRows,
-        cash: cashRows
-      };
+    // Create workbook
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, sheetName);
 
-      // Call Google Apps Script Web App using raw fetch POST with no-cors to bypass CORS restrictions on redirect
-      await fetch(scriptUrl, {
-        method: 'POST',
-        mode: 'no-cors',
-        headers: {
-          'Content-Type': 'text/plain'
-        },
-        body: JSON.stringify(payload)
-      });
-
-      setSyncStatus('success');
-    } catch (error) {
-      console.error("Google Sheets sync failed:", error);
-      setSyncStatus('error');
-    } finally {
-      setTimeout(() => setSyncStatus(null), 8000);
-    }
+    // Trigger download
+    XLSX.writeFile(wb, `${filenamePrefix}_${new Date().toISOString().slice(0, 10)}.xlsx`);
   };
 
   /* ── Financial Metrics ─────────────────────────────────────────── */
@@ -406,64 +575,16 @@ const FinancialDashboard = () => {
         {/* Buttons Action Group */}
         <div className="flex flex-col items-end gap-1.5">
           <div className="flex flex-wrap items-center gap-3">
-            {/* Open Google Sheets Link */}
-            <a
-              href="https://docs.google.com/spreadsheets/d/1BhC7XuASyIXW4PrCU1HOWOJ9rvWpaoCCfqVIr2XVAK0/edit"
-              target="_blank"
-              rel="noreferrer"
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-sm bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 transition-all duration-200 cursor-pointer"
-            >
-              <BookOpen size={15} className="text-blue-500" />
-              {t('fd_open_sheet')}
-            </a>
-
-            {/* Sync Button */}
-            <button
-              id="sync-google-sheets-btn"
-              onClick={syncGoogleSheets}
-              disabled={syncStatus === 'syncing'}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-sm transition-all duration-200 shadow-sm ${
-                syncStatus === 'syncing'
-                  ? 'bg-slate-100 text-slate-400 cursor-wait'
-                  : syncStatus === 'success'
-                  ? 'bg-emerald-600 text-white shadow-emerald-200 shadow-md'
-                  : syncStatus === 'error'
-                  ? 'bg-red-500 text-white shadow-red-200 shadow-md'
-                  : syncStatus === 'configure'
-                  ? 'bg-amber-500 text-white shadow-amber-200 shadow-md font-bold'
-                  : 'bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white shadow-indigo-200 shadow-md cursor-pointer'
-              }`}
-            >
-              {syncStatus === 'syncing' ? (
-                <><Loader2 size={15} className="animate-spin" /> {t('fd_syncing')}</>
-              ) : syncStatus === 'success' ? (
-                <><CheckCircle size={15} /> {t('fd_sync_success')}</>
-              ) : syncStatus === 'error' ? (
-                <><AlertCircle size={15} /> {t('fd_sync_error')}</>
-              ) : syncStatus === 'configure' ? (
-                <><AlertCircle size={15} /> Configurar URL</>
-              ) : (
-                <><Send size={15} /> {t('fd_sync_sheets')}</>
-              )}
-            </button>
-
             {/* View CSV Logs Button */}
             <button
               id="download-xls-btn"
               onClick={() => setIsLogModalOpen(true)}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-sm bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white shadow-emerald-200 shadow-md transition-all duration-200 cursor-pointer"
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-sm bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 transition-all duration-200 cursor-pointer shadow-sm"
             >
-              <FileText size={15} />
+              <FileText size={15} className="text-indigo-500" />
               {t('fd_download_xls')}
             </button>
           </div>
-
-          {/* Sync warning message */}
-          {syncStatus === 'configure' && (
-            <p className="text-xs font-semibold text-amber-500 text-right">
-              {t('fd_sync_configure_first')}
-            </p>
-          )}
 
           {/* Daily Report Button */}
           <div className="flex flex-col items-end gap-1.5 mt-2 border-t border-slate-50 pt-2 w-full">
@@ -698,6 +819,7 @@ const FinancialDashboard = () => {
                   onClick={() => {
                     setActiveLogTab('ledger');
                     setCopied(false);
+                    setLogSearchQuery('');
                   }}
                   className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                     activeLogTab === 'ledger'
@@ -709,21 +831,37 @@ const FinancialDashboard = () => {
                 </button>
                 <button
                   onClick={() => {
-                    setActiveLogTab('cash');
+                    setActiveLogTab('invoices');
                     setCopied(false);
+                    setLogSearchQuery('');
                   }}
                   className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                    activeLogTab === 'cash'
+                    activeLogTab === 'invoices'
                       ? 'bg-white text-indigo-600 shadow-sm border border-slate-100'
                       : 'text-slate-500 hover:text-slate-800'
                   }`}
                 >
-                  {t('fd_log_tab_cash')}
+                  {t('fd_log_tab_invoices') || (language === 'es' ? 'Facturas' : 'Invoices')}
+                </button>
+                <button
+                  onClick={() => {
+                    setActiveLogTab('recibos');
+                    setCopied(false);
+                    setLogSearchQuery('');
+                  }}
+                  className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    activeLogTab === 'recibos'
+                      ? 'bg-white text-indigo-600 shadow-sm border border-slate-100'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  {t('fd_log_tab_recibos') || (language === 'es' ? 'Recibos' : 'Receipts')}
                 </button>
                 <button
                   onClick={() => {
                     setActiveLogTab('event_logs');
                     setCopied(false);
+                    setLogSearchQuery('');
                   }}
                   className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                     activeLogTab === 'event_logs'
@@ -923,34 +1061,273 @@ const FinancialDashboard = () => {
                   </div>
                 </div>
               ) : (
-                <div className="relative flex-1 flex flex-col min-h-0">
-                  {/* Copy Button */}
-                  <button
-                    onClick={() => handleCopy(activeLogTab === 'ledger' ? convertToCsv(getReportData().ledgerRows) : convertToCsv(getReportData().cashRows))}
-                    className={`absolute top-4 right-4 flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all duration-200 border shadow-sm ${
-                      copied
-                        ? 'bg-emerald-500 border-emerald-600 text-white animate-scale-in'
-                        : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50 active:scale-95 cursor-pointer'
-                    }`}
-                  >
-                    {copied ? (
-                      <>
-                        <Check size={14} />
-                        {t('fd_log_copied')}
-                      </>
-                    ) : (
-                      <>
-                        <Copy size={14} />
-                        {t('fd_log_copy')}
-                      </>
-                    )}
-                  </button>
+                <div className="flex-1 flex flex-col min-h-0">
+                  {/* Filter and Download Bar */}
+                  <div className="flex flex-col sm:flex-row gap-3 justify-between items-stretch sm:items-center mb-4 pb-2 px-1">
+                    <div className="relative flex-1">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+                      <input
+                        type="text"
+                        placeholder={language === 'es' ? 'Buscar en tabla (cliente, producto, estado...)...' : 'Search table...'}
+                        value={logSearchQuery}
+                        onChange={(e) => setLogSearchQuery(e.target.value)}
+                        className="pl-9 pr-4 py-2 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 w-full text-sm bg-white"
+                      />
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => {
+                          const dataToCopy = getFilteredData(activeLogTab, logSearchQuery);
+                          handleCopy(convertToCsv(dataToCopy));
+                        }}
+                        className={`flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all border shadow-sm ${
+                          copied
+                            ? 'bg-emerald-500 border-emerald-600 text-white'
+                            : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50 active:scale-95 cursor-pointer'
+                        }`}
+                      >
+                        {copied ? (
+                          <>
+                            <Check size={14} />
+                            {t('fd_log_copied')}
+                          </>
+                        ) : (
+                          <>
+                            <Copy size={14} />
+                            {language === 'es' ? 'Copiar CSV' : 'Copy CSV'}
+                          </>
+                        )}
+                      </button>
+                      <button
+                        onClick={downloadExcel}
+                        className="flex items-center justify-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white rounded-xl text-xs font-bold transition-all border border-emerald-600 shadow-sm cursor-pointer"
+                      >
+                        <Download size={14} />
+                        {t('fd_download_excel')}
+                      </button>
+                    </div>
+                  </div>
 
-                  <textarea
-                    readOnly
-                    className="w-full flex-1 min-h-[300px] font-mono text-xs p-6 pt-16 bg-slate-900 text-slate-100 rounded-2xl border border-slate-800 focus:outline-none resize-none overflow-auto"
-                    value={activeLogTab === 'ledger' ? convertToCsv(getReportData().ledgerRows) : convertToCsv(getReportData().cashRows)}
-                  />
+                  {/* Table Container */}
+                  <div className="flex-1 overflow-auto border border-slate-100 rounded-xl">
+                    {activeLogTab === 'ledger' && (() => {
+                      const filtered = getFilteredData('ledger', logSearchQuery);
+
+                      if (filtered.length === 0) {
+                        return (
+                          <div className="p-8 text-center text-slate-400 text-sm">
+                            {language === 'es' ? 'No se encontraron reservas.' : 'No reservations found.'}
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <table className="w-full text-left border-collapse text-xs">
+                          <thead>
+                            <tr className="bg-slate-50 border-b border-slate-100 text-slate-500 tracking-wider uppercase sticky top-0 z-10 font-bold">
+                              <th className="p-3">{language === 'es' ? 'Página' : 'Page'}</th>
+                              <th className="p-3">{language === 'es' ? 'Tipo de Reserva' : 'Ad Type'}</th>
+                              <th className="p-3">{language === 'es' ? 'Cliente' : 'Customer'}</th>
+                              <th className="p-3">{language === 'es' ? 'ID Factura / Recibo' : 'Invoice/Receipt ID'}</th>
+                              <th className="p-3">{language === 'es' ? 'Recibido' : 'Received'}</th>
+                              <th className="p-3">{language === 'es' ? 'Pendiente' : 'Outstanding'}</th>
+                              <th className="p-3">{language === 'es' ? 'Método' : 'Method'}</th>
+                              <th className="p-3">{language === 'es' ? 'Estado' : 'Status'}</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 bg-white">
+                            {filtered.map((row, idx) => (
+                              <tr key={idx} className="hover:bg-slate-50 transition-colors">
+                                <td className="p-3 font-bold text-slate-900 tabular-nums">Pág. {row['Página']}</td>
+                                <td className="p-3 text-slate-600 font-semibold">{row['Tipo de Reserva']}</td>
+                                <td className="p-3 text-slate-800 font-bold">{row['Cliente']}</td>
+                                <td className="p-3 font-mono font-semibold text-slate-500">{row['ID Factura / Recibo']}</td>
+                                <td className="p-3 text-emerald-600 font-bold tabular-nums">{fmt(row['Importe Recibido (€)'])}</td>
+                                <td className="p-3 text-amber-600 font-bold tabular-nums">{fmt(row['Importe Pendiente (€)'])}</td>
+                                <td className="p-3 text-slate-500">{row['Método de Pago']}</td>
+                                <td className="p-3">
+                                  <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                    row['Estado'].includes('Pagada') ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' :
+                                    row['Estado'].includes('Pre-reserva') ? 'bg-amber-50 text-amber-700 border border-amber-100' :
+                                    'bg-blue-50 text-blue-700 border border-blue-100'
+                                  }`}>
+                                    {row['Estado']}
+                                  </span>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      );
+                    })()}
+
+                    {activeLogTab === 'invoices' && (() => {
+                      const filtered = getFilteredData('invoices', logSearchQuery);
+
+                      if (filtered.length === 0) {
+                        return (
+                          <div className="p-8 text-center text-slate-400 text-sm">
+                            {language === 'es' ? 'No se encontraron facturas.' : 'No invoices found.'}
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <table className="w-full text-left border-collapse text-xs whitespace-nowrap">
+                          <thead>
+                            <tr className="bg-slate-50 border-b border-slate-100 text-slate-500 tracking-wider uppercase sticky top-0 z-10 font-bold">
+                              <th className="p-3">{language === 'es' ? 'ID Factura' : 'Invoice ID'}</th>
+                              <th className="p-3">{language === 'es' ? 'Fecha' : 'Date'}</th>
+                              <th className="p-3">{language === 'es' ? 'Cliente / Fiscal' : 'Customer / Fiscal'}</th>
+                              <th className="p-3">NIF/CIF</th>
+                              <th className="p-3">Email</th>
+                              <th className="p-3">{language === 'es' ? 'Teléfono' : 'Phone'}</th>
+                              <th className="p-3">{language === 'es' ? 'Dirección Completa' : 'Full Address'}</th>
+                              <th className="p-3">{language === 'es' ? 'Población / Ciudad' : 'City / Town'}</th>
+                              <th className="p-3">{language === 'es' ? 'C.P.' : 'Post Code'}</th>
+                              <th className="p-3">{language === 'es' ? 'Provincia' : 'Province'}</th>
+                              <th className="p-3">{language === 'es' ? 'Categoría' : 'Category'}</th>
+                              <th className="p-3">{language === 'es' ? 'Página' : 'Page'}</th>
+                              <th className="p-3">{language === 'es' ? 'Imp. Base' : 'Base Price'}</th>
+                              <th className="p-3">{language === 'es' ? 'Diseño' : 'Design'}</th>
+                              <th className="p-3">IVA (21%)</th>
+                              <th className="p-3">Total</th>
+                              <th className="p-3">{language === 'es' ? 'Método' : 'Method'}</th>
+                              <th className="p-3">{language === 'es' ? 'Estado Pago' : 'Payment Status'}</th>
+                              <th className="p-3">{language === 'es' ? 'Estado Factura' : 'Invoice Status'}</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 bg-white">
+                            {filtered.map((row, idx) => (
+                              <tr key={idx} className="hover:bg-slate-50 transition-colors">
+                                <td className="p-3 font-mono font-bold text-slate-900">{row['ID Factura']}</td>
+                                <td className="p-3 text-slate-500">{row['Fecha']}</td>
+                                <td className="p-3">
+                                  <div className="font-bold text-slate-800">{row['Cliente']}</div>
+                                  {row['Nombre Fiscal'] && (
+                                    <div className="text-[10px] text-slate-400 font-normal">{row['Nombre Fiscal']}</div>
+                                  )}
+                                </td>
+                                <td className="p-3 font-mono text-slate-600">{row['NIF / CIF'] || '—'}</td>
+                                <td className="p-3 text-slate-600">{row['Email'] || '—'}</td>
+                                <td className="p-3 text-slate-600">{row['Teléfono'] || '—'}</td>
+                                <td className="p-3 text-slate-500 truncate max-w-[180px]" title={row['Dirección Completa']}>{row['Dirección Completa'] || '—'}</td>
+                                <td className="p-3 text-slate-600">{row['Población / Ciudad'] || '—'}</td>
+                                <td className="p-3 text-slate-600 font-semibold">{row['Código Postal'] || '—'}</td>
+                                <td className="p-3 text-slate-600">{row['Provincia'] || '—'}</td>
+                                <td className="p-3 text-slate-500">{row['Categoría']}</td>
+                                <td className="p-3 font-bold text-slate-700">Pág. {row['Página Asignada']}</td>
+                                <td className="p-3 text-slate-700 tabular-nums">{fmt(row['Importe Base (€)'])}</td>
+                                <td className="p-3 text-slate-500 tabular-nums">{fmt(row['Importe Diseño (€)'])}</td>
+                                <td className="p-3 text-slate-500 tabular-nums">{fmt(row['IVA (21%) (€)'])}</td>
+                                <td className="p-3 text-indigo-600 font-bold tabular-nums">{fmt(row['Importe Total (€)'])}</td>
+                                <td className="p-3 text-slate-500">{row['Método de Pago']}</td>
+                                <td className="p-3">
+                                  <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                    row['Estado Pago'].includes('Pagado') ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' :
+                                    'bg-amber-50 text-amber-700 border border-amber-100'
+                                  }`}>
+                                    {row['Estado Pago']}
+                                  </span>
+                                </td>
+                                <td className="p-3">
+                                  <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                    row['Estado Factura'] === 'Activa' ? 'bg-indigo-50 text-indigo-700 border border-indigo-100' :
+                                    row['Estado Factura'] === 'Cancelada' ? 'bg-rose-50 text-rose-700 border border-rose-100' :
+                                    'bg-slate-100 text-slate-700 border border-slate-200'
+                                  }`}>
+                                    {row['Estado Factura']}
+                                  </span>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      );
+                    })()}
+
+                    {activeLogTab === 'recibos' && (() => {
+                      const filtered = getFilteredData('recibos', logSearchQuery);
+
+                      if (filtered.length === 0) {
+                        return (
+                          <div className="p-8 text-center text-slate-400 text-sm">
+                            {language === 'es' ? 'No se encontraron recibos.' : 'No receipts found.'}
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <table className="w-full text-left border-collapse text-xs whitespace-nowrap">
+                          <thead>
+                            <tr className="bg-slate-50 border-b border-slate-100 text-slate-500 tracking-wider uppercase sticky top-0 z-10 font-bold">
+                              <th className="p-3">{language === 'es' ? 'ID Recibo' : 'Receipt ID'}</th>
+                              <th className="p-3">{language === 'es' ? 'Fecha' : 'Date'}</th>
+                              <th className="p-3">{language === 'es' ? 'Cliente / Fiscal' : 'Customer / Fiscal'}</th>
+                              <th className="p-3">NIF/CIF</th>
+                              <th className="p-3">Email</th>
+                              <th className="p-3">{language === 'es' ? 'Teléfono' : 'Phone'}</th>
+                              <th className="p-3">{language === 'es' ? 'Dirección Completa' : 'Full Address'}</th>
+                              <th className="p-3">{language === 'es' ? 'Población / Ciudad' : 'City / Town'}</th>
+                              <th className="p-3">{language === 'es' ? 'C.P.' : 'Post Code'}</th>
+                              <th className="p-3">{language === 'es' ? 'Provincia' : 'Province'}</th>
+                              <th className="p-3">{language === 'es' ? 'Categoría' : 'Category'}</th>
+                              <th className="p-3">{language === 'es' ? 'Producto' : 'Product'}</th>
+                              <th className="p-3">{language === 'es' ? 'Página' : 'Page'}</th>
+                              <th className="p-3">{language === 'es' ? 'Imp. Base' : 'Base Price'}</th>
+                              <th className="p-3">{language === 'es' ? 'Diseño' : 'Design'}</th>
+                              <th className="p-3">Total</th>
+                              <th className="p-3">{language === 'es' ? 'Método' : 'Method'}</th>
+                              <th className="p-3">{language === 'es' ? 'Estado Pago' : 'Payment Status'}</th>
+                              <th className="p-3">{language === 'es' ? 'Estado Recibo' : 'Receipt Status'}</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 bg-white">
+                            {filtered.map((row, idx) => (
+                              <tr key={idx} className="hover:bg-slate-50 transition-colors">
+                                <td className="p-3 font-mono font-bold text-slate-900">{row['ID Recibo']}</td>
+                                <td className="p-3 text-slate-500">{row['Fecha']}</td>
+                                <td className="p-3">
+                                  <div className="font-bold text-slate-800">{row['Cliente']}</div>
+                                  {row['Nombre Fiscal'] && (
+                                    <div className="text-[10px] text-slate-400 font-normal">{row['Nombre Fiscal']}</div>
+                                  )}
+                                </td>
+                                <td className="p-3 font-mono text-slate-600">{row['NIF / CIF'] || '—'}</td>
+                                <td className="p-3 text-slate-600">{row['Email'] || '—'}</td>
+                                <td className="p-3 text-slate-600">{row['Teléfono'] || '—'}</td>
+                                <td className="p-3 text-slate-500 truncate max-w-[180px]" title={row['Dirección Completa']}>{row['Dirección Completa'] || '—'}</td>
+                                <td className="p-3 text-slate-600">{row['Población / Ciudad'] || '—'}</td>
+                                <td className="p-3 text-slate-600 font-semibold">{row['Código Postal'] || '—'}</td>
+                                <td className="p-3 text-slate-600">{row['Provincia'] || '—'}</td>
+                                <td className="p-3 text-slate-500">{row['Categoría']}</td>
+                                <td className="p-3 text-slate-600 font-semibold">{row['Producto']}</td>
+                                <td className="p-3 font-bold text-slate-700">Pág. {row['Página Asignada']}</td>
+                                <td className="p-3 text-slate-700 tabular-nums">{fmt(row['Importe Base (€)'])}</td>
+                                <td className="p-3 text-slate-500 tabular-nums">{fmt(row['Importe Diseño (€)'])}</td>
+                                <td className="p-3 text-emerald-600 font-bold tabular-nums">{fmt(row['Importe Total (Sin IVA) (€)'])}</td>
+                                <td className="p-3 text-slate-500">{row['Método de Pago']}</td>
+                                <td className="p-3">
+                                  <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-100">
+                                    {row['Estado Pago']}
+                                  </span>
+                                </td>
+                                <td className="p-3">
+                                  <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                    row['Estado Recibo'] === 'Activo' ? 'bg-indigo-50 text-indigo-700 border border-indigo-100' :
+                                    row['Estado Recibo'] === 'Cancelado' ? 'bg-rose-50 text-rose-700 border border-rose-100' :
+                                    'bg-slate-100 text-slate-700 border border-slate-200'
+                                  }`}>
+                                    {row['Estado Recibo']}
+                                  </span>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      );
+                    })()}
+                  </div>
                 </div>
               )}
             </div>
