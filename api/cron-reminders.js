@@ -1,6 +1,5 @@
 // api/cron-reminders.js
 import { createClient } from '@supabase/supabase-js';
-import nodemailer from 'nodemailer';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -25,35 +24,34 @@ export default async function handler(req, res) {
   }
 
   const sendMailWithFallback = async (mailOptions) => {
-    const auth = {
-      user: process.env.GMAIL_USER,
-      pass: process.env.GMAIL_APP_PASSWORD,
-    };
-
-    try {
-      const transporter = nodemailer.createTransport({
-        host: 'smtp.gmail.com',
-        port: 587,
-        secure: false, // true for port 465, false for other ports
-        auth,
-        connectionTimeout: 5000, // 5 seconds
-        greetingTimeout: 5000,
-        socketTimeout: 5000,
-      });
-      return await transporter.sendMail(mailOptions);
-    } catch (error587) {
-      console.warn('Cron: Failed to send email on port 587, retrying on port 465...', error587.message);
-      const transporter465 = nodemailer.createTransport({
-        host: 'smtp.gmail.com',
-        port: 465,
-        secure: true,
-        auth,
-        connectionTimeout: 5000,
-        greetingTimeout: 5000,
-        socketTimeout: 5000,
-      });
-      return await transporter465.sendMail(mailOptions);
+    const resendApiKey = process.env.RESEND_API_KEY;
+    if (!resendApiKey) {
+      throw new Error('Server configuration error: RESEND_API_KEY is not set');
     }
+    const fromEmail = process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev';
+
+    const response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${resendApiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        from: fromEmail,
+        to: [mailOptions.to],
+        subject: mailOptions.subject,
+        text: mailOptions.text,
+        html: mailOptions.html
+      })
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      console.error('Cron: Resend API error details:', data);
+      throw new Error(`Failed to send email via Resend: ${JSON.stringify(data)}`);
+    }
+
+    return data;
   };
 
   const appUrl = process.env.VITE_APP_URL || req.headers.referer || 'http://localhost:5173';

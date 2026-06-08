@@ -28,4 +28,5 @@ dist-ssr
 # Supabase temp directory
 supabase/.temp/
 .temp/
+.env
 

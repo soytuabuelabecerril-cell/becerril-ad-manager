@@ -1,4 +1,3 @@
-import nodemailer from 'nodemailer';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -7,53 +6,51 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.join(__dirname, '.env') });
 
-console.log('Using Gmail User:', process.env.GMAIL_USER);
-console.log('App Password length:', process.env.GMAIL_APP_PASSWORD ? process.env.GMAIL_APP_PASSWORD.length : 0);
+const apiKey = process.env.RESEND_API_KEY;
+const fromEmail = process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev';
 
-// Set up transporter with strict timeout settings
-const transporter = nodemailer.createTransport({
-  host: 'smtp.gmail.com',
-  port: 587,
-  secure: false, // true for port 465, false for other ports
-  auth: {
-    user: process.env.GMAIL_USER,
-    pass: process.env.GMAIL_APP_PASSWORD,
-  },
-  connectionTimeout: 5000, // 5 seconds
-  greetingTimeout: 5000,
-  socketTimeout: 5000,
-});
+console.log('--- Resend API Test ---');
+console.log('API Key configured:', apiKey ? 'Yes (length: ' + apiKey.length + ')' : 'No');
+console.log('Sender Email (From):', fromEmail);
 
-async function main() {
+if (!apiKey) {
+  console.error('ERROR: RESEND_API_KEY environment variable is not defined in .env');
+  process.exit(1);
+}
+
+async function testSend() {
+  const payload = {
+    from: fromEmail,
+    to: ['sbs.comite@gmail.com'], // Sent to your own email address
+    subject: 'Prueba de Resend - Revista Becerril',
+    html: '<p>¡Hola! Esto es una prueba de envío de correo electrónico a través de la API de <strong>Resend</strong> para Revista Becerril.</p>'
+  };
+
+  console.log(`Attempting to send email to sbs.comite@gmail.com...`);
   try {
-    console.log('Verifying transporter connection to smtp.gmail.com:587...');
-    await transporter.verify();
-    console.log('Transporter is ready to send!');
-  } catch (error) {
-    console.error('Error occurred on port 587:', error);
-    
-    // Fallback: try port 465
-    console.log('Retrying on port 465 (secure: true)...');
-    const transporter465 = nodemailer.createTransport({
-      host: 'smtp.gmail.com',
-      port: 465,
-      secure: true,
-      auth: {
-        user: process.env.GMAIL_USER,
-        pass: process.env.GMAIL_APP_PASSWORD,
+    const response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
       },
-      connectionTimeout: 5000,
-      greetingTimeout: 5000,
-      socketTimeout: 5000,
+      body: JSON.stringify(payload)
     });
 
-    try {
-      await transporter465.verify();
-      console.log('Transporter (465) is ready to send!');
-    } catch (err465) {
-      console.error('Error occurred on port 465:', err465);
+    const data = await response.json();
+    console.log(`Response status: ${response.status} ${response.statusText}`);
+    
+    if (response.ok) {
+      console.log('SUCCESS! Email sent successfully via Resend API.');
+      console.log('Message ID:', data.id);
+    } else {
+      console.error('FAILED to send email.');
+      console.error('Error Details:', JSON.stringify(data, null, 2));
+      console.log('\nTIP: If you are using the default onboarding@resend.dev sender, you can ONLY send emails to the email address you signed up with on Resend. If you want to send emails to anyone, you must verify your custom domain in the Resend dashboard.');
     }
+  } catch (error) {
+    console.error('Network or fetch error:', error);
   }
 }
 
-main();
+testSend();

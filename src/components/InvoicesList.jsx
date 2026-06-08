@@ -133,7 +133,7 @@ const InvoicesList = () => {
         if (!element) throw new Error('PDF template element not found in DOM');
 
         const canvas = await html2canvas(element, {
-          scale: 2,
+          scale: 1.5,
           useCORS: true,
           logging: false,
           scrollX: 0,
@@ -194,7 +194,7 @@ const InvoicesList = () => {
         const element = document.getElementById('pdf-template');
         if (element) {
           const canvas = await html2canvas(element, {
-            scale: 2,
+            scale: 1.5,
             useCORS: true,
             logging: false,
             scrollX: 0,
@@ -349,7 +349,7 @@ const InvoicesList = () => {
         if (!element) throw new Error('PDF template element not found in DOM');
 
         const canvas = await html2canvas(element, {
-          scale: 2,
+          scale: 1.5,
           useCORS: true,
           logging: false,
           scrollX: 0,

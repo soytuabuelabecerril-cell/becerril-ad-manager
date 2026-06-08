@@ -278,6 +278,18 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
   const [activeViewMode, setActiveViewMode] = useState(() => {
     return isSamePage ? (localStorage.getItem('rp_activeViewMode') || null) : null;
   }); // 'select_mode', 'process_clients', 'new_reservation'
+
+  // Once activeViewMode is established (restored from storage or set by user action),
+  // we lock it so that Supabase re-fetches triggering usedProducts/pages updates
+  // cannot overwrite the user's current position in the reservation flow.
+  // The lock is cleared only when the user explicitly navigates to a new page.
+  const viewModeLocked = React.useRef(isSamePage && !!localStorage.getItem('rp_activeViewMode'));
+
+  const setActiveViewModeAndLock = (mode) => {
+    viewModeLocked.current = true;
+    setActiveViewMode(mode);
+  };
+
   const [selectedAdIndex, setSelectedAdIndex] = useState(null);
   const [closeSalePaymentMethod, setCloseSalePaymentMethod] = useState('Transfer');
 
@@ -549,7 +561,7 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
           if (!element) throw new Error('PDF template element not found in DOM');
 
           const canvas = await html2canvas(element, {
-            scale: 2,
+            scale: 1.5,
             useCORS: true,
             logging: false,
             scrollX: 0,
@@ -788,6 +800,8 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
         localStorage.removeItem('rp_assignmentPref');
         localStorage.removeItem('rp_paymentMethod');
         localStorage.removeItem('rp_reservationPaymentMethod');
+        // Clear the view-mode lock so the auto-calculator runs fresh for the new page
+        viewModeLocked.current = false;
       }
     }
   }, [selectedPage]);
@@ -900,7 +914,7 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
 
   const handleSlotClick = (slotKey) => {
     if (activeViewMode === 'select_mode') {
-      setActiveViewMode('new_reservation');
+      setActiveViewModeAndLock('new_reservation');
     }
     
     setGraphicalSelectedSlot(slotKey);
@@ -940,13 +954,20 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
 
   useEffect(() => {
     if (selectedPage) {
-      // If activeViewMode is already restored from localStorage for this page, don't overwrite it
       const savedMode = localStorage.getItem('rp_activeViewMode');
       const savedPage = localStorage.getItem('rp_page_number');
-      if (savedMode && savedPage === String(selectedPage.page_number)) {
+      const isSamePageAsStored = savedPage === String(selectedPage.page_number);
+
+      // If we have a saved mode for this page, restore it and lock — don't let
+      // subsequent usedProducts/pages re-fetches overwrite the user's position.
+      if (savedMode && isSamePageAsStored) {
+        viewModeLocked.current = true;
         setActiveViewMode(savedMode);
         return;
       }
+
+      // If mode is already locked by a previous user action this session, don't recalculate.
+      if (viewModeLocked.current) return;
 
       const hasSomeAds = selectedPage.ads && selectedPage.ads.length > 0;
       
@@ -2534,7 +2555,7 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Option A */}
             <button
-              onClick={() => setActiveViewMode('process_clients')}
+              onClick={() => setActiveViewModeAndLock('process_clients')}
               className="flex flex-col items-center justify-center p-6 bg-white hover:bg-slate-50 border border-slate-200 hover:border-blue-500 rounded-xl transition-all shadow-sm group text-center cursor-pointer font-sans"
             >
               <div className="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 mb-4 group-hover:scale-110 transition-transform">
@@ -2552,7 +2573,7 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
             
             {/* Option B */}
             <button
-              onClick={() => setActiveViewMode('new_reservation')}
+              onClick={() => setActiveViewModeAndLock('new_reservation')}
               className="flex flex-col items-center justify-center p-6 bg-white hover:bg-slate-50 border border-slate-200 hover:border-orange-500 rounded-xl transition-all shadow-sm group text-center cursor-pointer font-sans"
             >
               <div className="w-12 h-12 rounded-full bg-orange-100 flex items-center justify-center text-orange-600 mb-4 group-hover:scale-110 transition-transform">
@@ -2577,7 +2598,7 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
           {/* Back button to choose options if both options are available */}
           {selectedPage.ads && selectedPage.ads.length > 0 && availableProducts.length > 0 && (
             <button
-              onClick={() => setActiveViewMode('select_mode')}
+              onClick={() => setActiveViewModeAndLock('select_mode')}
               className="text-xs text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-1.5 mb-2 cursor-pointer"
             >
               &larr; {language === 'es' ? 'Volver a opciones' : 'Back to options'}
@@ -2942,7 +2963,7 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
           {/* Back button to choose options if both options are available */}
           {selectedPage.ads && selectedPage.ads.length > 0 && availableProducts.length > 0 && (
             <button
-              onClick={() => setActiveViewMode('select_mode')}
+              onClick={() => setActiveViewModeAndLock('select_mode')}
               className="text-xs text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-1.5 mb-4 cursor-pointer"
             >
               &larr; {language === 'es' ? 'Volver a opciones' : 'Back to options'}

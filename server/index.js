@@ -1,6 +1,5 @@
 import express from 'express';
 import cors from 'cors';
-import nodemailer from 'nodemailer';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -21,52 +20,61 @@ const PORT = process.env.PORT || 3001;
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
-// Helper to send mail with port failover fallback (587 -> 465)
+// Helper to send mail using Resend API
 async function sendMailWithFallback(mailOptions) {
-  const auth = {
-    user: process.env.GMAIL_USER,
-    pass: process.env.GMAIL_APP_PASSWORD,
-  };
-
-  try {
-    const transporter = nodemailer.createTransport({
-      host: 'smtp.gmail.com',
-      port: 587,
-      secure: false, // true for port 465, false for other ports
-      auth,
-      connectionTimeout: 5000, // 5 seconds
-      greetingTimeout: 5000,
-      socketTimeout: 5000,
-    });
-    const info = await transporter.sendMail(mailOptions);
-    console.log('Email sent via port 587:', info.messageId);
-    return info;
-  } catch (error587) {
-    console.warn('Failed to send email on port 587, retrying on port 465...', error587.message);
-    const transporter465 = nodemailer.createTransport({
-      host: 'smtp.gmail.com',
-      port: 465,
-      secure: true,
-      auth,
-      connectionTimeout: 5000,
-      greetingTimeout: 5000,
-      socketTimeout: 5000,
-    });
-    const info = await transporter465.sendMail(mailOptions);
-    console.log('Email sent via port 465:', info.messageId);
-    return info;
+  const resendApiKey = process.env.RESEND_API_KEY;
+  if (!resendApiKey) {
+    throw new Error('Server configuration error: RESEND_API_KEY is not set');
   }
+  const fromEmail = process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev';
+
+  let attachments = undefined;
+  if (mailOptions.attachments && mailOptions.attachments.length > 0) {
+    attachments = mailOptions.attachments.map(att => {
+      // Strip Data URI prefix if present
+      const base64Content = att.path.includes(';base64,')
+        ? att.path.split(';base64,').pop()
+        : att.path;
+      return {
+        filename: att.filename,
+        content: base64Content
+      };
+    });
+  }
+
+  const response = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${resendApiKey}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      from: fromEmail,
+      to: [mailOptions.to],
+      subject: mailOptions.subject,
+      text: mailOptions.text,
+      html: mailOptions.html,
+      attachments
+    })
+  });
+
+  const data = await response.json();
+  if (!response.ok) {
+    console.error('Local Server: Resend API error details:', data);
+    throw new Error(`Failed to send email via Resend: ${JSON.stringify(data)}`);
+  }
+
+  return { messageId: data.id };
 }
 
 app.post('/api/send-email', async (req, res) => {
-  const { to, subject, text, html, attachmentBase64, attachmentName, background } = req.body;
+  const { to, subject, text, html, attachmentBase64, attachmentName } = req.body;
 
   if (!to || !subject || (!text && !html)) {
     return res.status(400).json({ error: 'Missing required email fields (to, subject, text/html)' });
   }
 
   const mailOptions = {
-    from: process.env.GMAIL_USER,
     to,
     subject,
     text,
@@ -74,8 +82,6 @@ app.post('/api/send-email', async (req, res) => {
   };
 
   if (attachmentBase64 && attachmentName) {
-    // Data URI format: data:image/png;base64,iVBORw0KGgo...
-    // Nodemailer can handle data URIs directly using the `path` property
     mailOptions.attachments = [
       {
         filename: attachmentName,
@@ -88,7 +94,7 @@ app.post('/api/send-email', async (req, res) => {
     const info = await sendMailWithFallback(mailOptions);
     res.status(200).json({ success: true, messageId: info.messageId });
   } catch (error) {
-    console.error('Error sending email on both ports:', error);
+    console.error('Error sending email via Resend:', error);
     res.status(500).json({ error: 'Failed to send email', details: error.message });
   }
 });
