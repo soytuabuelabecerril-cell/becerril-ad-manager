@@ -71,6 +71,8 @@ export const getTemplateVariables = (details, language) => {
         : details.paymentMethod)
     : '';
 
+  const isPaid = details.isPaid !== undefined ? details.isPaid : (details.is_paid !== undefined ? details.is_paid : false);
+
   return {
     id: details.id || '',
     customerName: details.customerName || details.customer_name || '',
@@ -84,7 +86,8 @@ export const getTemplateVariables = (details, language) => {
     total: totalVal.toFixed(2),
     paymentMethod: paymentMethodLabel,
     artworkComment: details.artworkComment || details.artwork_comment || '-',
-    productAbbreviation: getProductAbbreviation(details.productName || details.product_name || '')
+    productAbbreviation: getProductAbbreviation(details.productName || details.product_name || ''),
+    isPaid
   };
 };
 
@@ -92,6 +95,7 @@ export const getTemplateVariables = (details, language) => {
  * Generates a beautiful, responsive HTML email for invoices and confirmation of payments.
  */
 export const getHtmlEmailTemplate = (vars) => {
+  const isPaid = vars.isPaid;
   const designPriceVal = parseFloat(vars.designPriceValue || 0);
   const designRow = designPriceVal > 0 
     ? `<tr>
@@ -100,12 +104,54 @@ export const getHtmlEmailTemplate = (vars) => {
        </tr>`
     : '';
 
+  const paymentStatusLabel = isPaid ? 'Pagado' : 'Pendiente de Pago';
+  const paymentStatusColor = isPaid ? '#065f46' : '#9a3412';
+  const paymentStatusBg = isPaid ? '#ecfdf5' : '#fff7ed';
+  const paymentStatusBorder = isPaid ? '#a7f3d0' : '#ffedd5';
+  const paymentStatusIcon = isPaid ? '✓' : '⏳';
+
+  const introText = isPaid
+    ? `Le confirmamos que hemos recibido correctamente el pago y adjuntamos los detalles de la factura correspondiente a su anuncio en la <strong>Revista de Fiestas Patronales Becerril de la Sierra 2026</strong>:`
+    : `Le enviamos los detalles de la factura correspondiente a su reserva para su anuncio en la <strong>Revista de Fiestas Patronales Becerril de la Sierra 2026</strong>. Por favor, realice el pago correspondiente mediante transferencia bancaria.`;
+
+  const totalLabel = isPaid ? 'Total Pagado' : 'Total Facturado';
+  const totalColor = isPaid ? '#10b981' : '#2563eb';
+
+  const bankTransferSection = !isPaid
+    ? `
+              <!-- Bank details if pending payment -->
+              <table border="0" cellpadding="0" cellspacing="0" width="100%" style="margin-top: 24px; margin-bottom: 12px;">
+                <tr>
+                  <td style="background-color: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 16px 20px;">
+                    <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                      <tr>
+                        <td width="36" valign="top" style="font-size: 20px; line-height: 20px;">🏦</td>
+                        <td valign="middle" style="padding-left: 8px;">
+                          <span style="display: block; font-size: 12px; font-weight: 600; text-transform: uppercase; color: #1e40af; letter-spacing: 0.5px; margin-bottom: 4px;">Instrucciones de Pago</span>
+                          <span style="display: block; font-size: 13px; color: #1e3a8a; margin-bottom: 4px; line-height: 1.4;">
+                            Realice la transferencia bancaria utilizando los siguientes datos:
+                          </span>
+                          <span style="display: block; font-size: 14px; color: #1e3a8a; margin-bottom: 2px; line-height: 1.4;">
+                            <strong>IBAN:</strong> <span style="font-family: monospace; font-weight: 750; background-color: #dbeafe; padding: 2px 6px; border-radius: 4px; letter-spacing: 0.5px;">ES06 0049 2246 8122 1400 8717</span>
+                          </span>
+                          <span style="display: block; font-size: 14px; color: #1e3a8a; line-height: 1.4;">
+                            <strong>Concepto/Ref:</strong> <span style="font-family: monospace; font-weight: 750; background-color: #dbeafe; padding: 2px 6px; border-radius: 4px;">${vars.id}</span>
+                          </span>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+      `
+    : '';
+
   return `<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
 <html xmlns="http://www.w3.org/1999/xhtml" lang="es">
 <head>
   <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Confirmación de Pago y Factura - Revista de Fiestas Patronales Becerril de la Sierra 2026</title>
+  <title>${isPaid ? 'Confirmación de Pago y Factura' : 'Factura de Reserva'} - Revista de Fiestas Patronales Becerril de la Sierra 2026</title>
   <!--[if mso]>
   <style type="text/css">
     body, table, td, a, span { font-family: Arial, Helvetica, sans-serif !important; }
@@ -129,46 +175,49 @@ export const getHtmlEmailTemplate = (vars) => {
 </head>
 <body style="margin: 0; padding: 0; width: 100% !important; background-color: #f1f5f9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased; color: #1e293b;">
   <div style="display: none; max-height: 0px; overflow: hidden; font-size: 1px; line-height: 1px; color: #fff; opacity: 0;">
-    Confirmación de pago recibida. Adjuntamos los detalles correspondientes a su factura ${vars.id} para su anuncio en Revista de Fiestas Patronales Becerril de la Sierra 2026.
+    ${isPaid ? 'Confirmación de pago recibida.' : 'Nueva factura de reserva emitida.'} Adjuntamos los detalles correspondientes a su factura ${vars.id} para su anuncio en Revista de Fiestas Patronales Becerril de la Sierra 2026.
   </div>
   <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #f1f5f9; table-layout: fixed;">
     <tr>
       <td align="center" valign="top" class="email-wrapper" style="padding: 40px 20px;">
         <table border="0" cellpadding="0" cellspacing="0" width="600" class="email-container" style="background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -4px rgba(0, 0, 0, 0.05); overflow: hidden;">
           <tr>
-            <td align="center" valign="middle" style="background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); padding: 36px 32px; border-bottom: 4px solid #10b981;">
+            <td align="center" valign="middle" style="background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); padding: 36px 32px; border-bottom: 4px solid ${isPaid ? '#10b981' : '#3b82f6'};">
               <table border="0" cellpadding="0" cellspacing="0" style="margin-bottom: 12px;">
                 <tr>
-                  <td align="center" valign="middle" style="background-color: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 12px; height: 48px; width: 48px;">
-                    <span style="font-size: 24px; line-height: 48px; color: #10b981;">✓</span>
+                  <td align="center" valign="middle" style="background-color: ${isPaid ? 'rgba(16, 185, 129, 0.15)' : 'rgba(59, 130, 246, 0.15)'}; border: 1px solid ${isPaid ? 'rgba(16, 185, 129, 0.3)' : 'rgba(59, 130, 246, 0.3)'}; border-radius: 12px; height: 48px; width: 48px;">
+                    <span style="font-size: 24px; line-height: 48px; color: ${isPaid ? '#10b981' : '#3b82f6'};">${paymentStatusIcon}</span>
                   </td>
                 </tr>
               </table>
               <h1 class="header-title" style="margin: 0; color: #ffffff; font-size: 24px; font-weight: 800; letter-spacing: 1.5px; text-transform: uppercase;">Revista de Fiestas Patronales Becerril de la Sierra 2026</h1>
-              <p style="margin: 6px 0 0 0; color: #94a3b8; font-size: 14px; font-weight: 500; letter-spacing: 0.5px;">CONFIRMACIÓN DE PAGO</p>
+              <p style="margin: 6px 0 0 0; color: #94a3b8; font-size: 14px; font-weight: 500; letter-spacing: 0.5px;">${isPaid ? 'CONFIRMACIÓN DE PAGO' : 'FACTURA EMITIDA'}</p>
             </td>
           </tr>
           <tr>
             <td align="left" valign="top" class="card-body" style="padding: 40px 32px; background-color: #ffffff;">
               <p style="margin: 0 0 16px 0; font-size: 18px; font-weight: 700; color: #0f172a;">Hola ${vars.customerName},</p>
               <p style="margin: 0 0 32px 0; font-size: 15px; line-height: 24px; color: #475569;">
-                Le confirmamos que hemos recibido correctamente el pago y adjuntamos los detalles de la factura correspondiente a su anuncio en la <strong>Revista de Fiestas Patronales Becerril de la Sierra 2026</strong>:
+                ${introText}
               </p>
               <table border="0" cellpadding="0" cellspacing="0" width="100%" style="margin-bottom: 28px;">
                 <tr>
-                  <td style="background-color: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 8px; padding: 16px 20px;">
+                  <td style="background-color: ${paymentStatusBg}; border: 1px solid ${paymentStatusBorder}; border-radius: 8px; padding: 16px 20px;">
                     <table border="0" cellpadding="0" cellspacing="0" width="100%">
                       <tr>
                         <td width="36" valign="top" style="font-size: 20px; line-height: 20px;">💵</td>
                         <td valign="middle" style="padding-left: 8px;">
-                          <span style="display: block; font-size: 12px; font-weight: 600; text-transform: uppercase; color: #047857; letter-spacing: 0.5px; margin-bottom: 2px;">Método de Pago</span>
-                          <span style="font-size: 16px; font-weight: 700; color: #065f46;">${vars.paymentMethod || 'Efectivo'} (Pagado)</span>
+                          <span style="display: block; font-size: 12px; font-weight: 600; text-transform: uppercase; color: ${paymentStatusColor}; letter-spacing: 0.5px; margin-bottom: 2px;">Método de Pago</span>
+                          <span style="font-size: 16px; font-weight: 700; color: ${paymentStatusColor};">${vars.paymentMethod || 'Transferencia'} (${paymentStatusLabel})</span>
                         </td>
                       </tr>
                     </table>
                   </td>
                 </tr>
               </table>
+              
+              ${bankTransferSection}
+
               <table border="0" cellpadding="0" cellspacing="0" width="100%" style="margin-bottom: 32px;">
                 <tr>
                   <td valign="top" class="column-split" width="260" style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px 20px;">
@@ -216,8 +265,8 @@ export const getHtmlEmailTemplate = (vars) => {
                         <td align="right" style="padding: 6px 0 12px 0; font-size: 14px; font-weight: 600; color: #0f172a; border-bottom: 1px solid #e2e8f0;">${vars.vat}€</td>
                       </tr>
                       <tr>
-                        <td align="left" style="padding: 16px 0 8px 0; font-size: 16px; font-weight: 700; color: #0f172a;">Total Pagado</td>
-                        <td align="right" style="padding: 16px 0 8px 0; font-size: 20px; font-weight: 800; color: #10b981;">${vars.total}€</td>
+                        <td align="left" style="padding: 16px 0 8px 0; font-size: 16px; font-weight: 700; color: #0f172a;">${totalLabel}</td>
+                        <td align="right" style="padding: 16px 0 8px 0; font-size: 20px; font-weight: 800; color: ${totalColor};">${vars.total}€</td>
                       </tr>
                     </table>
                   </td>

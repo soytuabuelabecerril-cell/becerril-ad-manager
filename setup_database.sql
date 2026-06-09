@@ -147,7 +147,7 @@ INSERT INTO public.communication_templates (id, subject, body) VALUES
 
 ('order_reservation_whatsapp', '', 'Confirmación de Reserva - Revista Becerril:\n\n- Cliente: {customerName}\n- Producto: {productName}\n- Pág. Asignada: {assignedPage}\n- Subtotal: {subtotal}€\n- Total (con IVA): {total}€\n\nGracias,\nEquipo Revista Becerril'),
 
-('order_prereservation_email', 'Pre-Reserva Revista Becerril: Pág. {assignedPage}', 'Hola,\n\nConfirmamos la pre-reserva (retención de 1 semana) del espacio publicitario en la Revista Becerril:\n\n- Producto: {productName}\n- Página Asignada: {assignedPage}\n- Comentarios de Arte/Diseño: {artworkComment}\n\nNota: Esta reserva es temporal y vencerá en una semana si no se confirma el pago.\n\nGracias,\nEquipo Revista Becerril'),
+('order_prereservation_email', 'Pre-Reserva Revista Becerril: Pág. {assignedPage}', 'Hola,\n\nConfirmamos la pre-reserva (retención de 1 semana) del espacio publicitario en la Revista Becerril:\n\n- Producto: {productName}\n- Página Asignada: {assignedPage}\n- Comentarios de Arte/Diseño: {artworkComment}\n\nNota: Esta reserva es temporal y vencerá en una semana si no se confirma el pago.\n\nFORMA de PAGO: TRANSFERENCIA a IBAN: ES0600492246812214008717   / REFERENCIA PAGO: {productName}\n\nGracias,\nEquipo Revista Becerril'),
 
 ('order_prereservation_whatsapp', '', 'Confirmación de Pre-reserva (temporal 1 semana) - Revista Becerril:\n\n- Cliente: {customerName}\n- Producto: {productName}\n- Pág. Asignada: {assignedPage}\n- Subtotal: {subtotal}€\n- Total (con IVA): {total}€\n\nGracias,\nEquipo Revista Becerril')
 ON CONFLICT (id) DO NOTHING;

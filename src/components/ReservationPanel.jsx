@@ -9,6 +9,7 @@ import { getProductAbbreviation } from '../utils/invoicesStore';
 import { formatTemplate, getTemplateVariables, getHtmlEmailTemplate } from '../utils/notifications';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
+import { parseAddressDetails } from '../utils/addressParser';
 
 const getInvoiceWhatsAppMessage = (invoice, templates) => {
   const tObj = templates?.invoice_whatsapp;
@@ -659,7 +660,7 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
               ? `Pre-Reserva Revista de Fiestas Patronales Becerril de la Sierra 2026: Pág. ${details.assignedPage}`
               : `Confirmación de Reserva Revista de Fiestas Patronales Becerril de la Sierra 2026: Pág. ${details.assignedPage}`;
             text = isPreReservation
-              ? `Hola,\n\nConfirmamos la pre-reserva (retención de 1 semana) del espacio publicitario en la Revista de Fiestas Patronales Becerril de la Sierra 2026:\n\n- Producto: ${details.productName}\n- Página Asignada: ${details.assignedPage}\n- Comentarios de Arte/Diseño: ${details.artworkComment}\n\nNota: Esta reserva es temporal y vencerá en una semana si no se confirma el pago.\n\nGracias,\nEquipo de Coordinación Publicitaria`
+              ? `Hola,\n\nConfirmamos la pre-reserva (retención de 1 semana) del espacio publicitario en la Revista de Fiestas Patronales Becerril de la Sierra 2026:\n\n- Producto: ${details.productName}\n- Página Asignada: ${details.assignedPage}\n- Comentarios de Arte/Diseño: ${details.artworkComment}\n\nNota: Esta reserva es temporal y vencerá en una semana si no se confirma el pago.\n\nFORMA de PAGO: TRANSFERENCIA a IBAN: ES0600492246812214008717   / REFERENCIA PAGO: ${details.productName}\n\nGracias,\nEquipo de Coordinación Publicitaria`
               : `Hola,\n\nConfirmamos la reserva del espacio publicitario en la Revista de Fiestas Patronales Becerril de la Sierra 2026:\n\n- Producto: ${details.productName}\n- Página Asignada: ${details.assignedPage}\n- Método de Pago: ${t('rp_' + details.paymentMethod.toLowerCase()) || details.paymentMethod}\n- Comentarios de Arte/Diseño: ${details.artworkComment}\n\nFORMA de PAGO: TRANSFERENCIA a IBAN: ES0600492246812214008717   / REFEFERENCIA PAGO: ${details.productName}\n\nLa factura correspondiente se generará una vez confirmado el pago.\n\nGracias,\nEquipo de Coordinación Publicitaria`;
           }
         }
@@ -1982,95 +1983,126 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
     return true;
   });
 
-  const renderPDFTemplate = (inv) => (
-    <div style={{ fontFamily: 'Arial, Helvetica, sans-serif', color: '#111827', fontSize: '14px', lineHeight: '1.5' }}>
-      {/* Header */}
-      <div style={{ borderBottom: '2px solid #1f2937', paddingBottom: '16px', marginBottom: '32px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
-        <div>
-          <h1 style={{ fontSize: '28px', fontWeight: '900', color: '#111827', margin: 0, letterSpacing: '-0.5px' }}>{t('inv_invoice')}</h1>
-          <p style={{ color: '#6b7280', marginTop: '4px', fontSize: '13px' }}>{inv.id}</p>
-        </div>
-        <div style={{ textAlign: 'right' }}>
-          <h2 style={{ fontSize: '18px', fontWeight: '700', color: '#1f2937', margin: 0 }}>I AM YOUR GRANNY S.L.</h2>
-          <p style={{ color: '#6b7280', fontSize: '12px', margin: '2px 0 0' }}>CIF: B72877640</p>
-          <p style={{ color: '#6b7280', fontSize: '12px', margin: '2px 0 0' }}>Ctra. Guadarama-Cercedilla S/N</p>
-          <p style={{ color: '#6b7280', fontSize: '12px', margin: '2px 0 0' }}>Portal 10 3C</p>
-          <p style={{ color: '#6b7280', fontSize: '12px', margin: '2px 0 0' }}>28470 Cercedilla</p>
-        </div>
-      </div>
+  const renderPDFTemplate = (inv) => {
+    if (!inv) return null;
+    const cust = customers.find(c => 
+      (c.commercial_name && c.commercial_name.trim().toLowerCase() === inv.customerName?.trim().toLowerCase()) ||
+      (c.fiscal_name && c.fiscal_name.trim().toLowerCase() === inv.customerName?.trim().toLowerCase())
+    );
+    const addrDetails = parseAddressDetails(cust?.address);
 
-      {/* Billed to / Date */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '40px' }}>
-        <div>
-          <p style={{ fontSize: '11px', fontWeight: '700', color: '#9ca3af', textTransform: 'uppercase', marginBottom: '6px' }}>{t('inv_billed_to')}</p>
-          <p style={{ fontSize: '16px', fontWeight: '700', color: '#111827', margin: 0 }}>{inv.customerName}</p>
-        </div>
-        <div style={{ textAlign: 'right' }}>
-          <p style={{ fontSize: '11px', fontWeight: '700', color: '#9ca3af', textTransform: 'uppercase', marginBottom: '6px' }}>{t('inv_date')}</p>
-          <p style={{ fontSize: '16px', fontWeight: '700', color: '#111827', margin: 0 }}>{new Date(inv.createdAt).toLocaleDateString()}</p>
-        </div>
-      </div>
-
-      {/* Line items table */}
-      <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '40px' }}>
-        <thead>
-          <tr style={{ borderBottom: '2px solid #1f2937' }}>
-            <th style={{ textAlign: 'left', padding: '10px 0', fontWeight: '700', color: '#1f2937' }}>{t('inv_desc')}</th>
-            <th style={{ textAlign: 'right', padding: '10px 0', fontWeight: '700', color: '#1f2937' }}>{t('inv_base_price')}</th>
-            {inv.designPrice > 0 && <th style={{ textAlign: 'right', padding: '10px 0', fontWeight: '700', color: '#1f2937' }}>{t('inv_design')}</th>}
-            <th style={{ textAlign: 'right', padding: '10px 0', fontWeight: '700', color: '#1f2937' }}>{t('inv_vat')}</th>
-            <th style={{ textAlign: 'right', padding: '10px 0', fontWeight: '700', color: '#1f2937' }}>{t('inv_total')}</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr style={{ borderBottom: '1px solid #e5e7eb' }}>
-            <td style={{ padding: '14px 0' }}>
-              <div style={{ fontWeight: '700', color: '#111827' }}>{inv.productName}</div>
-              <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '2px' }}>{t('inv_page_assignment')} {inv.assignedPage}</div>
-            </td>
-            <td style={{ textAlign: 'right', padding: '14px 0', color: '#374151' }}>{inv.price.toFixed(2)}€</td>
-            {inv.designPrice > 0 && <td style={{ textAlign: 'right', padding: '14px 0', color: '#374151' }}>{inv.designPrice.toFixed(2)}€</td>}
-            <td style={{ textAlign: 'right', padding: '14px 0', color: '#374151' }}>{inv.vat.toFixed(2)}€</td>
-            <td style={{ textAlign: 'right', padding: '14px 0', fontWeight: '700', color: '#111827' }}>{inv.total.toFixed(2)}€</td>
-          </tr>
-        </tbody>
-      </table>
-
-      {/* Totals summary */}
-      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-        <div style={{ width: '240px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0' }}>
-            <span style={{ color: '#4b5563', fontWeight: '500' }}>{t('inv_subtotal')}</span>
-            <span style={{ color: '#111827', fontWeight: '500' }}>{inv.price.toFixed(2)}€</span>
+    return (
+      <div style={{ fontFamily: 'Arial, Helvetica, sans-serif', color: '#111827', fontSize: '14px', lineHeight: '1.5' }}>
+        {/* Header */}
+        <div style={{ borderBottom: '2px solid #1f2937', paddingBottom: '16px', marginBottom: '32px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+          <div>
+            <h1 style={{ fontSize: '28px', fontWeight: '900', color: '#111827', margin: 0, letterSpacing: '-0.5px' }}>{t('inv_invoice')}</h1>
+            <p style={{ color: '#6b7280', marginTop: '4px', fontSize: '13px' }}>{inv.id}</p>
           </div>
-          {inv.designPrice > 0 && (
+          <div style={{ textAlign: 'right' }}>
+            <h2 style={{ fontSize: '18px', fontWeight: '700', color: '#1f2937', margin: 0 }}>I AM YOUR GRANNY S.L.</h2>
+            <p style={{ color: '#6b7280', fontSize: '12px', margin: '2px 0 0' }}>CIF: B72877640</p>
+            <p style={{ color: '#6b7280', fontSize: '12px', margin: '2px 0 0' }}>Ctra. Guadarama-Cercedilla S/N</p>
+            <p style={{ color: '#6b7280', fontSize: '12px', margin: '2px 0 0' }}>Portal 10 3C</p>
+            <p style={{ color: '#6b7280', fontSize: '12px', margin: '2px 0 0' }}>28470 Cercedilla</p>
+          </div>
+        </div>
+
+        {/* Billed to / Date */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '40px' }}>
+          <div>
+            <p style={{ fontSize: '11px', fontWeight: '700', color: '#9ca3af', textTransform: 'uppercase', marginBottom: '6px' }}>{t('inv_billed_to')}</p>
+            <p style={{ fontSize: '16px', fontWeight: '700', color: '#111827', margin: 0 }}>{inv.customerName}</p>
+            {cust?.fiscal_name && cust.fiscal_name !== inv.customerName && (
+              <p style={{ fontSize: '13px', fontWeight: '600', color: '#374151', margin: '2px 0 0' }}>{cust.fiscal_name}</p>
+            )}
+            {cust?.nif && (
+              <p style={{ fontSize: '13px', fontFamily: 'monospace', color: '#374151', margin: '2px 0 0' }}>NIF/CIF: {cust.nif}</p>
+            )}
+            {cust?.address && (
+              <p style={{ fontSize: '12px', color: '#4b5563', margin: '6px 0 0', lineHeight: '1.4' }}>
+                {cust.address}
+                {(addrDetails.zip || addrDetails.city) && (
+                  <span style={{ display: 'block', fontSize: '11px', color: '#9ca3af', marginTop: '2px' }}>
+                    {addrDetails.zip} {addrDetails.city} {addrDetails.province ? `(${addrDetails.province})` : ''}
+                  </span>
+                )}
+              </p>
+            )}
+            {(inv.customerEmail || cust?.email) && (
+              <p style={{ fontSize: '11px', color: '#6b7280', margin: '4px 0 0' }}>Email: {inv.customerEmail || cust?.email}</p>
+            )}
+            {(inv.customerPhone || cust?.whatsapp) && (
+              <p style={{ fontSize: '11px', color: '#6b7280', margin: '2px 0 0' }}>Tel: {inv.customerPhone || cust?.whatsapp}</p>
+            )}
+          </div>
+          <div style={{ textAlign: 'right' }}>
+            <p style={{ fontSize: '11px', fontWeight: '700', color: '#9ca3af', textTransform: 'uppercase', marginBottom: '6px' }}>{t('inv_date')}</p>
+            <p style={{ fontSize: '16px', fontWeight: '700', color: '#111827', margin: 0 }}>{new Date(inv.createdAt).toLocaleDateString()}</p>
+          </div>
+        </div>
+
+        {/* Line items table */}
+        <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '40px' }}>
+          <thead>
+            <tr style={{ borderBottom: '2px solid #1f2937' }}>
+              <th style={{ textAlign: 'left', padding: '10px 0', fontWeight: '700', color: '#1f2937' }}>{t('inv_desc')}</th>
+              <th style={{ textAlign: 'right', padding: '10px 0', fontWeight: '700', color: '#1f2937' }}>{t('inv_base_price')}</th>
+              {inv.designPrice > 0 && <th style={{ textAlign: 'right', padding: '10px 0', fontWeight: '700', color: '#1f2937' }}>{t('inv_design')}</th>}
+              <th style={{ textAlign: 'right', padding: '10px 0', fontWeight: '700', color: '#1f2937' }}>{t('inv_vat')}</th>
+              <th style={{ textAlign: 'right', padding: '10px 0', fontWeight: '700', color: '#1f2937' }}>{t('inv_total')}</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr style={{ borderBottom: '1px solid #e5e7eb' }}>
+              <td style={{ padding: '14px 0' }}>
+                <div style={{ fontWeight: '700', color: '#111827' }}>{inv.productName}</div>
+                <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '2px' }}>{t('inv_page_assignment')} {inv.assignedPage}</div>
+              </td>
+              <td style={{ textAlign: 'right', padding: '14px 0', color: '#374151' }}>{inv.price.toFixed(2)}€</td>
+              {inv.designPrice > 0 && <td style={{ textAlign: 'right', padding: '14px 0', color: '#374151' }}>{inv.designPrice.toFixed(2)}€</td>}
+              <td style={{ textAlign: 'right', padding: '14px 0', color: '#374151' }}>{inv.vat.toFixed(2)}€</td>
+              <td style={{ textAlign: 'right', padding: '14px 0', fontWeight: '700', color: '#111827' }}>{inv.total.toFixed(2)}€</td>
+            </tr>
+          </tbody>
+        </table>
+
+        {/* Totals summary */}
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <div style={{ width: '240px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0' }}>
-              <span style={{ color: '#4b5563', fontWeight: '500' }}>{t('inv_design_work')}</span>
-              <span style={{ color: '#111827', fontWeight: '500' }}>{inv.designPrice.toFixed(2)}€</span>
+              <span style={{ color: '#4b5563', fontWeight: '500' }}>{t('inv_subtotal')}</span>
+              <span style={{ color: '#111827', fontWeight: '500' }}>{inv.price.toFixed(2)}€</span>
             </div>
-          )}
-          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid #e5e7eb' }}>
-            <span style={{ color: '#4b5563', fontWeight: '500' }}>{t('inv_vat')}</span>
-            <span style={{ color: '#111827', fontWeight: '500' }}>{inv.vat.toFixed(2)}€</span>
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0' }}>
-            <span style={{ fontSize: '18px', fontWeight: '700', color: '#111827' }}>{t('inv_total')}</span>
-            <span style={{ fontSize: '18px', fontWeight: '700', color: '#2563eb' }}>{inv.total.toFixed(2)}€</span>
+            {inv.designPrice > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0' }}>
+                <span style={{ color: '#4b5563', fontWeight: '500' }}>{t('inv_design_work')}</span>
+                <span style={{ color: '#111827', fontWeight: '500' }}>{inv.designPrice.toFixed(2)}€</span>
+              </div>
+            )}
+            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid #e5e7eb' }}>
+              <span style={{ color: '#4b5563', fontWeight: '500' }}>{t('inv_vat')}</span>
+              <span style={{ color: '#111827', fontWeight: '500' }}>{inv.vat.toFixed(2)}€</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0' }}>
+              <span style={{ fontSize: '18px', fontWeight: '700', color: '#111827' }}>{t('inv_total')}</span>
+              <span style={{ fontSize: '18px', fontWeight: '700', color: '#2563eb' }}>{inv.total.toFixed(2)}€</span>
+            </div>
           </div>
         </div>
-      </div>
 
-      <div style={{ marginTop: '24px', padding: '16px', backgroundColor: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '8px', fontSize: '13px', color: '#1e3a8a' }}>
-        <strong style={{ fontWeight: '700' }}>FORMA de PAGO:</strong> TRANSFERENCIA a IBAN: <span style={{ fontFamily: 'monospace', fontWeight: 'bold' }}>ES0600492246812214008717</span>   / <strong style={{ fontWeight: '700' }}>REFEFERENCIA PAGO:</strong> <span style={{ fontFamily: 'monospace', fontWeight: 'bold' }}>{inv.id}</span>
-      </div>
+        <div style={{ marginTop: '24px', padding: '16px', backgroundColor: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '8px', fontSize: '13px', color: '#1e3a8a' }}>
+          <strong style={{ fontWeight: '700' }}>FORMA de PAGO:</strong> TRANSFERENCIA a IBAN: <span style={{ fontFamily: 'monospace', fontWeight: 'bold' }}>ES0600492246812214008717</span>   / <strong style={{ fontWeight: '700' }}>REFEFERENCIA PAGO:</strong> <span style={{ fontFamily: 'monospace', fontWeight: 'bold' }}>{inv.id}</span>
+        </div>
 
-      {/* Artwork note */}
-      <div style={{ marginTop: '32px', paddingTop: '32px', borderTop: '1px solid #e5e7eb' }}>
-        <h4 style={{ fontWeight: '700', color: '#1f2937', marginBottom: '8px' }}>{t('inv_important_info')}</h4>
-        <p style={{ color: '#4b5563', backgroundColor: '#f9fafb', padding: '14px', borderRadius: '8px', margin: 0 }}>{inv.artworkComment}</p>
+        {/* Artwork note */}
+        <div style={{ marginTop: '32px', paddingTop: '32px', borderTop: '1px solid #e5e7eb' }}>
+          <h4 style={{ fontWeight: '700', color: '#1f2937', marginBottom: '8px' }}>{t('inv_important_info')}</h4>
+          <p style={{ color: '#4b5563', backgroundColor: '#f9fafb', padding: '14px', borderRadius: '8px', margin: 0 }}>{inv.artworkComment}</p>
+        </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   const getPageSlots = (page) => {
     if (!page || !page.ads) return { top: null, middle: null, bottom: null };
