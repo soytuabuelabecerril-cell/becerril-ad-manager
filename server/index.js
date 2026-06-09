@@ -149,6 +149,11 @@ app.all('/api/run-migration', async (req, res) => {
     await client.connect();
     
     await client.query(`
+      ALTER TABLE public.customers 
+      ADD COLUMN IF NOT EXISTS contact_name TEXT;
+    `);
+    
+    await client.query(`
       ALTER TABLE public.ad_reservations 
       ADD COLUMN IF NOT EXISTS reminder_sent_at TIMESTAMP WITH TIME ZONE;
     `);

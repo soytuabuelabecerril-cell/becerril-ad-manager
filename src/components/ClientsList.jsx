@@ -73,7 +73,8 @@ const ClientsList = () => {
       address: customerData.address || '',
       email: customerData.email || '',
       whatsapp: customerData.whatsapp || '',
-      last_year_product: customerData.last_year_product || ''
+      last_year_product: customerData.last_year_product || '',
+      contact_name: customerData.contact_name || ''
     };
 
     try {

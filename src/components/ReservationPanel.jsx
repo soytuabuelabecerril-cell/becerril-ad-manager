@@ -736,7 +736,11 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
       (c.fiscal_name || '').toLowerCase().includes(query) ||
       (c.contact_name || '').toLowerCase().includes(query) ||
       (c.category || '').toLowerCase().includes(query) ||
-      (c.nif || '').toLowerCase().includes(query)
+      (c.nif || '').toLowerCase().includes(query) ||
+      (c.whatsapp || '').toLowerCase().includes(query) ||
+      (c.email || '').toLowerCase().includes(query) ||
+      (c.address || '').toLowerCase().includes(query) ||
+      (c.last_year_product || '').toLowerCase().includes(query)
     );
   });
 
@@ -3105,11 +3109,11 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
                     <span className="text-gray-400 ml-2 shrink-0">&#9660;</span>
                   </button>
                   {dropdownOpen && (
-                    <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-2xl max-h-64 flex flex-col">
+                    <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-2xl max-h-80 flex flex-col">
                       <div className="p-2 border-b border-gray-100 bg-gray-50 rounded-t-lg sticky top-0 z-10">
                         <input
                           type="text"
-                          placeholder={language === 'en' ? 'Search customer...' : 'Buscar cliente...'}
+                          placeholder={t('rp_search_placeholder')}
                           value={customerSearchQuery}
                           onChange={(e) => setCustomerSearchQuery(e.target.value)}
                           className="w-full p-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
@@ -3117,7 +3121,7 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
                           autoFocus
                         />
                       </div>
-                      <div className="overflow-y-auto flex-1 max-h-40">
+                      <div className="overflow-y-auto flex-1 max-h-56">
                         {filteredCustomers.length === 0 ? (
                           <div className="p-3 text-sm text-gray-500 text-center">
                             {language === 'en' ? 'No customers found' : 'No se encontraron clientes'}
@@ -3135,13 +3139,32 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
                                   setIsAddingNew(false);
                                   setDropdownOpen(false);
                                 }}
-                                className={`flex items-center gap-2 px-3 py-2 cursor-pointer text-sm hover:bg-blue-50 transition-colors ${selectedCustomerId === val ? 'bg-blue-50 font-medium' : ''}`}
+                                className={`flex items-start gap-2 px-3 py-2 cursor-pointer text-sm hover:bg-blue-50 transition-colors ${selectedCustomerId === val ? 'bg-blue-50 font-medium' : ''}`}
                               >
-                                {status === 'ok' && <span className="inline-flex items-center px-1.5 py-0.5 text-xs font-bold rounded bg-green-500 text-white shrink-0">OK</span>}
-                                {status === 'recibo' && <span className="inline-flex items-center px-1.5 py-0.5 text-xs font-bold rounded bg-emerald-600 text-white shrink-0">Recibo</span>}
-                                {status === 'pt' && <span className="inline-flex items-center px-1.5 py-0.5 text-xs font-bold rounded bg-blue-600 text-white shrink-0">TP</span>}
-                                {status?.startsWith('pr:') && <span className="inline-flex items-center px-1.5 py-0.5 text-xs font-bold rounded bg-orange-500 text-white shrink-0">RESERVA TEMPORAL ({status.split(':')[1]})</span>}
-                                <span className="truncate text-gray-800">{c.commercial_name || c.fiscal_name}</span>
+                                <div className="flex items-center gap-1.5 shrink-0 mt-0.5">
+                                  {status === 'ok' && <span className="inline-flex items-center px-1.5 py-0.5 text-xs font-bold rounded bg-green-500 text-white shrink-0">OK</span>}
+                                  {status === 'recibo' && <span className="inline-flex items-center px-1.5 py-0.5 text-xs font-bold rounded bg-emerald-600 text-white shrink-0">Recibo</span>}
+                                  {status === 'pt' && <span className="inline-flex items-center px-1.5 py-0.5 text-xs font-bold rounded bg-blue-600 text-white shrink-0">TP</span>}
+                                  {status?.startsWith('pr:') && <span className="inline-flex items-center px-1.5 py-0.5 text-xs font-bold rounded bg-orange-500 text-white shrink-0">RESERVA TEMPORAL ({status.split(':')[1]})</span>}
+                                </div>
+                                <div className="flex flex-col min-w-0 flex-1">
+                                  <span className="truncate text-gray-800 font-medium">{c.commercial_name || c.fiscal_name}</span>
+                                  {(() => {
+                                    const details = [
+                                      c.contact_name && `${language === 'es' ? 'Contacto' : 'Contact'}: ${c.contact_name}`,
+                                      c.category && `${language === 'es' ? 'Cat' : 'Cat'}: ${c.category}`,
+                                      c.whatsapp && `${language === 'es' ? 'Tel' : 'Tel'}: ${c.whatsapp}`,
+                                      c.email && c.email,
+                                      c.nif && `NIF: ${c.nif}`
+                                    ].filter(Boolean);
+                                    if (details.length === 0) return null;
+                                    return (
+                                      <span className="text-xs text-gray-400 truncate mt-0.5">
+                                        {details.join(' • ')}
+                                      </span>
+                                    );
+                                  })()}
+                                </div>
                               </div>
                             );
                           })
