@@ -4,7 +4,7 @@
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import * as XLSX from 'npm:xlsx@0.18.5';
-import nodemailer from 'npm:nodemailer@6';
+import { encodeBase64 } from "https://deno.land/std@0.203.0/encoding/base64.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -296,12 +296,12 @@ Deno.serve(async (req: Request) => {
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const serviceKey  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const gmailUser   = Deno.env.get('GMAIL_USER')!;
-    const gmailPass   = Deno.env.get('GMAIL_APP_PASSWORD')!;
-    const reportEmail = Deno.env.get('DAILY_REPORT_EMAIL') || gmailUser;
+    const resendApiKey = Deno.env.get('RESEND_API_KEY')!;
+    const fromEmail    = Deno.env.get('RESEND_FROM_EMAIL') || 'onboarding@resend.dev';
+    const reportEmail  = Deno.env.get('DAILY_REPORT_EMAIL')!;
 
-    if (!gmailUser || !gmailPass) {
-      throw new Error('GMAIL_USER and GMAIL_APP_PASSWORD secrets must be set.');
+    if (!resendApiKey) {
+      throw new Error('RESEND_API_KEY secret must be set.');
     }
 
     // ── Fetch data from Supabase ──────────────────────────────────────────────
@@ -333,10 +333,6 @@ Deno.serve(async (req: Request) => {
     const xlsxBuffer: Uint8Array = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
 
     // ── Send email ────────────────────────────────────────────────────────────
-    const transporter = nodemailer.createTransport({
-      service: 'gmail',
-      auth: { user: gmailUser, pass: gmailPass },
-    });
 
     const activeInvoices  = invoices.filter((i: any) => i.status !== 'Cancelled' && i.status !== 'Refund');
     const totalPaid       = activeInvoices.filter((i: any) => i.is_paid).reduce((s: number, i: any) => s + (i.total || 0), 0);
@@ -412,19 +408,33 @@ Deno.serve(async (req: Request) => {
 </html>
     `;
 
-    await transporter.sendMail({
-      from: `"Panel Financiero — Becerril" <${gmailUser}>`,
-      to: reportEmail,
-      subject: `📊 Informe Financiero Diario — ${new Date().toLocaleDateString('es-ES', { timeZone: 'Europe/Madrid' })}`,
-      html: htmlBody,
-      attachments: [{
-        filename,
-        content: xlsxBuffer,
-        contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      }],
+    const base64Content = encodeBase64(xlsxBuffer);
+    const response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${resendApiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        from: fromEmail,
+        to: [reportEmail],
+        subject: `📊 Informe Financiero Diario — ${new Date().toLocaleDateString('es-ES', { timeZone: 'Europe/Madrid' })}`,
+        html: htmlBody,
+        attachments: [
+          {
+            filename,
+            content: base64Content
+          }
+        ]
+      })
     });
 
-    console.log(`[daily-report] Email sent to ${reportEmail} with ${filename}`);
+    const responseData = await response.json();
+    if (!response.ok) {
+      throw new Error(`Resend API error: ${JSON.stringify(responseData)}`);
+    }
+
+    console.log(`[daily-report] Email sent successfully via Resend to ${reportEmail} with ${filename}`);
 
     return new Response(
       JSON.stringify({
