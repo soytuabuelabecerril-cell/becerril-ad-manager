@@ -661,6 +661,7 @@ export const DatabaseProvider = ({ children }) => {
     const id = await getNextInvoiceId();
     const newInvoice = {
       id,
+      createdAt: new Date().toISOString(),
       status: 'Active',
       paymentMethod: 'Pending',
       isPaid: false,
@@ -993,6 +994,7 @@ export const DatabaseProvider = ({ children }) => {
 
         const refundInvoice = {
           id: refundId,
+          createdAt: new Date().toISOString(),
           status: 'Refund',
           originalInvoiceId: inv.id,
           customerName: inv.customerName,
@@ -1745,6 +1747,7 @@ export const DatabaseProvider = ({ children }) => {
     const id = await getNextInvoiceId();
     const newInvoice = {
       id,
+      createdAt: new Date().toISOString(),
       status: 'Active',
       paymentMethod: 'Cash',
       isPaid: true,
