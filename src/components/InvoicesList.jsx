@@ -581,16 +581,15 @@ const InvoicesList = () => {
           </div>
         </div>
 
-        <div className="mt-6 p-4 bg-blue-50/50 border border-blue-100 rounded-lg text-sm text-blue-900 flex justify-between items-center">
-          <div>
+        {inv.isPaid ? (
+          <div className="mt-6 p-4 bg-green-50 border border-green-200 rounded-lg text-sm text-green-800">
+            <strong className="font-semibold text-green-800">{t('inv_payment_status') || 'Estado de Pago:'}</strong> {t('inv_paid') || 'PAGADO'} ({t('rp_' + (inv.paymentMethod || 'transfer').toLowerCase()) || inv.paymentMethod})
+          </div>
+        ) : (
+          <div className="mt-6 p-4 bg-blue-50/50 border border-blue-100 rounded-lg text-sm text-blue-900">
             <strong className="font-semibold text-blue-800">FORMA de PAGO:</strong> TRANSFERENCIA a IBAN: <span className="font-mono font-bold text-blue-950">ES0600492246812214008717</span>   / <strong className="font-semibold text-blue-800">REFEFERENCIA PAGO:</strong> <span className="font-mono font-bold text-blue-950">{inv.id}</span>
           </div>
-          {inv.isPaid && (
-            <div className="px-2.5 py-1 bg-green-100 text-green-800 rounded text-xs font-bold uppercase">
-              {t('inv_paid') || 'PAGADO'} ({t('rp_' + (inv.paymentMethod || 'transfer').toLowerCase()) || inv.paymentMethod})
-            </div>
-          )}
-        </div>
+        )}
 
         <div className="mt-8 pt-8 border-t border-gray-200">
           <h4 className="font-bold text-gray-800 mb-2">{t('inv_important_info')}</h4>
@@ -709,16 +708,15 @@ const InvoicesList = () => {
           </div>
         </div>
 
-        <div style={{ marginTop: '24px', padding: '16px', backgroundColor: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '8px', fontSize: '13px', color: '#1e3a8a', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div>
+        {inv.isPaid ? (
+          <div style={{ marginTop: '24px', padding: '16px', backgroundColor: '#ecfdf5', border: '1px solid #a7f3d0', borderRadius: '8px', fontSize: '13px', color: '#047857' }}>
+            <strong style={{ fontWeight: '700' }}>{t('inv_payment_status') || 'Estado de Pago:'}</strong> {t('inv_paid') || 'PAGADO'} ({t('rp_' + (inv.paymentMethod || 'transfer').toLowerCase()) || inv.paymentMethod})
+          </div>
+        ) : (
+          <div style={{ marginTop: '24px', padding: '16px', backgroundColor: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '8px', fontSize: '13px', color: '#1e3a8a' }}>
             <strong style={{ fontWeight: '700' }}>FORMA de PAGO:</strong> TRANSFERENCIA a IBAN: <span style={{ fontFamily: 'monospace', fontWeight: 'bold' }}>ES0600492246812214008717</span>   / <strong style={{ fontWeight: '700' }}>REFEFERENCIA PAGO:</strong> <span style={{ fontFamily: 'monospace', fontWeight: 'bold' }}>{inv.id}</span>
           </div>
-          {inv.isPaid && (
-            <div style={{ padding: '4px 8px', backgroundColor: '#d1fae5', color: '#065f46', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold', textTransform: 'uppercase' }}>
-              {t('inv_paid') || 'PAGADO'} ({t('rp_' + (inv.paymentMethod || 'transfer').toLowerCase()) || inv.paymentMethod})
-            </div>
-          )}
-        </div>
+        )}
 
         {/* Artwork note */}
         <div style={{ marginTop: '32px', paddingTop: '32px', borderTop: '1px solid #e5e7eb' }}>
