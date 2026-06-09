@@ -9,7 +9,7 @@ const DEFAULT_TEMPLATES = {
   invoice_email: {
     id: 'invoice_email',
     subject: 'Factura Revista de Fiestas Patronales Becerril de la Sierra 2026: Nro. {id}',
-    body: 'Hola,\n\nAdjuntamos la confirmación de pago y factura correspondiente a su anuncio en la Revista de Fiestas Patronales Becerril de la Sierra 2026:\n\n- Número de Factura: {id}\n- Producto: {productName}\n- Página Asignada: {assignedPage}\n- Método de Pago: Efectivo\n- Precio Base: {price}€\n{designPrice}- Subtotal: {subtotal}€\n- IVA (21%): {vat}€\n- Total Pagado: {total}€\n\nGracias,\nEquipo de Coordinación Publicitaria'
+    body: 'Hola,\n\nAdjuntamos la confirmación de pago y factura correspondiente a su anuncio en la Revista de Fiestas Patronales Becerril de la Sierra 2026:\n\n- Número de Factura: {id}\n- Producto: {productName}\n- Página Asignada: {assignedPage}\n- Método de Pago: {paymentMethod}\n- Precio Base: {price}€\n{designPrice}- Subtotal: {subtotal}€\n- IVA (21%): {vat}€\n- Total Pagado: {total}€\n\nFORMA de PAGO: TRANSFERENCIA a IBAN: ES0600492246812214008717   / REFEFERENCIA PAGO: {id}\n\nGracias,\nEquipo de Coordinación Publicitaria'
   },
   invoice_whatsapp: {
     id: 'invoice_whatsapp',
@@ -29,7 +29,7 @@ const DEFAULT_TEMPLATES = {
   order_reservation_email: {
     id: 'order_reservation_email',
     subject: 'Confirmación de Reserva Revista de Fiestas Patronales Becerril de la Sierra 2026: Pág. {assignedPage}',
-    body: 'Hola,\n\nConfirmamos la reserva del espacio publicitario en la Revista de Fiestas Patronales Becerril de la Sierra 2026:\n\n- Producto: {productName}\n- Página Asignada: {assignedPage}\n- Método de Pago: {paymentMethod}\n- Comentarios de Arte/Diseño: {artworkComment}\n\nLa factura correspondiente se generará una vez confirmado el pago.\n\nGracias,\nEquipo de Coordinación Publicitaria'
+    body: 'Hola,\n\nConfirmamos la reserva del espacio publicitario en la Revista de Fiestas Patronales Becerril de la Sierra 2026:\n\n- Producto: {productName}\n- Página Asignada: {assignedPage}\n- Método de Pago: {paymentMethod}\n- Comentarios de Arte/Diseño: {artworkComment}\n\nFORMA de PAGO: TRANSFERENCIA a IBAN: ES0600492246812214008717   / REFEFERENCIA PAGO: {productName}\n\nLa factura correspondiente se generará una vez confirmado el pago.\n\nGracias,\nEquipo de Coordinación Publicitaria'
   },
   order_reservation_whatsapp: {
     id: 'order_reservation_whatsapp',

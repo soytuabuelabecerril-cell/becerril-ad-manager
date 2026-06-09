@@ -660,7 +660,7 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
               : `Confirmación de Reserva Revista de Fiestas Patronales Becerril de la Sierra 2026: Pág. ${details.assignedPage}`;
             text = isPreReservation
               ? `Hola,\n\nConfirmamos la pre-reserva (retención de 1 semana) del espacio publicitario en la Revista de Fiestas Patronales Becerril de la Sierra 2026:\n\n- Producto: ${details.productName}\n- Página Asignada: ${details.assignedPage}\n- Comentarios de Arte/Diseño: ${details.artworkComment}\n\nNota: Esta reserva es temporal y vencerá en una semana si no se confirma el pago.\n\nGracias,\nEquipo de Coordinación Publicitaria`
-              : `Hola,\n\nConfirmamos la reserva del espacio publicitario en la Revista de Fiestas Patronales Becerril de la Sierra 2026:\n\n- Producto: ${details.productName}\n- Página Asignada: ${details.assignedPage}\n- Método de Pago: ${t('rp_' + details.paymentMethod.toLowerCase()) || details.paymentMethod}\n- Comentarios de Arte/Diseño: ${details.artworkComment}\n\nLa factura correspondiente se generará una vez confirmado el pago.\n\nGracias,\nEquipo de Coordinación Publicitaria`;
+              : `Hola,\n\nConfirmamos la reserva del espacio publicitario en la Revista de Fiestas Patronales Becerril de la Sierra 2026:\n\n- Producto: ${details.productName}\n- Página Asignada: ${details.assignedPage}\n- Método de Pago: ${t('rp_' + details.paymentMethod.toLowerCase()) || details.paymentMethod}\n- Comentarios de Arte/Diseño: ${details.artworkComment}\n\nFORMA de PAGO: TRANSFERENCIA a IBAN: ES0600492246812214008717   / REFEFERENCIA PAGO: ${details.productName}\n\nLa factura correspondiente se generará una vez confirmado el pago.\n\nGracias,\nEquipo de Coordinación Publicitaria`;
           }
         }
 
@@ -2058,6 +2058,10 @@ const ReservationPanel = ({ selectedPage, onReservationComplete, onCancel }) => 
             <span style={{ fontSize: '18px', fontWeight: '700', color: '#2563eb' }}>{inv.total.toFixed(2)}€</span>
           </div>
         </div>
+      </div>
+
+      <div style={{ marginTop: '24px', padding: '16px', backgroundColor: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '8px', fontSize: '13px', color: '#1e3a8a' }}>
+        <strong style={{ fontWeight: '700' }}>FORMA de PAGO:</strong> TRANSFERENCIA a IBAN: <span style={{ fontFamily: 'monospace', fontWeight: 'bold' }}>ES0600492246812214008717</span>   / <strong style={{ fontWeight: '700' }}>REFEFERENCIA PAGO:</strong> <span style={{ fontFamily: 'monospace', fontWeight: 'bold' }}>{inv.id}</span>
       </div>
 
       {/* Artwork note */}

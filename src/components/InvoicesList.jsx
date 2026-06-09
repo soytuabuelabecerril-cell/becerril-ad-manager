@@ -221,7 +221,7 @@ const InvoicesList = () => {
             
           const text = invoiceTemplate?.body 
             ? formatTemplate(invoiceTemplate.body, vars) 
-            : `Hola,\n\nAdjuntamos la factura ${inv.id} correspondiente a su reserva de ${inv.productName}.\n\nNota importante sobre arte: ${inv.artworkComment}\n\nGracias,\nEquipo I AM YOUR GRANNY S.L.`;
+            : `Hola,\n\nAdjuntamos la factura ${inv.id} correspondiente a su reserva de ${inv.productName}.\n\nFORMA de PAGO: TRANSFERENCIA a IBAN: ES0600492246812214008717   / REFEFERENCIA PAGO: ${inv.id}\n\nNota importante sobre arte: ${inv.artworkComment}\n\nGracias,\nEquipo I AM YOUR GRANNY S.L.`;
 
           const apiUrl = import.meta.env.VITE_API_URL || '/api/send-email';
           const response = await fetch(apiUrl, {
@@ -424,7 +424,7 @@ const InvoicesList = () => {
 
   const getEmailLink = (inv) => {
     const subject = `Factura Reserva: ${inv.id}`;
-    const body = `Hola,\n\nAdjuntamos la factura ${inv.id} correspondiente a su reserva de ${inv.productName}.\n\nNota importante sobre arte: ${inv.artworkComment}\n\nGracias,\nEquipo I AM YOUR GRANNY S.L.`;
+    const body = `Hola,\n\nAdjuntamos la factura ${inv.id} correspondiente a su reserva de ${inv.productName}.\n\nFORMA de PAGO: TRANSFERENCIA a IBAN: ES0600492246812214008717   / REFEFERENCIA PAGO: ${inv.id}\n\nNota importante sobre arte: ${inv.artworkComment}\n\nGracias,\nEquipo I AM YOUR GRANNY S.L.`;
     return `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   };
 
@@ -580,9 +580,11 @@ const InvoicesList = () => {
             </div>
           </div>
         </div>
-        
 
-        
+        <div className="mt-6 p-4 bg-blue-50/50 border border-blue-100 rounded-lg text-sm text-blue-900">
+          <strong className="font-semibold text-blue-800">FORMA de PAGO:</strong> TRANSFERENCIA a IBAN: <span className="font-mono font-bold text-blue-950">ES0600492246812214008717</span>   / <strong className="font-semibold text-blue-800">REFEFERENCIA PAGO:</strong> <span className="font-mono font-bold text-blue-950">{inv.id}</span>
+        </div>
+
         <div className="mt-8 pt-8 border-t border-gray-200">
           <h4 className="font-bold text-gray-800 mb-2">{t('inv_important_info')}</h4>
           <p className="text-gray-600 bg-gray-50 p-4 rounded-lg">{inv.artworkComment}</p>
@@ -700,7 +702,9 @@ const InvoicesList = () => {
           </div>
         </div>
 
-
+        <div style={{ marginTop: '24px', padding: '16px', backgroundColor: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '8px', fontSize: '13px', color: '#1e3a8a' }}>
+          <strong style={{ fontWeight: '700' }}>FORMA de PAGO:</strong> TRANSFERENCIA a IBAN: <span style={{ fontFamily: 'monospace', fontWeight: 'bold' }}>ES0600492246812214008717</span>   / <strong style={{ fontWeight: '700' }}>REFEFERENCIA PAGO:</strong> <span style={{ fontFamily: 'monospace', fontWeight: 'bold' }}>{inv.id}</span>
+        </div>
 
         {/* Artwork note */}
         <div style={{ marginTop: '32px', paddingTop: '32px', borderTop: '1px solid #e5e7eb' }}>
