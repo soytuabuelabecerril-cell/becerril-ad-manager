@@ -111,6 +111,30 @@ const ClientsList = () => {
     }
   };
 
+  const handleDeleteCustomer = async (customerId) => {
+    try {
+      if (customerId && !customerId.startsWith('ext-')) {
+        const { error } = await supabase
+          .from('customers')
+          .delete()
+          .eq('id', customerId);
+          
+        if (error) throw error;
+        
+        const customerName = selectedCustomer?.commercial_name || selectedCustomer?.fiscal_name || '';
+        logAction('delete_customer', customerId, customerName, null, null, 0, 0, 0, 0, null, false, selectedCustomer);
+      } else if (customerId && customerId.startsWith('ext-')) {
+        // Mock delete for fallback data
+        console.log("Mock deleted local fallback customer:", customerId);
+      }
+      setIsModalOpen(false);
+      fetchCustomers();
+    } catch (err) {
+      console.error("Error deleting customer:", err);
+      alert(language === 'es' ? 'Error al eliminar el cliente' : 'Error deleting customer');
+    }
+  };
+
   if (loading) {
     return (
       <div className="p-8 flex justify-center items-center h-64">
@@ -320,6 +344,7 @@ const ClientsList = () => {
         onClose={() => setIsModalOpen(false)}
         customer={selectedCustomer}
         onSave={handleSaveCustomer}
+        onDelete={handleDeleteCustomer}
       />
     </div>
   );

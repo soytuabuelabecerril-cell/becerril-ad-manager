@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { X, Save } from 'lucide-react';
+import { X, Save, Trash2 } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
 
-const CustomerModal = ({ isOpen, onClose, customer, onSave }) => {
-  const { t } = useLanguage();
+const CustomerModal = ({ isOpen, onClose, customer, onSave, onDelete }) => {
+  const { t, language } = useLanguage();
   const [formData, setFormData] = useState(() => {
     const saved = localStorage.getItem('cm_formData');
     return saved ? JSON.parse(saved) : {
@@ -73,6 +73,16 @@ const CustomerModal = ({ isOpen, onClose, customer, onSave }) => {
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleDelete = () => {
+    if (!customer) return;
+    const confirmMsg = language === 'es'
+      ? '¿Está muy seguro de que desea borrar este cliente?'
+      : 'Are you very sure you want to delete this customer?';
+    if (window.confirm(confirmMsg)) {
+      onDelete(customer.id);
+    }
   };
 
   const handleSubmit = (e) => {
@@ -190,22 +200,36 @@ const CustomerModal = ({ isOpen, onClose, customer, onSave }) => {
           </form>
         </div>
         
-        <div className="p-4 sm:p-6 border-t border-gray-100 bg-gray-50 flex justify-end gap-3 rounded-b-none sm:rounded-b-2xl">
-          <button 
-            type="button" 
-            onClick={onClose}
-            className="px-5 py-2.5 text-gray-600 font-medium hover:bg-gray-200 rounded-lg transition-colors"
-          >
-            {t('cancel') || 'Cancel'}
-          </button>
-          <button 
-            type="submit" 
-            form="customerForm"
-            className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg shadow-sm transition-colors flex items-center gap-2"
-          >
-            <Save size={18} />
-            {t('save') || 'Save'}
-          </button>
+        <div className="p-4 sm:p-6 border-t border-gray-100 bg-gray-50 flex justify-between items-center rounded-b-none sm:rounded-b-2xl">
+          <div>
+            {customer && onDelete && (
+              <button
+                type="button"
+                onClick={handleDelete}
+                className="px-5 py-2.5 text-red-600 hover:text-red-700 hover:bg-red-50 font-semibold rounded-lg transition-colors flex items-center gap-2"
+              >
+                <Trash2 size={18} />
+                {t('delete_customer') || 'Borrar cliente'}
+              </button>
+            )}
+          </div>
+          <div className="flex gap-3">
+            <button 
+              type="button" 
+              onClick={onClose}
+              className="px-5 py-2.5 text-gray-600 font-medium hover:bg-gray-200 rounded-lg transition-colors"
+            >
+              {t('cancel') || 'Cancel'}
+            </button>
+            <button 
+              type="submit" 
+              form="customerForm"
+              className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg shadow-sm transition-colors flex items-center gap-2"
+            >
+              <Save size={18} />
+              {t('save') || 'Save'}
+            </button>
+          </div>
         </div>
       </div>
     </div>
