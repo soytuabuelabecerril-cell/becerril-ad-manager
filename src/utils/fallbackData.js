@@ -44,6 +44,17 @@ const getInitialPagesData = () => {
         const parsed = JSON.parse(stored);
         let updated = false;
         parsed.forEach(p => {
+          if (p.ads) {
+            const originalLength = p.ads.length;
+            p.ads = p.ads.filter(ad => !((ad.customer_id === 'legacy' || ad.customer_name === 'Legacy Customer') && ad.isPreReserved));
+            if (p.ads.length !== originalLength) {
+              updated = true;
+              if (p.ads.length === 0) {
+                p.status = 'Available';
+                p.ad_type = null;
+              }
+            }
+          }
           if (p.page_number === 91 || p.page_number === 92) {
             if (p.ads && p.ads.some(ad => ad.customer_id === 'legacy')) {
               p.status = 'Available';
