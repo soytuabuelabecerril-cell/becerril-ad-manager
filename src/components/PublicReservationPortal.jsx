@@ -825,7 +825,6 @@ const PublicReservationPortal = () => {
 
               {/* Custom Legend */}
               <div className="flex flex-wrap gap-2 text-[10px] font-bold text-slate-500">
-                <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-blue-300"></span> {isEs ? 'No Disponible' : 'Not Available'}</span>
                 <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-gray-100 border border-gray-300"></span> {isEs ? 'Libre' : 'Free'}</span>
                 <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-slate-200 border border-slate-300 opacity-60"></span> 🔒 {isEs ? 'Bloqueado' : 'Locked'}</span>
               </div>
