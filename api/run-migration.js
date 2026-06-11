@@ -83,6 +83,19 @@ export default async function handler(req, res) {
       ADD COLUMN IF NOT EXISTS info_email_sent_at TIMESTAMP WITH TIME ZONE;
     `);
 
+    // Update communication templates to include pricing/amount details
+    await client.query(`
+      UPDATE public.communication_templates
+      SET body = 'Hola,\n\nConfirmamos la reserva del espacio publicitario en la Revista de Fiestas Patronales Becerril de la Sierra 2026:\n\n- Producto: {productName}\n- Página Asignada: {assignedPage}\n- Método de Pago: {paymentMethod}\n- Comentarios de Arte/Diseño: {artworkComment}\n- Precio Base: {price}€{designPrice}\n- Subtotal: {subtotal}€\n- IVA (21%): {vat}€\n- Importe Total a Pagar: {total}€\n\nFORMA de PAGO: TRANSFERENCIA a IBAN: ES0600492246812214008717   / REFERENCIA PAGO: {productName}\n\nLa factura correspondiente se generará una vez confirmado el pago.\n\nGracias,\nEquipo de Coordinación Publicitaria'
+      WHERE id = 'order_reservation_email';
+    `);
+
+    await client.query(`
+      UPDATE public.communication_templates
+      SET body = 'Hola,\n\nConfirmamos la pre-reserva (retención de 1 semana) del espacio publicitario en la Revista de Fiestas Patronales Becerril de la Sierra 2026:\n\n- Producto: {productName}\n- Página Asignada: {assignedPage}\n- Comentarios de Arte/Diseño: {artworkComment}\n- Precio Base: {price}€{designPrice}\n- Subtotal: {subtotal}€\n- IVA (21%): {vat}€\n- Importe Total a Pagar: {total}€\n\nNota: Esta reserva es temporal y vencerá en una semana si no se confirma el pago.\n\nFORMA de PAGO: TRANSFERENCIA a IBAN: ES0600492246812214008717   / REFERENCIA PAGO: {productName}\n\nGracias,\nEquipo de Coordinación Publicitaria'
+      WHERE id = 'order_prereservation_email';
+    `);
+
     // Reload schema
     await client.query("NOTIFY pgrst, 'reload schema';");
 
