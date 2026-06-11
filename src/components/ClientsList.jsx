@@ -1,16 +1,18 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { Mail, Phone, MapPin, Search, Edit2, Plus, Users, ShieldAlert } from 'lucide-react';
+import { Mail, Phone, MapPin, Search, Edit2, Plus, Users, ShieldAlert, Download, Send } from 'lucide-react';
 import { fallbackCustomers } from '../utils/fallbackCustomers';
 import { useLanguage } from '../context/LanguageContext';
 import { useDatabase } from '../context/DatabaseContext';
 import CustomerModal from './CustomerModal';
+import * as XLSX from 'xlsx';
 
 const ClientsList = () => {
   const { t, language } = useLanguage();
   const { logAction } = useDatabase();
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [sendingInfoEmail, setSendingInfoEmail] = useState(null);
   const [isModalOpen, setIsModalOpenRaw] = useState(() => {
     return localStorage.getItem('cl_isModalOpen') === 'true';
   });
@@ -53,6 +55,108 @@ const ClientsList = () => {
   useEffect(() => {
     fetchCustomers();
   }, []);
+
+  const handleDownloadExcel = () => {
+    if (!customers || customers.length === 0) return;
+
+    // Map database fields to clean Spanish column headers
+    const exportRows = customers.map(c => ({
+      'Nombre Comercial': c.commercial_name || '',
+      'Nombre Fiscal': c.fiscal_name || '',
+      'NIF / CIF': c.nif || '',
+      'Nombre de Contacto': c.contact_name || '',
+      'Categoría': c.category || 'General',
+      'Dirección': c.address || '',
+      'Correo Electrónico': c.email || '',
+      'Teléfono / WhatsApp': c.whatsapp || '',
+      'Producto del Año Pasado': c.last_year_product || ''
+    }));
+
+    // Create worksheet
+    const ws = XLSX.utils.json_to_sheet(exportRows);
+
+    // Create workbook
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, language === 'es' ? 'Clientes' : 'Customers');
+
+    // Trigger file download
+    const dateStr = new Date().toISOString().slice(0, 10);
+    XLSX.writeFile(wb, `Clientes_${dateStr}.xlsx`);
+
+    // Log the download action
+    try {
+      logAction(
+        'download_customers_excel',
+        null,
+        'Base de datos de clientes',
+        null,
+        null,
+        0,
+        0,
+        0,
+        0,
+        null,
+        false,
+        { total_records: customers.length }
+      );
+    } catch (err) {
+      console.error("Error logging Excel download action:", err);
+    }
+  };
+
+  const handleSendInfoEmail = async (customer) => {
+    if (!customer || !customer.email) return;
+    setSendingInfoEmail(customer.id);
+    try {
+      const baseUrl = import.meta.env.VITE_API_URL || '/api/send-email';
+      const apiUrl = baseUrl.endsWith('/send-email') 
+        ? baseUrl.replace('/send-email', '/send-info-email') 
+        : baseUrl + '/send-info-email';
+
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          customerId: customer.id,
+          to: customer.email,
+          customerName: customer.commercial_name || customer.fiscal_name || ''
+        })
+      });
+
+      const data = await response.json();
+      if (response.ok && data.success) {
+        // Update local customer state
+        setCustomers(prev => prev.map(c => 
+          c.id === customer.id ? { ...c, info_email_sent: true, info_email_sent_at: new Date().toISOString() } : c
+        ));
+
+        // Log action
+        logAction(
+          'send_info_email',
+          customer.id,
+          customer.commercial_name || customer.fiscal_name,
+          'Revista Info',
+          null,
+          0,
+          0,
+          0,
+          0,
+          null,
+          false,
+          { email: customer.email, info_email_sent: true, info_email_sent_at: new Date().toISOString() }
+        );
+
+        alert(t('info_email_sent_success') || 'Magazine info email sent successfully!');
+      } else {
+        throw new Error(data.error || 'Failed to send email');
+      }
+    } catch (err) {
+      console.error('Error sending info email:', err);
+      alert((t('info_email_sent_error') || 'Error sending magazine info email: ') + (err.message || ''));
+    } finally {
+      setSendingInfoEmail(null);
+    }
+  };
 
   const handleEditCustomer = (customer) => {
     setSelectedCustomer(customer);
@@ -184,6 +288,15 @@ const ClientsList = () => {
             />
           </div>
           <button
+            onClick={handleDownloadExcel}
+            disabled={!customers || customers.length === 0}
+            className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg font-medium shadow-sm transition-colors text-sm flex items-center justify-center gap-1.5 cursor-pointer"
+            title={language === 'es' ? 'Descargar Excel (.xlsx)' : 'Download Excel (.xlsx)'}
+          >
+            <Download size={16} />
+            {language === 'es' ? 'Descargar Excel' : 'Download Excel'}
+          </button>
+          <button
             onClick={handleAddCustomer}
             className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium shadow-sm transition-colors text-sm flex items-center justify-center gap-1.5"
           >
@@ -247,14 +360,35 @@ const ClientsList = () => {
                   </div>
                 </td>
                 <td className="p-4 text-right">
-                  <button
-                    onClick={() => handleEditCustomer(customer)}
-                    className="p-2 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-lg transition-colors inline-flex items-center gap-1 text-xs font-bold"
-                    title={language === 'es' ? 'Editar Cliente' : 'Edit Customer'}
-                  >
-                    <Edit2 size={14} />
-                    {language === 'es' ? 'Editar' : 'Edit'}
-                  </button>
+                  <div className="flex items-center justify-end gap-2">
+                    {customer.email && (
+                      <button
+                        onClick={() => handleSendInfoEmail(customer)}
+                        disabled={sendingInfoEmail === customer.id}
+                        className={`p-2 rounded-lg transition-colors inline-flex items-center gap-1.5 text-xs font-bold border cursor-pointer ${
+                          customer.info_email_sent 
+                            ? 'bg-green-50 text-green-700 border-green-200' 
+                            : 'bg-blue-50 text-blue-700 border-blue-100 hover:bg-blue-100'
+                        }`}
+                        title={customer.info_email_sent ? t('info_email_sent_title') : t('send_info_email_title')}
+                      >
+                        {sendingInfoEmail === customer.id ? (
+                          <span className="animate-spin h-3.5 w-3.5 border-2 border-current border-t-transparent rounded-full" />
+                        ) : (
+                          <Send size={14} className={customer.info_email_sent ? 'text-green-600 fill-green-50' : 'text-blue-600'} />
+                        )}
+                        <span>Email INFO FIESTAS</span>
+                      </button>
+                    )}
+                    <button
+                      onClick={() => handleEditCustomer(customer)}
+                      className="p-2 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-lg transition-colors inline-flex items-center gap-1 text-xs font-bold cursor-pointer"
+                      title={language === 'es' ? 'Editar Cliente' : 'Edit Customer'}
+                    >
+                      <Edit2 size={14} />
+                      {language === 'es' ? 'Editar' : 'Edit'}
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}
@@ -329,6 +463,28 @@ const ClientsList = () => {
                 </div>
               )}
             </div>
+
+            {customer.email && (
+              <div className="mt-1 flex justify-end">
+                <button
+                  onClick={() => handleSendInfoEmail(customer)}
+                  disabled={sendingInfoEmail === customer.id}
+                  className={`w-full py-2 px-3 rounded-lg transition-colors inline-flex items-center justify-center gap-1.5 text-xs font-bold border cursor-pointer ${
+                    customer.info_email_sent 
+                      ? 'bg-green-50 text-green-700 border-green-200' 
+                      : 'bg-blue-50 text-blue-700 border-blue-100 hover:bg-blue-100'
+                  }`}
+                  title={customer.info_email_sent ? t('info_email_sent_title') : t('send_info_email_title')}
+                >
+                  {sendingInfoEmail === customer.id ? (
+                    <span className="animate-spin h-3.5 w-3.5 border-2 border-current border-t-transparent rounded-full" />
+                  ) : (
+                    <Send size={14} className={customer.info_email_sent ? 'text-green-600 fill-green-50' : 'text-blue-600'} />
+                  )}
+                  <span>Email INFO FIESTAS</span>
+                </button>
+              </div>
+            )}
           </div>
         ))}
         {filteredCustomers.length === 0 && (
