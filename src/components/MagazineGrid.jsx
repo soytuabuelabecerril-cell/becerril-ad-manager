@@ -37,9 +37,6 @@ const MagazineGrid = ({ onPageClick, pages: customPages, isPublic = false }) => 
 
   const getStatusColor = (page) => {
     let classes = '';
-    if (isPublic && backCoverNums.has(page.page_number)) {
-      return 'bg-slate-200 border-slate-300 text-slate-400 cursor-not-allowed opacity-60';
-    }
     if (page.ads && page.ads.length > 0) {
       classes += ' border-red-700 text-white';
     } else if (backCoverNums.has(page.page_number)) {
