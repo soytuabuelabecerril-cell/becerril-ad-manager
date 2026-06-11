@@ -440,6 +440,9 @@ const CustomersList = ({ onSelectPage }) => {
           }
         });
       } else if (page.status === 'Reserved' && page.payment_status === 'Paid') {
+        if (!page.customer_id || page.customer_id === 'legacy') {
+          return;
+        }
         const key = `${page.page_number}-${(page.customer_name || '').toLowerCase()}-${(page.ad_type || '').toLowerCase()}`;
         salesMap.set(key, {
           id: `page-${page.page_number}`,
@@ -521,6 +524,9 @@ const CustomersList = ({ onSelectPage }) => {
           }
         });
       } else if (page.status === 'Reserved' && page.payment_status === 'Pending') {
+        if (!page.customer_id || page.customer_id === 'legacy') {
+          return;
+        }
         const key = `${page.page_number}-${(page.customer_name || '').toLowerCase()}-${(page.ad_type || '').toLowerCase()}`;
         preReservedMap.set(key, {
           id: `page-${page.page_number}`,
