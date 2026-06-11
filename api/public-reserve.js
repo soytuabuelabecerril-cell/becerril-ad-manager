@@ -105,6 +105,10 @@ export default async function handler(req, res) {
     }
 
     // 4. Verify page capacity server-side
+    if (pageNumber === 91 || pageNumber === 92) {
+      return res.status(400).json({ error: 'Las páginas de contraportada (91 y 92) no están disponibles para reservas de usuarios externos.' });
+    }
+
     const { data: existingAds, error: adsErr } = await supabase
       .from('ad_reservations')
       .select('*')
@@ -112,9 +116,33 @@ export default async function handler(req, res) {
 
     if (adsErr) throw adsErr;
 
+    // Helper to generate fake reservations deterministically (~35% occupancy)
+    const getFakeReservationForPage = (pageNum) => {
+      if (pageNum === 1 || pageNum === 2 || pageNum === 91 || pageNum === 92) {
+        return null;
+      }
+      const hash = (pageNum * 17) % 100;
+      if (hash >= 35) {
+        return null;
+      }
+      let adType = 'Página completa libre adjudicación';
+      if (hash < 12) {
+        adType = '⅓ tercio libre adjudicación';
+      } else if (hash < 24) {
+        adType = '⅔ dos tercios superior';
+      }
+      return { ad_type: adType };
+    };
+
+    const allAdsForCapacity = [...existingAds];
+    const fakeAd = getFakeReservationForPage(pageNumber);
+    if (fakeAd) {
+      allAdsForCapacity.push(fakeAd);
+    }
+
     const filledSlots = new Set();
     let hasAny1 = false;
-    existingAds.forEach(ad => {
+    allAdsForCapacity.forEach(ad => {
       const p = PRODUCTS.find(prod => prod.name === ad.ad_type);
       if (p) {
         p.requiredSlots.forEach(s => {

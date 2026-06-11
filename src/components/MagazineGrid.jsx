@@ -37,6 +37,9 @@ const MagazineGrid = ({ onPageClick, pages: customPages, isPublic = false }) => 
 
   const getStatusColor = (page) => {
     let classes = '';
+    if (isPublic && backCoverNums.has(page.page_number)) {
+      return 'bg-slate-200 border-slate-300 text-slate-400 cursor-not-allowed opacity-60';
+    }
     if (page.ads && page.ads.length > 0) {
       classes += ' border-red-700 text-white';
     } else if (backCoverNums.has(page.page_number)) {
@@ -102,6 +105,7 @@ const MagazineGrid = ({ onPageClick, pages: customPages, isPublic = false }) => 
 
     const getAdColor = (ad) => {
       if (!ad) return white;
+      if (ad.isFake) return '#93c5fd'; // Light blue for fake reservations
       if (ad.isPaid) return '#22c55e';
       if (ad.isPreReserved) return '#f97316';
       if (ad.isNew) return '#3b82f6';
@@ -271,7 +275,7 @@ const MagazineGrid = ({ onPageClick, pages: customPages, isPublic = false }) => 
                     {page.ads.map((ad, idx) => {
                       const c = fallbackCustomers.find(cust => cust.id === ad.customer_id || cust.nif === ad.customer_id);
                       const cName = isPublic
-                        ? (language === 'es' ? 'Reservado' : 'Reserved')
+                        ? (ad.isFake ? 'No disponible' : (language === 'es' ? 'Reservado' : 'Reserved'))
                         : (c ? (c.commercial_name || c.fiscal_name) : ad.customer_name);
                       return (
                         <li key={idx} className="truncate">
@@ -310,7 +314,7 @@ const MagazineGrid = ({ onPageClick, pages: customPages, isPublic = false }) => 
           return (
             <button
               key={page.page_number}
-              disabled={page.status === 'Locked' || (isDragMode && !canDrag && !locked)}
+              disabled={page.status === 'Locked' || (isDragMode && !canDrag && !locked) || (isPublic && backCoverNums.has(page.page_number))}
               draggable={canDrag}
               onClick={() => {
                 if (!isDragMode) {
@@ -375,7 +379,7 @@ const MagazineGrid = ({ onPageClick, pages: customPages, isPublic = false }) => 
 
                     let cName = '';
                     if (isPublic) {
-                      cName = t('status_reserved') || 'Reservado';
+                      cName = block.ad.isFake ? 'No disponible' : (t('status_reserved') || 'Reservado');
                     } else {
                       cName = block.ad.customer_name;
                       if (!cName && block.ad.customer_id !== 'legacy') {

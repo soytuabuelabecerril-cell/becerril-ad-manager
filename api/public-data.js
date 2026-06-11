@@ -44,6 +44,32 @@ export default async function handler(req, res) {
 
     if (adsErr) throw adsErr;
 
+    // Helper to generate fake reservations deterministically (~35% occupancy)
+    const getFakeReservationForPage = (pageNum) => {
+      if (pageNum === 1 || pageNum === 2 || pageNum === 91 || pageNum === 92) {
+        return null;
+      }
+      const hash = (pageNum * 17) % 100;
+      if (hash >= 35) {
+        return null;
+      }
+      let adType = 'Página completa libre adjudicación';
+      if (hash < 12) {
+        adType = '⅓ tercio libre adjudicación';
+      } else if (hash < 24) {
+        adType = '⅔ dos tercios superior';
+      }
+      return {
+        id: `fake-${pageNum}`,
+        ad_type: adType,
+        isPreReserved: false,
+        isPaid: true,
+        isNew: false,
+        isFake: true,
+        customer_name: 'No disponible'
+      };
+    };
+
     // Merge pages and reservations, removing customer_name, customer_id, and any private fields
     const combined = pagesData.map(p => {
       const pageAds = adsData
@@ -53,8 +79,15 @@ export default async function handler(req, res) {
           ad_type: ad.ad_type,
           isPreReserved: ad.is_pre_reserved || false,
           isPaid: ad.is_paid || false,
-          isNew: false // Frontend can treat it as a standard existing reservation
+          isNew: false
         }));
+
+      if (pageAds.length === 0) {
+        const fakeAd = getFakeReservationForPage(p.page_number);
+        if (fakeAd) {
+          pageAds.push(fakeAd);
+        }
+      }
 
       return {
         id: p.id,

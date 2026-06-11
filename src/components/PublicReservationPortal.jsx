@@ -10,22 +10,34 @@ import {
   Loader2, 
   ArrowRight, 
   HelpCircle, 
-  MapPin, 
-  Phone, 
   FileText,
   AlertCircle,
   Building2,
   Lock,
   Globe,
-  LogOut
+  LogOut,
+  Sparkles,
+  User,
+  PhoneCall,
+  UserPlus,
+  ArrowLeft
 } from 'lucide-react';
 
 const PublicReservationPortal = () => {
   const { language, setLanguage } = useLanguage();
   const isEs = language === 'es';
 
+  // --- Step Flow State ---
+  // Steps: 'welcome', 'booking', 'auth', 'success'
+  const [step, setStep] = useState('welcome');
+
   // --- Auth State ---
+  const [isNewAdvertiser, setIsNewAdvertiser] = useState(null); // null, 'yes', 'no'
+  const [email, setEmail] = useState('');
   const [businessName, setBusinessName] = useState('');
+  const [contactName, setContactName] = useState('');
+  const [whatsapp, setWhatsapp] = useState('');
+  
   const [otpCode, setOtpCode] = useState('');
   const [verificationToken, setVerificationToken] = useState('');
   const [authCustomerId, setAuthCustomerId] = useState('');
@@ -66,6 +78,10 @@ const PublicReservationPortal = () => {
     }
   }, [sessionToken, customer]);
 
+  useEffect(() => {
+    fetchLayoutData();
+  }, []);
+
   const fetchLayoutData = async () => {
     try {
       setLoadingPages(true);
@@ -82,19 +98,32 @@ const PublicReservationPortal = () => {
 
   const handleSendOtp = async (e) => {
     e.preventDefault();
-    if (!businessName.trim()) {
-      setAuthError(isEs ? 'Introduzca el nombre del negocio' : 'Please enter your business name');
+    if (!email.trim()) {
+      setAuthError(isEs ? 'Introduzca su correo electrónico' : 'Please enter your email');
       return;
+    }
+    if (isNewAdvertiser === 'no') {
+      if (!businessName.trim()) {
+        setAuthError(isEs ? 'Introduzca el nombre del negocio' : 'Please enter your business name');
+        return;
+      }
     }
 
     setLoadingAuth(true);
     setAuthError('');
 
     try {
+      const isNew = isNewAdvertiser === 'no';
       const res = await fetch('/api/public-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'send', businessName })
+        body: JSON.stringify({ 
+          action: 'send', 
+          email: email.trim(),
+          isNewCustomer: isNew,
+          businessName: isNew ? businessName.trim() : undefined,
+          whatsapp: isNew ? whatsapp.trim() : undefined
+        })
       });
 
       const data = await res.json();
@@ -126,14 +155,20 @@ const PublicReservationPortal = () => {
     setAuthError('');
 
     try {
+      const isNew = isNewAdvertiser === 'no';
       const res = await fetch('/api/public-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'verify',
-          customerId: authCustomerId,
+          email: email.trim(),
+          customerId: isNew ? undefined : authCustomerId,
           otp: otpCode.trim(),
-          token: verificationToken
+          token: verificationToken,
+          isNewCustomer: isNew,
+          businessName: isNew ? businessName.trim() : undefined,
+          contactName: isNew ? contactName.trim() : undefined,
+          whatsapp: isNew ? whatsapp.trim() : undefined
         })
       });
 
@@ -146,6 +181,9 @@ const PublicReservationPortal = () => {
 
       setSessionToken(data.sessionToken);
       setCustomer(data.customer);
+      
+      // Auto-trigger booking using verified info
+      submitFinalReservation(data.sessionToken, data.customer);
     } catch (err) {
       setAuthError(isEs ? 'Error de verificación' : 'Failed to verify code');
     } finally {
@@ -156,11 +194,16 @@ const PublicReservationPortal = () => {
   const handleLogout = () => {
     setSessionToken('');
     setCustomer(null);
+    setEmail('');
     setBusinessName('');
+    setContactName('');
+    setWhatsapp('');
     setOtpCode('');
     setOtpSent(false);
+    setIsNewAdvertiser(null);
     setSelectedPage(null);
     setCompletedOrder(null);
+    setStep('welcome');
   };
 
   const productFitsInPage = (product, page) => {
@@ -199,7 +242,6 @@ const PublicReservationPortal = () => {
     return product.requiredSlots.every(slot => availableSlots.has(slot));
   };
 
-  // Filter products by page number and capacity constraints
   const getAvailableProductsForPage = (page) => {
     if (!page) return [];
     return catalogProducts.filter(p => {
@@ -232,7 +274,7 @@ const PublicReservationPortal = () => {
     setDesignWorkPrice('');
   };
 
-  const handleSubmitReservation = async (e) => {
+  const handleContinueBooking = (e) => {
     e.preventDefault();
     if (!selectedPage || !selectedProductId || !artworkOption || !paymentMethod) {
       alert(isEs ? 'Rellene todos los campos obligatorios' : 'Please fill in all required fields');
@@ -250,15 +292,25 @@ const PublicReservationPortal = () => {
       }
     }
 
+    // Check if session exists already
+    if (sessionToken && customer) {
+      submitFinalReservation(sessionToken, customer);
+    } else {
+      setStep('auth');
+    }
+  };
+
+  const submitFinalReservation = async (tokenToUse, customerToUse) => {
     setSubmittingReservation(true);
+    setLoadingAuth(true);
 
     try {
       const res = await fetch('/api/public-reserve', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          sessionToken,
-          customerId: customer.id,
+          sessionToken: tokenToUse,
+          customerId: customerToUse.id,
           pageNumber: selectedPage.page_number,
           productId: selectedProductId,
           artworkOption,
@@ -276,12 +328,14 @@ const PublicReservationPortal = () => {
       }
 
       setCompletedOrder(data.order);
+      setStep('success');
       fetchLayoutData(); // Reload pages layout
     } catch (err) {
       console.error(err);
       alert(isEs ? 'Error de conexión' : 'Connection error');
     } finally {
       setSubmittingReservation(false);
+      setLoadingAuth(false);
     }
   };
 
@@ -311,126 +365,333 @@ const PublicReservationPortal = () => {
     );
   };
 
-  // --- RENDER LOGIN VIEW ---
-  if (!sessionToken || !customer) {
+  // ==========================================
+  // 1. STEP: WELCOME GREETING
+  // ==========================================
+  if (step === 'welcome') {
     return (
       <div className="min-h-screen w-full flex items-center justify-center bg-slate-950 relative overflow-hidden font-sans p-4">
         {/* Glow accents */}
-        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-blue-600/15 rounded-full blur-[120px] pointer-events-none animate-pulse duration-[6000ms]"></div>
-        <div className="absolute bottom-1/4 right-1/4 w-[400px] h-[400px] bg-indigo-600/10 rounded-full blur-[140px] pointer-events-none animate-pulse duration-[8000ms]"></div>
+        <div className="absolute top-1/4 left-1/4 w-[500px] h-[500px] bg-blue-600/10 rounded-full blur-[140px] pointer-events-none animate-pulse duration-[6000ms]"></div>
+        <div className="absolute bottom-1/4 right-1/4 w-[500px] h-[500px] bg-indigo-600/10 rounded-full blur-[140px] pointer-events-none animate-pulse duration-[8000ms]"></div>
+
+        <div className="w-full max-w-xl relative z-10 text-center flex flex-col items-center">
+          
+          <div className="w-20 h-20 bg-gradient-to-tr from-blue-500 to-indigo-600 rounded-3xl flex items-center justify-center shadow-2xl shadow-blue-500/20 mb-8 border border-white/10 animate-bounce duration-1000">
+            <BookOpen className="text-white w-10 h-10" />
+          </div>
+
+          <h1 className="text-4xl font-extrabold text-white leading-tight bg-clip-text text-transparent bg-gradient-to-r from-white via-slate-200 to-slate-400 mb-4 px-2">
+            {isEs ? 'Revista de Fiestas Patronales Becerril de la Sierra 2026' : 'Becerril de la Sierra Festival Magazine 2026'}
+          </h1>
+          
+          <div className="h-1 w-20 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full mb-8"></div>
+
+          <div className="backdrop-blur-xl bg-white/[0.03] border border-white/[0.08] rounded-3xl p-6 sm:p-8 shadow-[0_20px_50px_rgba(0,0,0,0.5)] mb-8 text-left relative overflow-hidden">
+            <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-blue-500/30 to-transparent"></div>
+            
+            <p className="text-slate-300 text-sm leading-relaxed mb-4">
+              {isEs 
+                ? 'Le damos la bienvenida al portal digital de reservas de espacios publicitarios. Reserve su anuncio en sencillos pasos:'
+                : 'Welcome to the digital ad reservation portal. Book your spot in a few easy steps:'}
+            </p>
+
+            <ul className="space-y-3.5 text-xs text-slate-400">
+              <li className="flex items-start gap-3">
+                <span className="flex-shrink-0 w-5 h-5 rounded-full bg-blue-500/10 border border-blue-500/25 flex items-center justify-center text-blue-400 font-bold">1</span>
+                <span>{isEs ? 'Visualice la distribución de páginas libremente.' : 'Browse the visual page layout grid freely.'}</span>
+              </li>
+              <li className="flex items-start gap-3">
+                <span className="flex-shrink-0 w-5 h-5 rounded-full bg-blue-500/10 border border-blue-500/25 flex items-center justify-center text-blue-400 font-bold">2</span>
+                <span>{isEs ? 'Seleccione una página disponible y defina el formato de su anuncio.' : 'Choose an available page and choose your ad size.'}</span>
+              </li>
+              <li className="flex items-start gap-3">
+                <span className="flex-shrink-0 w-5 h-5 rounded-full bg-blue-500/10 border border-blue-500/25 flex items-center justify-center text-blue-400 font-bold">3</span>
+                <span>{isEs ? 'Confirme su correo mediante código OTP y complete la reserva.' : 'Confirm your email with a 6-digit OTP code to secure your booking.'}</span>
+              </li>
+            </ul>
+          </div>
+
+          <div className="flex flex-col sm:flex-row gap-4 items-center w-full justify-center">
+            <button
+              onClick={() => setStep('booking')}
+              className="w-full sm:w-auto px-8 py-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold rounded-2xl shadow-lg shadow-blue-500/25 hover:shadow-blue-500/35 transition-all flex items-center justify-center gap-2.5 cursor-pointer text-sm tracking-wider uppercase"
+            >
+              <span>{isEs ? 'Ver Páginas y Reservar' : 'View Pages & Book'}</span>
+              <ArrowRight size={16} />
+            </button>
+            
+            <div className="flex items-center gap-1.5 bg-slate-900/60 border border-white/5 rounded-xl px-3 py-2">
+              <Globe size={14} className="text-slate-400" />
+              <select 
+                value={language} 
+                onChange={(e) => setLanguage(e.target.value)}
+                className="bg-transparent text-xs text-slate-200 outline-none cursor-pointer font-semibold"
+              >
+                <option value="es">ES (Español)</option>
+                <option value="en">EN (English)</option>
+              </select>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    );
+  }
+
+  // ==========================================
+  // 2. STEP: AUTH / VERIFICATION
+  // ==========================================
+  if (step === 'auth') {
+    return (
+      <div className="min-h-screen w-full flex items-center justify-center bg-slate-950 relative overflow-hidden font-sans p-4">
+        {/* Glow accents */}
+        <div className="absolute top-1/4 left-1/4 w-[400px] h-[400px] bg-blue-600/10 rounded-full blur-[120px] pointer-events-none animate-pulse duration-[6000ms]"></div>
+        <div className="absolute bottom-1/4 right-1/4 w-[400px] h-[400px] bg-indigo-600/10 rounded-full blur-[120px] pointer-events-none animate-pulse duration-[8000ms]"></div>
 
         <div className="w-full max-w-md relative z-10">
           
-          {/* Header */}
-          <div className="flex flex-col items-center mb-8 text-center">
-            <div className="w-14 h-14 bg-gradient-to-tr from-blue-500 to-indigo-600 rounded-2xl flex items-center justify-center shadow-xl shadow-blue-500/25 mb-4">
-              <BookOpen className="text-white w-7 h-7" />
+          <div className="flex flex-col items-center mb-6 text-center">
+            <div className="w-12 h-12 bg-gradient-to-tr from-blue-500 to-indigo-600 rounded-2xl flex items-center justify-center shadow-xl shadow-blue-500/20 mb-3 border border-white/10">
+              <Lock className="text-white w-6 h-6" />
             </div>
-            <h1 className="text-2xl font-bold text-white leading-tight bg-clip-text text-transparent bg-gradient-to-r from-white to-slate-400">
-              Revista Becerril 2026
-            </h1>
-            <p className="text-slate-400 text-xs mt-1 uppercase tracking-wider font-semibold">
-              {isEs ? 'Portal de Reservas del Anunciante' : 'Advertiser Reservation Portal'}
+            <h2 className="text-xl font-bold text-white leading-tight">
+              {isEs ? 'Verificación de Identidad' : 'Advertiser Identity Verification'}
+            </h2>
+            <p className="text-slate-500 text-xxs mt-0.5 uppercase tracking-wider font-semibold">
+              {isEs ? 'Revista Becerril 2026' : 'Becerril Magazine 2026'}
             </p>
           </div>
 
-          {/* Form Card */}
-          <div className="backdrop-blur-xl bg-white/[0.03] border border-white/[0.08] rounded-3xl p-6 sm:p-8 shadow-[0_20px_50px_rgba(0,0,0,0.5)] relative overflow-hidden">
+          <div className="backdrop-blur-xl bg-white/[0.03] border border-white/[0.08] rounded-3xl p-6 shadow-[0_20px_50px_rgba(0,0,0,0.5)] relative overflow-hidden">
             <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-blue-500/50 to-transparent"></div>
 
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-lg font-semibold text-white">
-                {isEs ? 'Autenticación' : 'Verification'}
-              </h2>
-              <div className="flex items-center gap-1.5 bg-slate-900/60 border border-white/5 rounded-lg px-2 py-1">
-                <Globe size={13} className="text-slate-400" />
-                <select 
-                  value={language} 
-                  onChange={(e) => setLanguage(e.target.value)}
-                  className="bg-transparent text-[11px] text-slate-200 outline-none cursor-pointer"
-                >
-                  <option value="es">ES</option>
-                  <option value="en">EN</option>
-                </select>
-              </div>
-            </div>
-
             {authError && (
-              <div className="mb-5 p-3 rounded-xl bg-red-950/30 border border-red-500/20 flex items-start gap-2.5 text-red-300 text-xs">
+              <div className="mb-4 p-3 rounded-xl bg-red-950/40 border border-red-500/25 flex items-start gap-2.5 text-red-300 text-xs">
                 <AlertCircle className="w-4.5 h-4.5 shrink-0 text-red-400 mt-0.5" />
                 <span>{authError}</span>
               </div>
             )}
 
-            {!otpSent ? (
+            {isNewAdvertiser === null ? (
+              <div className="space-y-4">
+                <p className="text-slate-300 text-xs text-center leading-relaxed">
+                  {isEs 
+                    ? '¿Ha publicado algún anuncio en la Revista de Fiestas de Becerril en ediciones anteriores?' 
+                    : 'Have you published an advertisement in the Becerril Festival Magazine in previous editions?'}
+                </p>
+
+                <div className="grid grid-cols-1 gap-3 pt-2">
+                  <button
+                    onClick={() => {
+                      setIsNewAdvertiser('yes');
+                      setAuthError('');
+                    }}
+                    className="flex items-center justify-between p-4 bg-slate-900/60 hover:bg-slate-800/60 border border-white/10 hover:border-blue-500/40 rounded-2xl text-left cursor-pointer transition-all group"
+                  >
+                    <div>
+                      <h4 className="text-sm font-bold text-white group-hover:text-blue-400 transition-colors">
+                        {isEs ? 'Sí, he anunciado antes' : 'Yes, I have advertised before'}
+                      </h4>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        {isEs ? 'Utilizaremos su correo electrónico registrado.' : 'We will lookup your email registered in our records.'}
+                      </p>
+                    </div>
+                    <CheckCircle className="text-slate-700 group-hover:text-blue-500 transition-colors" size={20} />
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setIsNewAdvertiser('no');
+                      setAuthError('');
+                    }}
+                    className="flex items-center justify-between p-4 bg-slate-900/60 hover:bg-slate-800/60 border border-white/10 hover:border-indigo-500/40 rounded-2xl text-left cursor-pointer transition-all group"
+                  >
+                    <div>
+                      <h4 className="text-sm font-bold text-white group-hover:text-indigo-400 transition-colors">
+                        {isEs ? 'No, soy un nuevo anunciante' : 'No, I am a new advertiser'}
+                      </h4>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        {isEs ? 'Registraremos los datos de su negocio ahora.' : 'We will register your business details and email.'}
+                      </p>
+                    </div>
+                    <UserPlus className="text-slate-700 group-hover:text-indigo-500 transition-colors" size={20} />
+                  </button>
+                </div>
+
+                <button
+                  onClick={() => setStep('booking')}
+                  className="w-full mt-4 py-2.5 border border-white/10 hover:bg-white/5 text-slate-400 hover:text-white rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                >
+                  <ArrowLeft size={14} />
+                  {isEs ? 'Volver al formulario' : 'Back to Form'}
+                </button>
+              </div>
+            ) : !otpSent ? (
               <form onSubmit={handleSendOtp} className="space-y-4">
+                <div className="flex items-center justify-between pb-2 border-b border-white/5 mb-2">
+                  <span className="text-xs text-blue-400 font-bold">
+                    {isNewAdvertiser === 'yes' 
+                      ? (isEs ? 'Anunciante Registrado' : 'Registered Advertiser') 
+                      : (isEs ? 'Nuevo Anunciante' : 'New Advertiser')}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsNewAdvertiser(null);
+                      setAuthError('');
+                      setEmail('');
+                      setBusinessName('');
+                      setContactName('');
+                      setWhatsapp('');
+                    }}
+                    className="text-xxs text-slate-500 hover:text-slate-300 underline"
+                  >
+                    {isEs ? 'Cambiar opción' : 'Change Option'}
+                  </button>
+                </div>
+
+                {/* Email (For both) */}
                 <div>
-                  <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
-                    {isEs ? 'Nombre Comercial de su Negocio' : 'Commercial Name of your Business'}
+                  <label className="block text-xxs font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                    {isEs ? 'Dirección de Correo Electrónico' : 'Email Address'}
                   </label>
                   <div className="relative">
-                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500">
-                      <Building2 className="w-5 h-5" />
+                    <span className="absolute left-4.5 top-1/2 -translate-y-1/2 text-slate-500">
+                      <Mail size={16} />
                     </span>
                     <input
-                      type="text"
-                      value={businessName}
-                      onChange={(e) => setBusinessName(e.target.value)}
-                      placeholder={isEs ? 'Escriba el nombre registrado...' : 'Enter registered name...'}
-                      className="w-full pl-12 pr-4 py-3 bg-slate-900/60 border border-white/10 rounded-xl text-white placeholder-slate-600 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all text-sm"
+                      type="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder={isEs ? 'correo@ejemplo.com' : 'email@example.com'}
+                      className="w-full pl-11 pr-4 py-2.5 bg-slate-900/60 border border-white/10 rounded-xl text-white placeholder-slate-600 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20 transition-all text-xs"
                       required
                     />
                   </div>
                 </div>
 
-                <button
-                  type="submit"
-                  disabled={loadingAuth}
-                  className="w-full py-3 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-bold rounded-xl shadow-lg shadow-blue-600/10 hover:shadow-blue-600/20 transition-all flex items-center justify-center gap-2 cursor-pointer text-sm"
-                >
-                  {loadingAuth ? (
-                    <>
-                      <Loader2 className="w-4.5 h-4.5 animate-spin" />
-                      {isEs ? 'Verificando...' : 'Verifying...'}
-                    </>
-                  ) : (
-                    <>
-                      {isEs ? 'Verificar y Enviar Código' : 'Verify & Send Code'}
-                      <ArrowRight size={16} />
-                    </>
-                  )}
-                </button>
+                {/* New customer fields */}
+                {isNewAdvertiser === 'no' && (
+                  <div className="space-y-3 pt-1 border-t border-white/5 animate-in fade-in duration-200">
+                    <div>
+                      <label className="block text-xxs font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                        {isEs ? 'Nombre Comercial del Negocio' : 'Commercial Business Name'}
+                      </label>
+                      <div className="relative">
+                        <span className="absolute left-4.5 top-1/2 -translate-y-1/2 text-slate-500">
+                          <Building2 size={16} />
+                        </span>
+                        <input
+                          type="text"
+                          value={businessName}
+                          onChange={(e) => setBusinessName(e.target.value)}
+                          placeholder={isEs ? 'Nombre de su negocio...' : 'Enter business name...'}
+                          className="w-full pl-11 pr-4 py-2.5 bg-slate-900/60 border border-white/10 rounded-xl text-white placeholder-slate-600 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20 transition-all text-xs"
+                          required
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xxs font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                        {isEs ? 'Nombre del Contacto' : 'Contact Person Name'}
+                      </label>
+                      <div className="relative">
+                        <span className="absolute left-4.5 top-1/2 -translate-y-1/2 text-slate-500">
+                          <User size={16} />
+                        </span>
+                        <input
+                          type="text"
+                          value={contactName}
+                          onChange={(e) => setContactName(e.target.value)}
+                          placeholder={isEs ? 'Nombre y Apellidos...' : 'Representative name...'}
+                          className="w-full pl-11 pr-4 py-2.5 bg-slate-900/60 border border-white/10 rounded-xl text-white placeholder-slate-600 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20 transition-all text-xs"
+                          required
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xxs font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                        {isEs ? 'Teléfono / WhatsApp' : 'Phone / WhatsApp'}
+                      </label>
+                      <div className="relative">
+                        <span className="absolute left-4.5 top-1/2 -translate-y-1/2 text-slate-500">
+                          <PhoneCall size={16} />
+                        </span>
+                        <input
+                          type="tel"
+                          value={whatsapp}
+                          onChange={(e) => setWhatsapp(e.target.value)}
+                          placeholder={isEs ? 'Ej: 600123456' : 'e.g. +34 600 123 456'}
+                          className="w-full pl-11 pr-4 py-2.5 bg-slate-900/60 border border-white/10 rounded-xl text-white placeholder-slate-600 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20 transition-all text-xs"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex gap-2.5 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsNewAdvertiser(null);
+                      setAuthError('');
+                    }}
+                    className="flex-1 py-2.5 border border-white/10 hover:bg-white/5 text-slate-300 rounded-xl font-semibold transition-all text-xs cursor-pointer text-center"
+                  >
+                    {isEs ? 'Atrás' : 'Back'}
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={loadingAuth}
+                    className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-bold rounded-xl shadow-lg shadow-blue-600/10 hover:shadow-blue-600/20 transition-all flex items-center justify-center gap-1.5 cursor-pointer text-xs"
+                  >
+                    {loadingAuth ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        {isEs ? 'Procesando...' : 'Processing...'}
+                      </>
+                    ) : (
+                      <>
+                        {isEs ? 'Confirmar y Enviar OTP' : 'Confirm & Send OTP'}
+                        <ArrowRight size={14} />
+                      </>
+                    )}
+                  </button>
+                </div>
               </form>
             ) : (
               <form onSubmit={handleVerifyOtp} className="space-y-4">
-                <div className="text-slate-300 text-xs bg-blue-950/20 border border-blue-900/20 rounded-xl p-3.5 leading-relaxed">
+                <div className="text-slate-300 text-xs bg-blue-950/20 border border-blue-900/25 rounded-xl p-3.5 leading-relaxed">
                   {isEs 
-                    ? `Hemos encontrado su negocio en la base de datos. Se ha enviado un código de 6 dígitos a su correo electrónico registrado: ` 
-                    : `We found your business. A 6-digit code has been sent to your registered email: `}
-                  <strong className="text-white block mt-1 font-mono">{maskedEmail}</strong>
+                    ? `Hemos enviado un código OTP de 6 dígitos al correo electrónico:` 
+                    : `We sent a 6-digit OTP code to the email:`}
+                  <strong className="text-white block mt-1 font-mono text-xs">{maskedEmail}</strong>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
+                  <label className="block text-xxs font-bold text-slate-400 uppercase tracking-wider mb-2">
                     {isEs ? 'Código de Verificación (OTP)' : 'Verification Code (OTP)'}
                   </label>
                   <div className="relative">
-                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500">
-                      <Lock className="w-5 h-5" />
+                    <span className="absolute left-4.5 top-1/2 -translate-y-1/2 text-slate-500">
+                      <Lock size={16} />
                     </span>
                     <input
                       type="text"
                       maxLength={6}
                       value={otpCode}
                       onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ''))}
-                      placeholder="e.g. 123456"
-                      className="w-full pl-12 pr-4 py-3 bg-slate-900/60 border border-white/10 rounded-xl text-white placeholder-slate-600 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all text-sm text-center font-mono letter-spacing-2"
+                      placeholder="------"
+                      className="w-full pl-11 pr-4 py-2.5 bg-slate-900/60 border border-white/10 rounded-xl text-white placeholder-slate-600 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20 transition-all text-center font-mono text-sm tracking-[0.3em] font-bold"
                       required
                     />
                   </div>
                 </div>
 
-                <div className="flex gap-2">
+                <div className="flex gap-2.5">
                   <button
                     type="button"
                     onClick={() => {
@@ -438,16 +699,16 @@ const PublicReservationPortal = () => {
                       setOtpCode('');
                       setAuthError('');
                     }}
-                    className="flex-1 py-3 bg-slate-900 border border-white/10 hover:bg-slate-800 text-slate-300 rounded-xl font-semibold transition-all text-sm"
+                    className="flex-1 py-2.5 border border-white/10 hover:bg-white/5 text-slate-300 rounded-xl font-semibold transition-all text-xs cursor-pointer text-center"
                   >
                     {isEs ? 'Atrás' : 'Back'}
                   </button>
                   <button
                     type="submit"
                     disabled={loadingAuth}
-                    className="flex-1 py-3 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-bold rounded-xl shadow-lg shadow-blue-600/10 hover:shadow-blue-600/20 transition-all flex items-center justify-center gap-2 cursor-pointer text-sm"
+                    className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-bold rounded-xl shadow-lg shadow-blue-600/10 hover:shadow-blue-600/20 transition-all flex items-center justify-center gap-1.5 cursor-pointer text-xs"
                   >
-                    {loadingAuth ? <Loader2 className="w-4.5 h-4.5 animate-spin" /> : (isEs ? 'Verificar' : 'Verify')}
+                    {loadingAuth ? <Loader2 className="w-4 h-4 animate-spin" /> : (isEs ? 'Verificar y Confirmar' : 'Verify & Confirm')}
                   </button>
                 </div>
               </form>
@@ -458,8 +719,10 @@ const PublicReservationPortal = () => {
     );
   }
 
-  // --- RENDER SUCCESS MODAL ---
-  if (completedOrder) {
+  // ==========================================
+  // 3. STEP: SUCCESS MODAL
+  // ==========================================
+  if (step === 'success' && completedOrder) {
     return (
       <div className="min-h-screen w-full flex items-center justify-center bg-gray-50 p-4 font-sans">
         <div className="bg-white rounded-3xl shadow-xl max-w-lg w-full p-8 border border-gray-100 text-center flex flex-col items-center">
@@ -523,7 +786,9 @@ const PublicReservationPortal = () => {
     );
   }
 
-  // --- RENDER MAIN RESERVATION PANEL & GRID ---
+  // ==========================================
+  // 4. STEP: BOOKING (GRID + OPTIONS PANEL)
+  // ==========================================
   const pageListProducts = selectedPage ? getAvailableProductsForPage(selectedPage) : [];
 
   return (
@@ -535,15 +800,16 @@ const PublicReservationPortal = () => {
           <h1 className="text-md sm:text-lg font-bold truncate">Revista Becerril 2026</h1>
         </div>
         <div className="flex items-center gap-3">
-          <span className="text-xs text-slate-300 hidden md:block">
-            {isEs ? 'Negocio:' : 'Business:'} <strong className="text-white">{customer.commercial_name || customer.fiscal_name}</strong>
-          </span>
+          {customer && (
+            <span className="text-xs text-slate-300 hidden md:block">
+              {isEs ? 'Negocio:' : 'Business:'} <strong className="text-white">{customer.commercial_name || customer.fiscal_name}</strong>
+            </span>
+          )}
           <button
             onClick={handleLogout}
-            className="flex items-center gap-1 bg-red-950/40 hover:bg-red-900/30 text-red-400 px-3 py-1.5 rounded-lg border border-red-500/20 text-xs font-semibold cursor-pointer transition-all"
+            className="flex items-center gap-1 bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded-lg border border-white/5 text-xs font-semibold cursor-pointer transition-all"
           >
-            <LogOut size={13} />
-            {isEs ? 'Salir' : 'Sign Out'}
+            {isEs ? 'Volver al Inicio' : 'Back to Start'}
           </button>
         </div>
       </header>
@@ -554,14 +820,25 @@ const PublicReservationPortal = () => {
         {/* Left 2 Columns: Magazine Layout Grid */}
         <div className="lg:col-span-2 space-y-4">
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
-            <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-2">
-              {isEs ? 'Páginas Disponibles en la Revista' : 'Available Pages in the Magazine'}
-            </h3>
-            <p className="text-xs text-slate-500 mb-4">
-              {isEs 
-                ? 'Haga clic en cualquier página disponible (gris) o con espacio libre para seleccionarla y realizar su reserva.' 
-                : 'Click any available page (grey) to select it and reserve your ad space.'}
-            </p>
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-2">
+              <div>
+                <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider">
+                  {isEs ? 'Páginas Disponibles en la Revista' : 'Available Pages in the Magazine'}
+                </h3>
+                <p className="text-xs text-slate-500 mt-1">
+                  {isEs 
+                    ? 'Haga clic en cualquier página disponible (gris) o con espacio libre para seleccionarla y realizar su reserva.' 
+                    : 'Click any available page (grey) to select it and reserve your ad space.'}
+                </p>
+              </div>
+
+              {/* Custom Legend */}
+              <div className="flex flex-wrap gap-2 text-[10px] font-bold text-slate-500">
+                <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-blue-300"></span> {isEs ? 'No Disponible' : 'Not Available'}</span>
+                <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-gray-100 border border-gray-300"></span> {isEs ? 'Libre' : 'Free'}</span>
+                <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-slate-200 border border-slate-300 opacity-60"></span> 🔒 {isEs ? 'Bloqueado' : 'Locked'}</span>
+              </div>
+            </div>
             
             {loadingPages ? (
               <div className="h-64 flex flex-col items-center justify-center text-slate-400">
@@ -602,7 +879,7 @@ const PublicReservationPortal = () => {
               </p>
             </div>
           ) : (
-            <form onSubmit={handleSubmitReservation} className="space-y-4">
+            <form onSubmit={handleContinueBooking} className="space-y-4">
               
               {/* Selected Page visual indicators */}
               <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4 text-center">
@@ -789,11 +1066,11 @@ const PublicReservationPortal = () => {
                     {submittingReservation ? (
                       <>
                         <Loader2 className="w-4.5 h-4.5 animate-spin" />
-                        {isEs ? 'Procesando Reserva...' : 'Processing Reservation...'}
+                        {isEs ? 'Procesando...' : 'Processing...'}
                       </>
                     ) : (
                       <>
-                        {isEs ? 'Confirmar Reserva' : 'Confirm Reservation'}
+                        {isEs ? 'Reservar Espacio' : 'Book Space'}
                         <ArrowRight size={16} />
                       </>
                     )}
