@@ -281,16 +281,7 @@ const PublicReservationPortal = () => {
       return;
     }
 
-    if (artworkOption === '3') {
-      if (!designWorkOption) {
-        alert(isEs ? 'Seleccione la opción de diseño' : 'Please select a design option');
-        return;
-      }
-      if (designWorkOption === '1' && !designWorkPrice) {
-        alert(isEs ? 'Introduzca el precio acordado para el diseño' : 'Please enter the design price');
-        return;
-      }
-    }
+
 
     // Check if session exists already
     if (sessionToken && customer) {
@@ -942,83 +933,14 @@ const PublicReservationPortal = () => {
                       <option value="">
                         {isEs ? '-- Seleccione Arte Final --' : '-- Select Artwork Option --'}
                       </option>
-                      <option value="1">
-                        {isEs ? '1) Usaremos el mismo anuncio del año pasado (2025)' : '1) We will use the same artwork as last year (2025)'}
-                      </option>
                       <option value="2">
-                        {isEs ? '2) Enviaremos el diseño final por email' : '2) We will email our visual artwork'}
+                        {isEs ? '1) Enviaremos el material publicitario por email' : '1) We will send our advertising material by email'}
                       </option>
                       <option value="3">
-                        {isEs ? '3) Deseamos que la revista diseñe el anuncio' : '3) We want the magazine to design the ad'}
+                        {isEs ? '2) Contactar con nosotros para servicios publicitarios' : '2) Contact us regarding advertising services'}
                       </option>
                     </select>
                   </div>
-
-                  {/* Design sub options if Option 3 selected */}
-                  {artworkOption === '3' && (
-                    <div className="bg-slate-50 p-4 border border-slate-100 rounded-2xl space-y-3 animate-in slide-in-from-top-1 duration-200">
-                      <label className="block text-xs font-bold text-slate-600">
-                        {isEs ? 'Opción de Diseño' : 'Design Work Options'}
-                      </label>
-                      <div className="space-y-2">
-                        <label className="flex items-center gap-2 text-xs font-medium text-slate-700 cursor-pointer">
-                          <input
-                            type="radio"
-                            name="designOption"
-                            value="1"
-                            checked={designWorkOption === '1'}
-                            onChange={(e) => setDesignWorkOption(e.target.value)}
-                            className="accent-blue-500 w-4 h-4"
-                          />
-                          <span>{isEs ? 'Diseño y Arte Final (Coste adicional)' : 'Design with extra cost'}</span>
-                        </label>
-                        <label className="flex items-center gap-2 text-xs font-medium text-slate-700 cursor-pointer">
-                          <input
-                            type="radio"
-                            name="designOption"
-                            value="2"
-                            checked={designWorkOption === '2'}
-                            onChange={(e) => {
-                              setDesignWorkOption(e.target.value);
-                              setDesignWorkPrice('0');
-                            }}
-                            className="accent-blue-500 w-4 h-4"
-                          />
-                          <span>{isEs ? 'Sin coste' : 'Free of charge'}</span>
-                        </label>
-                        <label className="flex items-center gap-2 text-xs font-medium text-slate-700 cursor-pointer">
-                          <input
-                            type="radio"
-                            name="designOption"
-                            value="3"
-                            checked={designWorkOption === '3'}
-                            onChange={(e) => {
-                              setDesignWorkOption(e.target.value);
-                              setDesignWorkPrice('0');
-                            }}
-                            className="accent-blue-500 w-4 h-4"
-                          />
-                          <span>{isEs ? 'Vale de consumo en el establecimiento' : 'Establishment voucher'}</span>
-                        </label>
-                      </div>
-
-                      {designWorkOption === '1' && (
-                        <div className="mt-2 pt-2 border-t border-slate-200/50">
-                          <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-                            {isEs ? 'Precio de Diseño Acordado (€)' : 'Agreed Design Price (€)'}
-                          </label>
-                          <input
-                            type="number"
-                            value={designWorkPrice}
-                            onChange={(e) => setDesignWorkPrice(e.target.value)}
-                            placeholder="e.g. 25"
-                            className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/10 focus:border-blue-500"
-                            required
-                          />
-                        </div>
-                      )}
-                    </div>
-                  )}
 
                   {/* Payment option selector (Only bank transfer and pre-reservation) */}
                   <div className="pt-2 border-t border-slate-100 mt-2">

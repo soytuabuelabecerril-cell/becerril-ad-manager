@@ -191,6 +191,7 @@ export default async function handler(req, res) {
       if (designWorkOption === '1') artworkComment = 'elaboraremos el arte final para ti (Diseño y arte final).';
       else if (designWorkOption === '2') artworkComment = 'elaboraremos el arte final para ti (Sin coste).';
       else if (designWorkOption === '3') artworkComment = 'elaboraremos el arte final para ti (un vale en el establecimiento).';
+      else artworkComment = 'por favor contactar para servicios de diseño y publicidad.';
     }
 
     // Insert Order
