@@ -13,14 +13,20 @@ import { useDatabase } from './context/DatabaseContext';
 import { supabase } from './lib/supabase';
 import Login from './components/Login';
 import PublicConfirmPortal from './components/PublicConfirmPortal';
+import PublicReservationPortal from './components/PublicReservationPortal';
 
 function App() {
   const urlParams = new URLSearchParams(window.location.search);
   const confirmReservationId = urlParams.get('confirm_reservation_id');
   const confirmReservationType = urlParams.get('type') || 'ad';
+  const publicReserve = urlParams.get('public_reserve') === 'true';
 
   if (confirmReservationId) {
     return <PublicConfirmPortal reservationId={confirmReservationId} type={confirmReservationType} />;
+  }
+
+  if (publicReserve) {
+    return <PublicReservationPortal />;
   }
 
   const { t, language, setLanguage } = useLanguage();

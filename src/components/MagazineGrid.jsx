@@ -5,9 +5,11 @@ import { products } from '../utils/products';
 import { Plus, GripVertical, MousePointer, Check, AlertTriangle } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
 
-const MagazineGrid = ({ onPageClick }) => {
-  const { t } = useLanguage();
-  const { pages, loading, reorderPage } = useDatabase();
+const MagazineGrid = ({ onPageClick, pages: customPages, isPublic = false }) => {
+  const { t, language } = useLanguage();
+  const { pages: contextPages, loading: contextLoading, reorderPage } = useDatabase();
+  const pages = customPages || contextPages;
+  const loading = customPages ? false : contextLoading;
 
   // --- Drag & Drop State ---
   const [isDragMode, setIsDragMode] = useState(false);
@@ -191,6 +193,8 @@ const MagazineGrid = ({ onPageClick }) => {
           <h2 className="text-xl font-bold text-gray-800">
             {t('magazine_layout').replace('92', String(totalPages))}
           </h2>
+        </div>
+        {!isPublic && (
           <button
             onClick={() => onPageClick({ page_number: 'Unassigned', status: 'Available', ads: [] })}
             className="flex items-center gap-2 bg-blue-50 text-blue-700 hover:bg-blue-100 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
@@ -198,9 +202,11 @@ const MagazineGrid = ({ onPageClick }) => {
             <Plus size={16} />
             {t('new_unassigned')}
           </button>
-        </div>
+        )}
+      </div>
 
-        {/* Edit Mode Toggle */}
+      {/* Edit Mode Toggle */}
+      {!isPublic && (
         <button
           onClick={() => {
             setIsDragMode(prev => !prev);
@@ -216,7 +222,7 @@ const MagazineGrid = ({ onPageClick }) => {
           {isDragMode ? <GripVertical size={16} /> : <MousePointer size={16} />}
           {isDragMode ? t('magazine_edit_mode') : t('magazine_normal_mode')}
         </button>
-      </div>
+      )}
 
       {/* Drag mode hint bar */}
       {isDragMode && (
@@ -264,7 +270,9 @@ const MagazineGrid = ({ onPageClick }) => {
                   <ul className="list-disc pl-4 mt-1 space-y-1">
                     {page.ads.map((ad, idx) => {
                       const c = fallbackCustomers.find(cust => cust.id === ad.customer_id || cust.nif === ad.customer_id);
-                      const cName = c ? (c.commercial_name || c.fiscal_name) : ad.customer_name;
+                      const cName = isPublic
+                        ? (language === 'es' ? 'Reservado' : 'Reserved')
+                        : (c ? (c.commercial_name || c.fiscal_name) : ad.customer_name);
                       return (
                         <li key={idx} className="truncate">
                           {cName} ({ad.ad_type})
@@ -365,12 +373,17 @@ const MagazineGrid = ({ onPageClick }) => {
                       return <div key={idx} style={{ height: block.height }} className="w-full" />;
                     }
 
-                    let cName = block.ad.customer_name;
-                    if (!cName && block.ad.customer_id !== 'legacy') {
-                      const c = fallbackCustomers.find(cust => cust.id === block.ad.customer_id || cust.nif === block.ad.customer_id);
-                      cName = c ? (c.commercial_name || c.fiscal_name) : 'Unknown';
-                    } else if (!cName) {
-                      cName = t('status_reserved');
+                    let cName = '';
+                    if (isPublic) {
+                      cName = t('status_reserved') || 'Reservado';
+                    } else {
+                      cName = block.ad.customer_name;
+                      if (!cName && block.ad.customer_id !== 'legacy') {
+                        const c = fallbackCustomers.find(cust => cust.id === block.ad.customer_id || cust.nif === block.ad.customer_id);
+                        cName = c ? (c.commercial_name || c.fiscal_name) : 'Unknown';
+                      } else if (!cName) {
+                        cName = t('status_reserved');
+                      }
                     }
 
                     return (

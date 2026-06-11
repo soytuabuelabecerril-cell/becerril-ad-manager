@@ -6,6 +6,9 @@ import { fileURLToPath } from 'url';
 import pkg from 'pg';
 const { Client } = pkg;
 import { createClient } from '@supabase/supabase-js';
+import publicOtpHandler from '../api/public-otp.js';
+import publicDataHandler from '../api/public-data.js';
+import publicReserveHandler from '../api/public-reserve.js';
 
 
 // Load environment variables from the root .env file
@@ -565,6 +568,10 @@ app.all('/api/cron-reminders', async (req, res) => {
     } catch (e) {}
   }
 });
+
+app.post('/api/public-otp', publicOtpHandler);
+app.get('/api/public-data', publicDataHandler);
+app.post('/api/public-reserve', publicReserveHandler);
 
 app.listen(PORT, () => {
   console.log(`Email backend server running on http://localhost:${PORT}`);
