@@ -336,6 +336,10 @@ export const translations = {
     whatsapp_reminder: 'Send WhatsApp Reminder',
     reminder_auto_success: 'Automatic payment reminders sent to pending customers.',
     edit_status: 'Edit Status',
+    send_info_email_title: 'Send Magazine Info',
+    info_email_sent_title: 'Magazine Info Sent',
+    info_email_sent_success: 'Magazine info email sent successfully!',
+    info_email_sent_error: 'Failed to send magazine info email.',
 
     // Page Size / Expansion
     settings_page_size_title: 'Magazine Size',
@@ -700,6 +704,10 @@ export const translations = {
     whatsapp_reminder: 'Enviar por WhatsApp',
     reminder_auto_success: 'Recordatorios de pago automáticos enviados a los clientes pendientes.',
     edit_status: 'Editar Estado',
+    send_info_email_title: 'Enviar Información de Revista',
+    info_email_sent_title: 'Información de Revista Enviada',
+    info_email_sent_success: '¡Correo de información de revista enviado con éxito!',
+    info_email_sent_error: 'Error al enviar el correo de información de revista.',
 
     // Tamaño de Revista / Expansión
     settings_page_size_title: 'Tamaño de la Revista',

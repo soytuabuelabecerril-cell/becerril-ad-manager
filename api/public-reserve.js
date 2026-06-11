@@ -257,7 +257,11 @@ export default async function handler(req, res) {
       details: { via: 'public_portal', artworkComment, artworkOption, designWorkOption },
       created_at: new Date().toISOString()
     };
-    await supabase.from('action_logs').insert([logData]).catch(e => console.error('Failed to log public action:', e));
+    try {
+      await supabase.from('action_logs').insert([logData]);
+    } catch (e) {
+      console.error('Failed to log public action:', e);
+    }
 
     // 7. Send confirmation email
     const templateId = paymentMethod === 'Pre-reserved' ? 'order_prereservation_email' : 'order_reservation_email';

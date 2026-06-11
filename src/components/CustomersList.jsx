@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { Mail, Phone, MapPin, FileText, Search, Clock, Bookmark, CheckCircle, Edit2, Bell, X } from 'lucide-react';
+import { Mail, Phone, MapPin, FileText, Search, Clock, Bookmark, CheckCircle, Edit2, Bell, X, Send } from 'lucide-react';
 import { fallbackCustomers } from '../utils/fallbackCustomers';
 import { useDatabase } from '../context/DatabaseContext';
 import { useLanguage } from '../context/LanguageContext';
@@ -57,6 +57,7 @@ const CustomersList = ({ onSelectPage }) => {
   const [reminderCustomer, setReminderCustomer] = useState(null);
   const [reminderAd, setReminderAd] = useState(null);
   const [emailReminderStatus, setEmailReminderStatus] = useState({ sending: false, success: false, error: '' });
+  const [sendingInfoEmail, setSendingInfoEmail] = useState(null);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -288,6 +289,60 @@ const CustomersList = ({ onSelectPage }) => {
     } catch (err) {
       console.error("Error sending email reminder:", err);
       setEmailReminderStatus({ sending: false, success: false, error: err.message || 'Error' });
+    }
+  };
+
+  const handleSendInfoEmail = async (customer) => {
+    if (!customer || !customer.email) return;
+    setSendingInfoEmail(customer.id);
+    try {
+      const baseUrl = import.meta.env.VITE_API_URL || '/api/send-email';
+      const apiUrl = baseUrl.endsWith('/send-email') 
+        ? baseUrl.replace('/send-email', '/send-info-email') 
+        : baseUrl + '/send-info-email';
+
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          customerId: customer.id,
+          to: customer.email,
+          customerName: customer.commercial_name || customer.fiscal_name || ''
+        })
+      });
+
+      const data = await response.json();
+      if (response.ok && data.success) {
+        // Update local customer state
+        setCustomers(prev => prev.map(c => 
+          c.id === customer.id ? { ...c, info_email_sent: true, info_email_sent_at: new Date().toISOString() } : c
+        ));
+
+        // Log action
+        logAction(
+          'send_info_email',
+          customer.id,
+          customer.commercial_name || customer.fiscal_name,
+          'Revista Info',
+          null,
+          0,
+          0,
+          0,
+          0,
+          null,
+          false,
+          { email: customer.email, info_email_sent: true, info_email_sent_at: new Date().toISOString() }
+        );
+
+        alert(t('info_email_sent_success') || 'Magazine info email sent successfully!');
+      } else {
+        throw new Error(data.error || 'Failed to send email');
+      }
+    } catch (err) {
+      console.error('Error sending info email:', err);
+      alert((t('info_email_sent_error') || 'Error sending magazine info email: ') + (err.message || ''));
+    } finally {
+      setSendingInfoEmail(null);
     }
   };
 
@@ -834,6 +889,20 @@ const CustomersList = ({ onSelectPage }) => {
                             <div className="flex items-center gap-2">
                               <Mail size={14} className="text-gray-400" /> 
                               <span>{customer.email}</span>
+                              <button
+                                onClick={() => handleSendInfoEmail(customer)}
+                                disabled={sendingInfoEmail === customer.id}
+                                className={`p-1 rounded hover:bg-slate-100 transition-colors inline-flex items-center justify-center shrink-0 cursor-pointer ${
+                                  customer.info_email_sent ? 'text-green-600' : 'text-gray-400 hover:text-blue-600'
+                                }`}
+                                title={customer.info_email_sent ? t('info_email_sent_title') : t('send_info_email_title')}
+                              >
+                                {sendingInfoEmail === customer.id ? (
+                                  <span className="animate-spin h-3 w-3 border-2 border-current border-t-transparent rounded-full" />
+                                ) : (
+                                  <Send size={12} className={customer.info_email_sent ? 'fill-green-50' : ''} />
+                                )}
+                              </button>
                             </div>
                             {hasEmailSent && (
                               <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100 shrink-0 animate-fade-in" title={`Email reminder sent on ${formattedSentDate}`}>
@@ -1110,6 +1179,20 @@ const CustomersList = ({ onSelectPage }) => {
                       <div className="flex items-center gap-2 min-w-0">
                         <Mail size={12} className="text-gray-400 shrink-0" />
                         <span className="truncate">{customer.email}</span>
+                        <button
+                          onClick={() => handleSendInfoEmail(customer)}
+                          disabled={sendingInfoEmail === customer.id}
+                          className={`p-1 rounded hover:bg-slate-100 transition-colors inline-flex items-center justify-center shrink-0 cursor-pointer ${
+                            customer.info_email_sent ? 'text-green-600' : 'text-gray-400 hover:text-blue-600'
+                          }`}
+                          title={customer.info_email_sent ? t('info_email_sent_title') : t('send_info_email_title')}
+                        >
+                          {sendingInfoEmail === customer.id ? (
+                            <span className="animate-spin h-3 w-3 border-2 border-current border-t-transparent rounded-full" />
+                          ) : (
+                            <Send size={12} className={customer.info_email_sent ? 'fill-green-50' : ''} />
+                          )}
+                        </button>
                       </div>
                       {hasEmailSent && (
                         <span className="inline-flex items-center gap-1 text-[9px] font-bold text-emerald-600 bg-emerald-50 px-1 py-0.5 rounded border border-emerald-100 shrink-0 animate-fade-in">

@@ -6,6 +6,7 @@ import { fileURLToPath } from 'url';
 import pkg from 'pg';
 const { Client } = pkg;
 import { createClient } from '@supabase/supabase-js';
+import fs from 'fs';
 import publicOtpHandler from '../api/public-otp.js';
 import publicDataHandler from '../api/public-data.js';
 import publicReserveHandler from '../api/public-reserve.js';
@@ -102,6 +103,79 @@ app.post('/api/send-email', async (req, res) => {
   }
 });
 
+app.post('/api/send-info-email', async (req, res) => {
+  const { customerId, to, customerName } = req.body;
+
+  if (!customerId || !to) {
+    return res.status(400).json({ error: 'Missing required fields (customerId, to)' });
+  }
+
+  try {
+    let htmlPath = path.join(process.cwd(), 'api', 'assets', 'email_becerril_2026.html');
+    let imagePath = path.join(process.cwd(), 'api', 'assets', 'Revist_Fiestas_Patronales_Becerril.jpg');
+
+    if (!fs.existsSync(htmlPath)) {
+      htmlPath = 'C:\\Users\\Shadow\\Cloud-Drive\\Web dev Drutex Product Content\\Screenshots\\email_becerril_2026.html';
+    }
+    if (!fs.existsSync(imagePath)) {
+      imagePath = 'C:\\Users\\Shadow\\Cloud-Drive\\Web dev Drutex Product Content\\Screenshots\\Revist_Fiestas_Patronales_Becerril .jpg';
+    }
+
+    if (!fs.existsSync(htmlPath)) {
+      throw new Error(`HTML template file not found at ${htmlPath}`);
+    }
+    if (!fs.existsSync(imagePath)) {
+      throw new Error(`Image file not found at ${imagePath}`);
+    }
+
+    // Read files
+    let htmlContent = fs.readFileSync(htmlPath, 'utf8');
+    const imageBuffer = fs.readFileSync(imagePath);
+    const base64Image = imageBuffer.toString('base64');
+
+    // Replace placeholders
+    htmlContent = htmlContent.replace(/\{\{nombre\}\}/g, customerName || '');
+    htmlContent = htmlContent.replace('https://TU-SERVIDOR.com/img/becerril_2026_header.jpg', `data:image/jpeg;base64,${base64Image}`);
+
+    const mailOptions = {
+      to,
+      subject: 'Información Revista de Fiestas Patronales Becerril de la Sierra 2026',
+      html: htmlContent,
+      attachments: [
+        {
+          filename: 'Revist_Fiestas_Patronales_Becerril.jpg',
+          path: `data:image/jpeg;base64,${base64Image}`
+        }
+      ]
+    };
+
+    console.log(`Sending magazine info email to ${to}...`);
+    const info = await sendMailWithFallback(mailOptions);
+
+    // Update database row
+    const supabaseUrl = process.env.VITE_SUPABASE_URL;
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (supabaseUrl && serviceKey) {
+      const supabase = createClient(supabaseUrl, serviceKey);
+      const { error: dbError } = await supabase
+        .from('customers')
+        .update({
+          info_email_sent: true,
+          info_email_sent_at: new Date().toISOString()
+        })
+        .eq('id', customerId);
+      if (dbError) {
+        console.error('Error updating customer email status in Supabase:', dbError);
+      }
+    }
+
+    res.status(200).json({ success: true, messageId: info.messageId });
+  } catch (error) {
+    console.error('Error in send-info-email endpoint:', error);
+    res.status(500).json({ error: 'Failed to send magazine info email', details: error.message });
+  }
+});
+
 app.post('/api/upload-pdf', async (req, res) => {
   const { pdfBase64, fileName } = req.body;
 
@@ -154,6 +228,16 @@ app.all('/api/run-migration', async (req, res) => {
     await client.query(`
       ALTER TABLE public.customers 
       ADD COLUMN IF NOT EXISTS contact_name TEXT;
+    `);
+
+    await client.query(`
+      ALTER TABLE public.customers 
+      ADD COLUMN IF NOT EXISTS info_email_sent BOOLEAN DEFAULT FALSE;
+    `);
+
+    await client.query(`
+      ALTER TABLE public.customers 
+      ADD COLUMN IF NOT EXISTS info_email_sent_at TIMESTAMP WITH TIME ZONE;
     `);
     
     await client.query(`

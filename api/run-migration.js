@@ -73,6 +73,16 @@ export default async function handler(req, res) {
       ADD COLUMN IF NOT EXISTS contact_name TEXT;
     `);
 
+    await client.query(`
+      ALTER TABLE public.customers 
+      ADD COLUMN IF NOT EXISTS info_email_sent BOOLEAN DEFAULT FALSE;
+    `);
+
+    await client.query(`
+      ALTER TABLE public.customers 
+      ADD COLUMN IF NOT EXISTS info_email_sent_at TIMESTAMP WITH TIME ZONE;
+    `);
+
     // Reload schema
     await client.query("NOTIFY pgrst, 'reload schema';");
 
